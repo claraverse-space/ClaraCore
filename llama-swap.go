@@ -14,6 +14,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gin-gonic/gin"
+	"github.com/mostlygeek/llama-swap/autosetup"
 	"github.com/mostlygeek/llama-swap/event"
 	"github.com/mostlygeek/llama-swap/proxy"
 )
@@ -30,11 +31,24 @@ func main() {
 	listenStr := flag.String("listen", ":8080", "listen ip/port")
 	showVersion := flag.Bool("version", false, "show version of build")
 	watchConfig := flag.Bool("watch-config", false, "Automatically reload config file on change")
+	modelsFolder := flag.String("models-folder", "", "automatically detect GGUF models in folder and generate config")
 
 	flag.Parse() // Parse the command-line flags
 
 	if *showVersion {
 		fmt.Printf("version: %s (%s), built at %s\n", version, commit, date)
+		os.Exit(0)
+	}
+
+	// Handle auto-setup mode
+	if *modelsFolder != "" {
+		fmt.Println("Running auto-setup mode...")
+		err := autosetup.AutoSetup(*modelsFolder)
+		if err != nil {
+			fmt.Printf("Auto-setup failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Auto-setup completed successfully!")
 		os.Exit(0)
 	}
 

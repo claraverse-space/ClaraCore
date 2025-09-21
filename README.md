@@ -1,44 +1,68 @@
-![llama-swap header image](header2.png)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/mostlygeek/llama-swap/total)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/mostlygeek/llama-swap/go-ci.yml)
-![GitHub Repo stars](https://img.shields.io/github/stars/mostlygeek/llama-swap)
+# ClaraCore
 
-# llama-swap
+ClaraCore is a light weight, transparent proxy server that provides automatic model swapping to llama.cpp's server with enhanced auto-setup capabilities.
 
-llama-swap is a light weight, transparent proxy server that provides automatic model swapping to llama.cpp's server.
-
-Written in golang, it is very easy to install (single binary with no dependencies) and configure (single yaml file). To get started, download a pre-built binary, a provided docker images or Homebrew.
+Written in golang, it is very easy to install (single binary with no dependencies) and configure (single yaml file or automatic setup). To get started, download a pre-built binary or use the new auto-setup feature.
 
 ## Features:
 
+- ✅ **Auto-Setup**: Automatically detect GGUF models and download binaries with `--models-folder`
+- ✅ **Smart GPU Detection**: Automatically detects CUDA/ROCm/Vulkan capabilities and GPU count
+- ✅ **Intelligent Configuration**: Generates optimized configs with speculative decoding and resource management
 - ✅ Easy to deploy: single binary with no dependencies
-- ✅ Easy to config: single yaml file
+- ✅ Easy to config: single yaml file or automatic generation
 - ✅ On-demand model switching
 - ✅ OpenAI API supported endpoints:
   - `v1/completions`
   - `v1/chat/completions`
   - `v1/embeddings`
-  - `v1/audio/speech` ([#36](https://github.com/mostlygeek/llama-swap/issues/36))
-  - `v1/audio/transcriptions` ([docs](https://github.com/mostlygeek/llama-swap/issues/41#issuecomment-2722637867))
+  - `v1/models`
+  - `v1/audio/transcriptions`
 - ✅ llama-server (llama.cpp) supported endpoints:
   - `v1/rerank`, `v1/reranking`, `/rerank`
   - `/infill` - for code infilling
   - `/completion` - for completion endpoint
-- ✅ llama-swap custom API endpoints
+- ✅ ClaraCore custom API endpoints
   - `/ui` - web UI
   - `/log` - remote log monitoring
-  - `/upstream/:model_id` - direct access to upstream HTTP server ([demo](https://github.com/mostlygeek/llama-swap/pull/31))
-  - `/unload` - manually unload running models ([#58](https://github.com/mostlygeek/llama-swap/issues/58))
-  - `/running` - list currently running models ([#61](https://github.com/mostlygeek/llama-swap/issues/61))
+  - `/upstream/:model_id` - direct access to upstream HTTP server
+  - `/unload` - manually unload running models
+  - `/running` - list currently running models
   - `/health` - just returns "OK"
-- ✅ Run multiple models at once with `Groups` ([#107](https://github.com/mostlygeek/llama-swap/issues/107))
+- ✅ Run multiple models at once with `Groups`
 - ✅ Automatic unloading of models after timeout by setting a `ttl`
 - ✅ Use any local OpenAI compatible server (llama.cpp, vllm, tabbyAPI, etc)
 - ✅ Reliable Docker and Podman support using `cmd` and `cmdStop` together
 - ✅ Full control over server settings per model
-- ✅ Preload models on startup with `hooks` ([#235](https://github.com/mostlygeek/llama-swap/pull/235))
+- ✅ Preload models on startup with `hooks`
 
-## How does llama-swap work?
+## Quick Start with Auto-Setup
+
+ClaraCore can automatically detect your GGUF models and set everything up for you:
+
+```bash
+# Auto-detect models and download binaries
+./claracore --models-folder /path/to/your/gguf/models
+
+# That's it! ClaraCore will:
+# 1. Scan for GGUF files and detect model metadata
+# 2. Detect your system capabilities (CUDA/ROCm/Vulkan/CPU)
+# 3. Download the optimal llama-server binary
+# 4. Generate an intelligent config.yaml with all your models
+# 5. Set up speculative decoding, GPU assignments, and optimization
+
+# Then start normally:
+./claracore
+```
+
+The auto-setup feature will create a complete configuration including:
+- **Smart GPU detection** and proper device assignments
+- **Speculative decoding** pairs for compatible models
+- **Resource management groups** for efficient memory usage
+- **Optimized sampling parameters** per model type
+- **Model aliases** for easy API access
+
+## How does ClaraCore work?
 
 When a request is made to an OpenAI compatible endpoint, llama-swap will extract the `model` value and load the appropriate server configuration to serve it. If the wrong upstream server is running, it will be replaced with the correct one. This is where the "swap" part comes in. The upstream server is automatically swapped to the correct one to serve the request.
 

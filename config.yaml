@@ -1,0 +1,230 @@
+# Auto-generated llama-swap configuration
+# Generated from models in: C:\BackUP\llama-modelsss
+# Binary: binaries\llama-server\llama-server.exe (cuda)
+# System: windows/amd64
+
+healthCheckTimeout: 300
+logLevel: info
+startPort: 5800
+
+macros:
+  "llama-server-base": >
+    binaries\llama-server\llama-server.exe
+    --host 127.0.0.1
+    --port ${PORT}
+    --metrics
+    --flash-attn auto
+    -ngl 99
+
+models:
+  "gemma-3-27b-tools-7b":
+    name: "Gemma 7B"
+    description: "Auto-detected model (7B) with Q4_K_M quantization"
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Gemma\gemma-3-27b-tools.Q4_K_M.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "gemma-3-27b-toolsmmproj-f16-7b":
+    name: "Gemma 7B"
+    description: "Auto-detected model (7B)"
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Gemma\gemma-3-27b-tools.mmproj-f16.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "glm-45-air-iq4-xs-00001-of-00002":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\GLM-4.5-Air-IQ4_XS\GLM-4.5-Air-IQ4_XS-00001-of-00002.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "gemma-3-4b-it":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Gemma\gemma-3-4b-it-Q4_K_S.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "gemma-3n-e4b-it":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Gemma\gemma-3n-e4b-it-q4_k_m.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "jan-nano-128k":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Jan\Jan-nano-128k-Q8_0.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "webgenoss-20b":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Jan\WEBGENOSS-20B.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "gpt-oss-20b":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\OpenAI\gpt-oss-20b-Q5_K_M.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "glm-45-air-iq4-xs-00002-of-00002":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\GLM-4.5-Air-IQ4_XS\GLM-4.5-Air-IQ4_XS-00002-of-00002.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "qwen3-06b":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Qwen\Qwen3-0.6B-Q8_0.gguf
+      --ctx-size 16384
+      --model-draft C:\BackUP\llama-modelsss\Qwen\Josiefied-Qwen3-30B-A3B-abliterated-v2.Q4_K_M.gguf
+      -ngld 99
+      --draft-max 16
+      --draft-min 4
+      --draft-p-min 0.4
+      --device CUDA0
+      --device-draft CUDA1
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "qwen3-4b-thinking-2507":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Qwen\Qwen3-4B-Thinking-2507-Q8_0.gguf
+      --ctx-size 16384
+      --model-draft C:\BackUP\llama-modelsss\Qwen\Josiefied-Qwen3-30B-A3B-abliterated-v2.Q4_K_M.gguf
+      -ngld 99
+      --draft-max 16
+      --draft-min 4
+      --draft-p-min 0.4
+      --device CUDA0
+      --device-draft CUDA1
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "qwen3-4b":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Qwen\Qwen3-4B.Q4_K_M.gguf
+      --ctx-size 16384
+      --model-draft C:\BackUP\llama-modelsss\Qwen\Josiefied-Qwen3-30B-A3B-abliterated-v2.Q4_K_M.gguf
+      -ngld 99
+      --draft-max 16
+      --draft-min 4
+      --draft-p-min 0.4
+      --device CUDA0
+      --device-draft CUDA1
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "bytedance-seed-seed-oss-36b-instruct":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\ByteDance-Seed_Seed-OSS-36B-Instruct-Q4_K_M.gguf
+      --ctx-size 16384
+      --temp 0.7
+      --repeat-penalty 1.1
+      --top-p 0.9
+      --top-k 40
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "huihui-internvl3-14b-abliterated":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Qwen\huihui-internvl3-14b-abliterated-q6_k.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "mmproj-huihui-internvl3-14b-abliterated-f32":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Qwen\mmproj-Huihui-InternVL3-14B-abliterated-F32.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "qwen3-06b-2":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\Qwen3-0.6B-Q8_0.gguf
+      --ctx-size 16384
+      --model-draft C:\BackUP\llama-modelsss\Qwen\Josiefied-Qwen3-30B-A3B-abliterated-v2.Q4_K_M.gguf
+      -ngld 99
+      --draft-max 16
+      --draft-min 4
+      --draft-p-min 0.4
+      --device CUDA0
+      --device-draft CUDA1
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "mxbai-embed-large-v1":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\embedding\mxbai-embed-large-v1.Q4_K_S.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "mxbai-largeiq4-xs":
+    cmd: |
+      ${llama-server-base}
+      --model C:\BackUP\llama-modelsss\embedding\mxbai-large.IQ4_XS.gguf
+      --ctx-size 16384
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+groups:
+  "large-models":
+    swap: true
+    exclusive: true
+    members:
+
+  "small-models":
+    swap: false
+    exclusive: false
+    members:
+      - "gemma-3-27b-tools-7b"
+      - "gemma-3-27b-toolsmmproj-f16-7b"
+
