@@ -8,7 +8,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/mostlygeek/llama-swap/event"
+	"github.com/prave/ClaraCore/event"
 )
 
 type LogLevel int

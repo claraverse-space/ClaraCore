@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mostlygeek/llama-swap/event"
+	"github.com/prave/ClaraCore/event"
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
 )

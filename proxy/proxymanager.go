@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mostlygeek/llama-swap/event"
+	"github.com/prave/ClaraCore/event"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )

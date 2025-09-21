@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mostlygeek/llama-swap/event"
+	"github.com/prave/ClaraCore/event"
 )
 
 type ProcessState string
