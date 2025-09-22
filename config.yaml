@@ -21,6 +21,12 @@ macros:
     --batch-size 2048
     --ubatch-size 512
 
+  "llama-embed-base": >
+    binaries\llama-server\llama-server.exe
+    --host 127.0.0.1
+    --port ${PORT}
+    --embedding
+
 models:
   "bytedance-seed-seed-oss-36b-instruct-36b":
     name: "ByteDance-Seed_Seed-OSS-36B-Instruct-Q4_K_M"
@@ -101,7 +107,6 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Gemma\gemma-3-4b-it-Q4_K_S.gguf
-      --mmproj C:\BackUP\llama-modelsss\Gemma\gemma-3-27b-tools.mmproj-f16.gguf
       --ctx-size 32768
       -ngl 999
       --cache-type-k f16
@@ -392,21 +397,20 @@ models:
     name: "mxbai-embed-large-v1.Q4_K_S"
     description: "Quantization: Q4_K_S"
     cmd: |
-      ${llama-server-base}
+      ${llama-embed-base}
       --model C:\BackUP\llama-modelsss\embedding\mxbai-embed-large-v1.Q4_K_S.gguf
-      --ctx-size 16384
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
-      --embedding
-      --ctx-size 512
-      --batch-size 512
+      --pooling mean
+      --batch-size 4096
       --ubatch-size 256
-      --parallel 4
-      --slots 4
       -ngl 999
       --threads 8
-      --pooling cls
+      --keep 1024
+      --defrag-thold 0.1
+      --mlock
+      --flash-attn on
+      --cont-batching
+      --jinja
+      --no-warmup
     proxy: "http://127.0.0.1:${PORT}"
     env:
       - "CUDA_VISIBLE_DEVICES=0"
@@ -415,21 +419,42 @@ models:
     name: "mxbai-large.IQ4_XS"
     description: "Quantization: IQ4_XS"
     cmd: |
-      ${llama-server-base}
+      ${llama-embed-base}
       --model C:\BackUP\llama-modelsss\embedding\mxbai-large.IQ4_XS.gguf
-      --ctx-size 16384
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
-      --embedding
-      --ctx-size 512
-      --batch-size 512
+      --pooling mean
+      --batch-size 4096
       --ubatch-size 256
-      --parallel 4
-      --slots 4
       -ngl 999
       --threads 8
-      --pooling cls
+      --keep 1024
+      --defrag-thold 0.1
+      --mlock
+      --flash-attn on
+      --cont-batching
+      --jinja
+      --no-warmup
+    proxy: "http://127.0.0.1:${PORT}"
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+
+  "mxbai-embed-large-v1-f16":
+    name: "mxbai-embed-large-v1-f16"
+    description: "Quantization: F16"
+    cmd: |
+      ${llama-embed-base}
+      --model C:\BackUP\llama-modelsss\mxbai-embed-large-v1-f16.gguf
+      --pooling mean
+      --batch-size 4096
+      --ubatch-size 256
+      -ngl 999
+      --threads 8
+      --keep 1024
+      --defrag-thold 0.1
+      --mlock
+      --flash-attn on
+      --cont-batching
+      --jinja
+      --no-warmup
     proxy: "http://127.0.0.1:${PORT}"
     env:
       - "CUDA_VISIBLE_DEVICES=0"
@@ -440,25 +465,26 @@ groups:
     swap: true
     exclusive: true
     members:
-      - "bytedance-seed-seed-oss-36b-instruct-36b-v2"
-      - "glm-45-air-iq4-xs-00001-of-00002-v2"
-      - "gemma-3-27b-toolsq4-k-m-7b-v2"
-      - "gemma-3-4b-it-4b-v2"
-      - "gemma-3n-e4b-it-4b-v2"
-      - "jan-nano-128k-v2"
-      - "webgenoss-20b-20b-v2"
-      - "gpt-oss-20b-20b-v2"
-      - "josiefied-qwen3-30b-a3b-abliterated-v2q4-k-m-3b-v2"
-      - "qwen3-06b-0.6b-v3"
-      - "qwen3-4b-thinking-2507-4b-v2"
-      - "qwen3-4bq4-k-m-4b-v2"
-      - "qwen-qwen3-30b-a3b-instruct-2507-3b-v2"
-      - "huihui-internvl3-14b-abliterated-q6-k-4b-v2"
-      - "qwen3-06b-0.6b-v4"
+      - "bytedance-seed-seed-oss-36b-instruct-36b"
+      - "glm-45-air-iq4-xs-00001-of-00002"
+      - "gemma-3-27b-toolsq4-k-m-7b"
+      - "gemma-3-4b-it-4b"
+      - "gemma-3n-e4b-it-4b"
+      - "jan-nano-128k"
+      - "webgenoss-20b-20b"
+      - "gpt-oss-20b-20b"
+      - "josiefied-qwen3-30b-a3b-abliterated-v2q4-k-m-3b"
+      - "qwen3-06b-0.6b"
+      - "qwen3-4b-thinking-2507-4b"
+      - "qwen3-4bq4-k-m-4b"
+      - "qwen-qwen3-30b-a3b-instruct-2507-3b"
+      - "huihui-internvl3-14b-abliterated-q6-k-4b"
+      - "qwen3-06b-0.6b-v2"
 
   "small-models":
     swap: false
     exclusive: false
     members:
-      - "mxbai-embed-large-v1q4-k-s-v2"
-      - "mxbai-largeiq4-xs-v2"
+      - "mxbai-embed-large-v1q4-k-s"
+      - "mxbai-largeiq4-xs"
+      - "mxbai-embed-large-v1-f16"

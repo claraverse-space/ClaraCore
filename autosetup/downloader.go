@@ -1142,8 +1142,11 @@ func FindMMProjMatches(models []ModelInfo, modelsPath string) []MMProjMatch {
 		mmprojBasename := getStringValue(mmprojMeta, "general.basename")
 		mmprojBaseModelName := getStringValue(mmprojMeta, "general.base_model.0.name")
 
-		fmt.Printf("   📋 mmproj fields: arch=%s, name=%s, basename=%s, base_model=%s\n",
-			mmprojArch, mmprojName, mmprojBasename, mmprojBaseModelName)
+		// For mmproj: look for projection dimensions
+		mmprojEmbedDim := getIntValue(mmprojMeta, "clip.vision.projection_dim")
+
+		fmt.Printf("   📋 mmproj fields: arch=%s, name=%s, basename=%s, base_model=%s, proj_dim=%d\n",
+			mmprojArch, mmprojName, mmprojBasename, mmprojBaseModelName, mmprojEmbedDim)
 
 		// Try to match with each main model
 		for _, model := range models {
@@ -1165,20 +1168,30 @@ func FindMMProjMatches(models []ModelInfo, modelsPath string) []MMProjMatch {
 
 			// Try different matching strategies
 
-			// 1. Direct architecture matching (highest confidence)
+			// 1. Architecture + name-based size matching (highest confidence)
 			if mmprojArch != "" && modelArch != "" &&
 				strings.EqualFold(mmprojArch, modelArch) {
-				matches = append(matches, MMProjMatch{
-					ModelPath:    model.Path,
-					ModelName:    model.Name,
-					MMProjPath:   mmprojPath,
-					MMProjName:   filepath.Base(mmprojPath),
-					MatchType:    "architecture",
-					Confidence:   0.95,
-					MatchDetails: fmt.Sprintf("arch: %s → %s", mmprojArch, modelArch),
-				})
-				fmt.Printf("   ✅ ARCH MATCH: %s (conf: 0.95)\n", model.Name)
-				continue
+
+				// Check if model size matches mmproj expectations
+				nameCompatibility := isModelNameCompatibleWithMMProj(model.Name, mmprojEmbedDim)
+				if nameCompatibility {
+					matches = append(matches, MMProjMatch{
+						ModelPath:    model.Path,
+						ModelName:    model.Name,
+						MMProjPath:   mmprojPath,
+						MMProjName:   filepath.Base(mmprojPath),
+						MatchType:    "architecture_name_compatible",
+						Confidence:   0.90,
+						MatchDetails: fmt.Sprintf("arch: %s → %s, name-size match for %d dim", mmprojArch, modelArch, mmprojEmbedDim),
+					})
+					fmt.Printf("   ✅ ARCH+NAME MATCH: %s (conf: 0.90) [%s arch, size compatible with %d dim]\n",
+						model.Name, mmprojArch, mmprojEmbedDim)
+					continue
+				} else {
+					fmt.Printf("   ⚠️  ARCH MATCH BUT SIZE INCOMPATIBLE: %s (model size doesn't match %d dim mmproj)\n",
+						model.Name, mmprojEmbedDim)
+					continue
+				}
 			}
 
 			// 2. Direct basename matching (high confidence)
@@ -1458,6 +1471,12 @@ func getIntValue(metadata map[string]interface{}, key string) int {
 			return int(v)
 		case float64:
 			return int(v)
+		case float32:
+			return int(v)
+		case uint32:
+			return int(v)
+		case uint64:
+			return int(v)
 		}
 	}
 	return 0
@@ -1477,4 +1496,47 @@ func boolToEmoji(b bool) string {
 		return "✅ Embedding"
 	}
 	return "💬 Chat"
+}
+
+// isModelNameCompatibleWithMMProj checks if model name suggests compatibility with mmproj projection dimension
+func isModelNameCompatibleWithMMProj(modelName string, mmprojEmbedDim int) bool {
+	lowerName := strings.ToLower(modelName)
+
+	// Extract size indicators from model name
+	if strings.Contains(lowerName, "27b") || strings.Contains(lowerName, "22b") || strings.Contains(lowerName, "30b") {
+		// Large models - should work with 5376 dimension mmproj
+		return mmprojEmbedDim == 5376
+	}
+
+	if strings.Contains(lowerName, "9b") || strings.Contains(lowerName, "8b") || strings.Contains(lowerName, "7b") {
+		// Medium models - should work with 3584 dimension mmproj
+		return mmprojEmbedDim == 3584
+	}
+
+	if strings.Contains(lowerName, "4b") || strings.Contains(lowerName, "3b") || strings.Contains(lowerName, "2b") {
+		// Small models - should work with 2560 dimension mmproj
+		return mmprojEmbedDim == 2560
+	}
+
+	// Special cases for models with size indicators
+	if strings.Contains(lowerName, "1b") || strings.Contains(lowerName, "0.6b") || strings.Contains(lowerName, "0.5b") {
+		// Very small models - likely compatible with smaller mmproj
+		return mmprojEmbedDim <= 2560
+	}
+
+	// If we can't determine size from name, check for other patterns
+	// InternVL, LLaVA, etc. might have different naming conventions
+	if strings.Contains(lowerName, "14b") {
+		// 14B models often use 5120 projection dimension
+		return mmprojEmbedDim == 5120 || mmprojEmbedDim == 5376
+	}
+
+	// For unknown sizes, be more permissive but still check for obvious mismatches
+	// Don't match very large mmproj (5376) with obviously small model names
+	if mmprojEmbedDim == 5376 && (strings.Contains(lowerName, "nano") || strings.Contains(lowerName, "tiny") || strings.Contains(lowerName, "mini")) {
+		return false
+	}
+
+	// Default to allowing the match if we can't determine incompatibility
+	return true
 }

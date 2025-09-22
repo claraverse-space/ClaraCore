@@ -62,17 +62,26 @@ func (scg *SimpleConfigGenerator) GenerateConfig(models []ModelInfo) error {
 	// Write macros
 	scg.writeMacros(&config)
 
+	// Generate model IDs consistently (first pass)
+	modelIDMap := make(map[string]string)
+	for _, model := range models {
+		if model.IsDraft {
+			continue
+		}
+		modelIDMap[model.Path] = scg.generateModelID(model)
+	}
+
 	// Write models
 	config.WriteString("\nmodels:\n")
 	for _, model := range models {
 		if model.IsDraft {
 			continue // Skip draft models
 		}
-		scg.writeModel(&config, model)
+		scg.writeModel(&config, model, modelIDMap)
 	}
 
 	// Write groups
-	scg.writeGroups(&config, models)
+	scg.writeGroups(&config, models, modelIDMap)
 
 	// Save to file
 	return os.WriteFile(scg.OutputPath, []byte(config.String()), 0644)
@@ -94,7 +103,7 @@ func (scg *SimpleConfigGenerator) writeHeader(config *strings.Builder) {
 	config.WriteString("startPort: 5800\n")
 }
 
-// writeMacros writes the base macro
+// writeMacros writes the base macros
 func (scg *SimpleConfigGenerator) writeMacros(config *strings.Builder) {
 	config.WriteString("\nmacros:\n")
 	config.WriteString("  \"llama-server-base\": >\n")
@@ -107,12 +116,19 @@ func (scg *SimpleConfigGenerator) writeMacros(config *strings.Builder) {
 	config.WriteString("    --dry-penalty-last-n 0\n")
 	config.WriteString("    --batch-size 2048\n")
 	config.WriteString("    --ubatch-size 512\n")
+	config.WriteString("\n")
+	config.WriteString("  \"llama-embed-base\": >\n")
+	config.WriteString(fmt.Sprintf("    %s\n", scg.BinaryPath))
+	config.WriteString("    --host 127.0.0.1\n")
+	config.WriteString("    --port ${PORT}\n")
+	config.WriteString("    --embedding\n")
+	// Pooling type will be set per model based on model family
 	// KV cache types are now set per model based on optimal calculation
 }
 
 // writeModel writes a single model configuration
-func (scg *SimpleConfigGenerator) writeModel(config *strings.Builder, model ModelInfo) {
-	modelID := scg.generateModelID(model)
+func (scg *SimpleConfigGenerator) writeModel(config *strings.Builder, model ModelInfo, modelIDMap map[string]string) {
+	modelID := modelIDMap[model.Path] // Use pre-generated ID from map
 
 	config.WriteString(fmt.Sprintf("  \"%s\":\n", modelID))
 
@@ -128,7 +144,11 @@ func (scg *SimpleConfigGenerator) writeModel(config *strings.Builder, model Mode
 
 	// Write command
 	config.WriteString("    cmd: |\n")
-	config.WriteString("      ${llama-server-base}\n")
+	if scg.isEmbeddingModel(model) {
+		config.WriteString("      ${llama-embed-base}\n")
+	} else {
+		config.WriteString("      ${llama-server-base}\n")
+	}
 	config.WriteString(fmt.Sprintf("      --model %s\n", model.Path))
 
 	// Add --mmproj parameter if a matching mmproj file is found
@@ -147,15 +167,18 @@ func (scg *SimpleConfigGenerator) writeModel(config *strings.Builder, model Mode
 		modelSizeGB = modelInfo.ActualSizeGB
 	}
 
-	// Calculate optimal context size and KV cache type based on remaining VRAM
+	// Calculate optimal context size and KV cache type for use in optimizations
 	optimalContext, kvCacheType := scg.calculateOptimalContext(model, nglValue, modelSizeGB)
 
-	config.WriteString(fmt.Sprintf("      --ctx-size %d\n", optimalContext))
-	config.WriteString(fmt.Sprintf("      -ngl %d\n", nglValue))
+	// For embedding models, skip base context and ngl as they'll be handled in writeOptimizations
+	if !scg.isEmbeddingModel(model) {
+		config.WriteString(fmt.Sprintf("      --ctx-size %d\n", optimalContext))
+		config.WriteString(fmt.Sprintf("      -ngl %d\n", nglValue))
 
-	// Set KV cache type
-	config.WriteString(fmt.Sprintf("      --cache-type-k %s\n", kvCacheType))
-	config.WriteString(fmt.Sprintf("      --cache-type-v %s\n", kvCacheType))
+		// Set KV cache type
+		config.WriteString(fmt.Sprintf("      --cache-type-k %s\n", kvCacheType))
+		config.WriteString(fmt.Sprintf("      --cache-type-v %s\n", kvCacheType))
+	}
 
 	// Add optimizations
 	scg.writeOptimizations(config, model, optimalContext)
@@ -384,24 +407,16 @@ func (scg *SimpleConfigGenerator) getMaxContextForModel(model ModelInfo) int {
 func (scg *SimpleConfigGenerator) writeOptimizations(config *strings.Builder, model ModelInfo, contextSize int) {
 	// Embedding models - use metadata-based detection with optimal parameters
 	if scg.isEmbeddingModel(model) {
-		config.WriteString("      --embedding\n")
+		// Add pooling parameter based on model family
+		poolingType := scg.detectPoolingType(model)
+		config.WriteString(fmt.Sprintf("      --pooling %s\n", poolingType))
 
-		// Use model's max context instead of calculated context size
-		maxContext := scg.getMaxContextForModel(model)
-		if maxContext > 0 {
-			config.WriteString(fmt.Sprintf("      --ctx-size %d\n", maxContext))
-		} else {
-			config.WriteString(fmt.Sprintf("      --ctx-size %d\n", contextSize))
-		}
+		// NO ctx-size for embedding models as per specifications
 
 		// Optimal batch settings for embedding models
-		config.WriteString("      --batch-size 512\n")
+		config.WriteString("      --batch-size 4096\n")
 		config.WriteString("      --ubatch-size 256\n")
-		config.WriteString("      --parallel 4\n")
-		config.WriteString("      --slots 4\n")
-		config.WriteString("      -ngl 999\n")
-
-		// Calculate optimal threads (half of physical cores)
+		config.WriteString("      -ngl 999\n") // Calculate optimal threads (half of physical cores)
 		if scg.SystemInfo != nil && scg.SystemInfo.PhysicalCores > 0 {
 			threads := scg.SystemInfo.PhysicalCores / 2
 			if threads < 1 {
@@ -410,11 +425,16 @@ func (scg *SimpleConfigGenerator) writeOptimizations(config *strings.Builder, mo
 			config.WriteString(fmt.Sprintf("      --threads %d\n", threads))
 		}
 
-		// Detect and apply pooling type
-		poolingType := scg.detectPoolingType(model)
-		config.WriteString(fmt.Sprintf("      --pooling %s\n", poolingType))
+		// Optional but helpful parameters
+		config.WriteString("      --keep 1024\n")        // Cache management
+		config.WriteString("      --defrag-thold 0.1\n") // Memory defragmentation
+		config.WriteString("      --mlock\n")            // Lock model in RAM
+		config.WriteString("      --flash-attn on\n")    // Flash attention
+		config.WriteString("      --cont-batching\n")    // Continuous batching
+		config.WriteString("      --jinja\n")            // Template processing
+		config.WriteString("      --no-warmup\n")        // Skip warmup
 
-		// Don't add jinja or other chat parameters for embedding models
+		// Don't add chat-specific parameters for embedding models
 		return
 	}
 
@@ -539,16 +559,17 @@ func (scg *SimpleConfigGenerator) addParallelProcessing(config *strings.Builder,
 }
 
 // writeGroups writes model groups
-func (scg *SimpleConfigGenerator) writeGroups(config *strings.Builder, models []ModelInfo) {
+func (scg *SimpleConfigGenerator) writeGroups(config *strings.Builder, models []ModelInfo, modelIDMap map[string]string) {
 	largeModels := []string{}
 	smallModels := []string{}
 
+	// Use pre-generated model IDs from map
 	for _, model := range models {
 		if model.IsDraft {
 			continue
 		}
 
-		modelID := scg.generateModelID(model)
+		modelID := modelIDMap[model.Path]
 
 		// Categorize by model type - use metadata-based embedding detection
 		if scg.isEmbeddingModel(model) {
@@ -614,12 +635,73 @@ func (scg *SimpleConfigGenerator) isEmbeddingModel(model ModelInfo) bool {
 	return detectEmbeddingFromMetadata(metadata, architecture)
 }
 
+// detectPoolingTypeByName detects the pooling type based on model family
+func (scg *SimpleConfigGenerator) detectPoolingTypeByName(model ModelInfo) string {
+	modelName := strings.ToLower(model.Name)
+	modelPath := strings.ToLower(model.Path)
+
+	// Combine name and path for better detection
+	fullName := modelName + " " + modelPath
+
+	// BGE models
+	if strings.Contains(fullName, "bge") {
+		return "cls"
+	}
+
+	// E5 models
+	if strings.Contains(fullName, "e5") {
+		return "mean"
+	}
+
+	// GTE models
+	if strings.Contains(fullName, "gte") {
+		return "mean"
+	}
+
+	// MXBAI models
+	if strings.Contains(fullName, "mxbai") {
+		return "mean"
+	}
+
+	// Nomic Embed models
+	if strings.Contains(fullName, "nomic") {
+		return "mean"
+	}
+
+	// Jina models - need to detect version
+	if strings.Contains(fullName, "jina") {
+		// Jina v2/v3 use 'last', v1 uses 'cls'
+		if strings.Contains(fullName, "v2") || strings.Contains(fullName, "v3") {
+			return "last"
+		}
+		return "cls" // v1 or unknown version
+	}
+
+	// Stella models
+	if strings.Contains(fullName, "stella") {
+		return "mean"
+	}
+
+	// Arctic models
+	if strings.Contains(fullName, "arctic") {
+		return "mean"
+	}
+
+	// SFR models
+	if strings.Contains(fullName, "sfr") {
+		return "mean"
+	}
+
+	// Default fallback
+	return "mean"
+}
+
 // detectPoolingType detects the pooling type from model metadata
 func (scg *SimpleConfigGenerator) detectPoolingType(model ModelInfo) string {
 	// Read GGUF metadata to find pooling type
 	metadata, err := ReadAllGGUFKeys(model.Path)
 	if err != nil {
-		return "mean" // Default fallback
+		return scg.detectPoolingTypeByName(model) // Fallback to name-based detection
 	}
 
 	// Get architecture to construct the pooling key
@@ -653,13 +735,6 @@ func (scg *SimpleConfigGenerator) detectPoolingType(model ModelInfo) string {
 		}
 	}
 
-	// Default pooling types by architecture
-	switch strings.ToLower(architecture) {
-	case "bert", "roberta":
-		return "cls"
-	case "nomic-bert", "jina-bert":
-		return "mean"
-	default:
-		return "mean" // Safe default
-	}
+	// Fallback to name-based detection
+	return scg.detectPoolingTypeByName(model)
 }
