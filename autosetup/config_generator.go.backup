@@ -1,0 +1,821 @@
+package autosetup
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// ConfigGenerator generates YAML configuration from detected models and binary
+type ConfigGenerator struct {
+	Models          []ModelInfo
+	Binary          *BinaryInfo
+	System          SystemInfo
+	StartPort       int
+	ModelsDir       string
+	MemoryEstimator *MemoryEstimator
+	AvailableVRAMGB float64
+	Options         SetupOptions
+}
+
+// GenerateConfig creates a complete YAML configuration
+func (cg *ConfigGenerator) GenerateConfig() (string, error) {
+	// Initialize memory estimator if not set
+	if cg.MemoryEstimator == nil {
+		cg.MemoryEstimator = NewMemoryEstimator()
+	}
+
+	// Detect available VRAM if not set
+	if cg.AvailableVRAMGB == 0 {
+		vram, err := cg.MemoryEstimator.GetAvailableVRAM()
+		if err != nil {
+			// Fallback to default if VRAM detection fails
+			cg.AvailableVRAMGB = 12.0 // Assume 12GB if detection fails
+		} else {
+			cg.AvailableVRAMGB = vram
+		}
+	}
+
+	config := strings.Builder{}
+
+	// Header
+	config.WriteString("# Auto-generated llama-swap configuration\n")
+	config.WriteString("# Generated from models in: " + cg.ModelsDir + "\n")
+	config.WriteString("# Binary: " + cg.Binary.Path + " (" + cg.Binary.Type + ")\n")
+	config.WriteString("# System: " + cg.System.OS + "/" + cg.System.Architecture + "\n")
+	config.WriteString(fmt.Sprintf("# Available VRAM: %.1f GB\n\n", cg.AvailableVRAMGB))
+
+	// Global settings
+	config.WriteString("healthCheckTimeout: 300\n")
+	config.WriteString("logLevel: info\n")
+	config.WriteString("startPort: " + strconv.Itoa(cg.StartPort) + "\n\n")
+
+	// Add macros
+	config.WriteString("macros:\n")
+	config.WriteString("  \"llama-server-base\": >\n")
+	config.WriteString("    " + cg.Binary.Path + "\n")
+	config.WriteString("    --host 127.0.0.1\n")
+	config.WriteString("    --port ${PORT}\n")
+	config.WriteString("    --metrics\n")
+	config.WriteString("    --flash-attn auto\n")
+	config.WriteString("    --no-warmup\n")            // Skip warmup for faster first token
+	config.WriteString("    --dry-penalty-last-n 0\n") // Disable DRY penalty to avoid slow startup
+	config.WriteString("    --batch-size 2048\n")      // Optimal batch size for throughput
+	config.WriteString("    --ubatch-size 512\n")      // Micro-batch size for GPU efficiency
+	config.WriteString("    --cache-type-k f16\n")     // Use f16 for KV cache (faster than f32)
+	config.WriteString("    --cache-type-v f16\n")     // Use f16 for KV cache (faster than f32)
+
+	// Add GPU-specific flags (but not -ngl, that's model-specific)
+	// if cg.Binary.Type == "cuda" || cg.Binary.Type == "rocm" {
+	//     config.WriteString("    -ngl 99\n")
+	// }
+
+	config.WriteString("\n")
+
+	// Sort models by size (largest first)
+	sortedModels := SortModelsBySize(cg.Models)
+
+	// Generate models section
+	config.WriteString("models:\n")
+
+	currentPort := cg.StartPort
+	usedIDs := make(map[string]int) // Track used IDs to handle duplicates
+	
+	// Count non-draft models for progress tracking
+	nonDraftModels := []ModelInfo{}
+	for _, model := range sortedModels {
+		if !model.IsDraft {
+			nonDraftModels = append(nonDraftModels, model)
+		}
+	}
+	
+	if len(nonDraftModels) > 0 {
+		fmt.Printf("🔧 Generating configuration for %d models in parallel...\n", len(nonDraftModels))
+	}
+
+	if cg.Options.EnableParallel && len(nonDraftModels) > 1 {
+		// Parallel configuration generation
+		configChunks := make([]string, len(nonDraftModels))
+		var wg sync.WaitGroup
+		var processed int32
+		semaphore := make(chan struct{}, 8) // Limit concurrent operations
+
+		// Progress tracker
+		go func() {
+			for {
+				current := atomic.LoadInt32(&processed)
+				if current >= int32(len(nonDraftModels)) {
+					break
+				}
+				if current > 0 {
+					percentage := float64(current) / float64(len(nonDraftModels)) * 100
+					fmt.Printf("\r   ⚡ Progress: %d/%d (%.1f%%) models configured", current, len(nonDraftModels), percentage)
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+		}()
+
+		for i, model := range nonDraftModels {
+			wg.Add(1)
+			go func(index int, m ModelInfo, port int) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				// Generate model configuration
+				modelConfig := cg.generateSingleModelConfig(m, port, usedIDs)
+				configChunks[index] = modelConfig
+				
+				atomic.AddInt32(&processed, 1)
+			}(i, model, currentPort+i)
+		}
+
+		wg.Wait()
+		fmt.Printf("\r   ✅ Completed: %d/%d (100.0%%) models configured in parallel\n", len(nonDraftModels), len(nonDraftModels))
+
+		// Combine all config chunks
+		for _, chunk := range configChunks {
+			config.WriteString(chunk)
+		}
+	} else {
+		// Sequential processing (fallback or when parallel is disabled)
+		processedModels := 0
+		for i, model := range sortedModels {
+			// Skip draft models from main models list
+			if model.IsDraft {
+				continue
+			}
+
+			processedModels++
+			if processedModels%3 == 0 || processedModels == len(nonDraftModels) {
+				percentage := float64(processedModels) / float64(len(nonDraftModels)) * 100
+				fmt.Printf("   📝 Progress: %d/%d (%.1f%%) models configured\n", processedModels, len(nonDraftModels), percentage)
+			}
+
+			modelConfig := cg.generateSingleModelConfig(model, currentPort, usedIDs)
+			config.WriteString(modelConfig)
+			currentPort++
+		}
+	}
+
+		baseID := cg.generateModelID(model)
+		modelID := baseID
+
+		// Handle duplicates by adding suffix
+		if count, exists := usedIDs[baseID]; exists {
+			usedIDs[baseID] = count + 1
+			modelID = fmt.Sprintf("%s-%d", baseID, count+1)
+		} else {
+			usedIDs[baseID] = 1
+		}
+
+		config.WriteString("  \"" + modelID + "\":\n") // Add model metadata
+		if model.Size != "" {
+			config.WriteString("    name: \"" + cg.generateModelName(model) + "\"\n")
+			config.WriteString("    description: \"" + cg.generateModelDescription(model) + "\"\n")
+		}
+
+		// Find a draft model if available and enabled
+		var draftModel *ModelInfo
+		if cg.Options.EnableDraftModels {
+			draftModel = FindDraftModel(cg.Models, model, cg.MemoryEstimator)
+		}
+
+		// Generate command
+		config.WriteString("    cmd: |\n")
+		config.WriteString("      ${llama-server-base}\n")
+		config.WriteString("      --model " + model.Path + "\n")
+
+		// Add context size based on optimal memory calculation
+		ctxSize := cg.getOptimalContextSize(model)
+		config.WriteString("      --ctx-size " + strconv.Itoa(ctxSize) + "\n")
+
+		// Add Jinja templating support if enabled (uses model's built-in template)
+		if cg.Options.EnableJinja {
+			config.WriteString("      --jinja\n")
+		}
+
+		// Add GPU layer configuration for CUDA/ROCm
+		if cg.Binary.Type == "cuda" || cg.Binary.Type == "rocm" {
+			nglLayers := cg.getOptimalGPULayers(model)
+			config.WriteString("      -ngl " + strconv.Itoa(nglLayers) + "\n")
+		}
+
+		// Add draft model for speculative decoding if available
+		if draftModel != nil {
+			config.WriteString("      --model-draft " + draftModel.Path + "\n")
+			config.WriteString("      -ngld 99\n")
+			config.WriteString("      --draft-max 16\n")
+			config.WriteString("      --draft-min 4\n")
+			config.WriteString("      --draft-p-min 0.4\n")
+
+			// Add GPU assignment for multi-GPU setups
+			if cg.System.HasCUDA && cg.hasMultipleGPUs() {
+				config.WriteString("      --device CUDA0\n")
+				config.WriteString("      --device-draft CUDA1\n")
+			}
+		}
+
+		// Add sampling parameters based on model type and intended use case
+		modelType := cg.detectModelType(model)
+		switch modelType {
+		case "embedding":
+			// Embedding models don't need sampling parameters
+			config.WriteString("      --embedding\n")
+		case "multimodal":
+			// Multimodal models need special handling
+			if model.IsInstruct {
+				config.WriteString("      --temp 0.7\n")
+				config.WriteString("      --repeat-penalty 1.05\n")
+				config.WriteString("      --repeat-last-n 256\n")
+				config.WriteString("      --top-p 0.9\n")
+				config.WriteString("      --top-k 40\n")
+				config.WriteString("      --min-p 0.1\n")
+			}
+		case "instruct":
+			// For chat/instruct models - optimized for speculative decoding
+			config.WriteString("      --temp 0.7\n") // Lower temp = more predictable = better speculation
+			config.WriteString("      --repeat-penalty 1.05\n")
+			config.WriteString("      --repeat-last-n 256\n")
+			config.WriteString("      --top-p 0.9\n") // More focused sampling helps speculation
+			config.WriteString("      --top-k 40\n")
+			config.WriteString("      --min-p 0.1\n")
+		case "code":
+			// Code models benefit most from speculation due to structured syntax
+			config.WriteString("      --temp 0.3\n")            // Very low temp for predictable code
+			config.WriteString("      --repeat-penalty 1.02\n") // Light penalty for code
+			config.WriteString("      --repeat-last-n 128\n")
+			config.WriteString("      --top-p 0.95\n")
+			config.WriteString("      --min-p 0.05\n")
+		case "base":
+			// For base/completion models, use moderate sampling
+			config.WriteString("      --temp 0.8\n")
+			config.WriteString("      --repeat-penalty 1.02\n")
+			config.WriteString("      --repeat-last-n 128\n")
+			config.WriteString("      --top-p 0.95\n")
+			config.WriteString("      --min-p 0.05\n")
+		}
+
+		// Add performance optimizations for large models
+		if cg.shouldOptimizeForPerformance(model) {
+			config.WriteString("      --cont-batching\n") // Continuous batching for throughput
+			config.WriteString("      --parallel 4\n")    // Allow multiple parallel requests
+		}
+
+		// Set proxy URL
+		config.WriteString("    proxy: \"http://127.0.0.1:${PORT}\"\n")
+
+		// Add common aliases for popular models
+		aliases := cg.generateAliases(model)
+		if len(aliases) > 0 {
+			config.WriteString("    aliases:\n")
+			for _, alias := range aliases {
+				config.WriteString("      - \"" + alias + "\"\n")
+			}
+		}
+
+		// Add TTL for larger models to save memory
+		if cg.shouldAddTTL(model) {
+			config.WriteString("    ttl: 300  # Auto-unload after 5 minutes of inactivity\n")
+		}
+
+		// Add environment variables for GPU selection
+		if cg.System.HasCUDA && len(sortedModels) > 1 {
+			gpuIndex := i % cg.getGPUCount()
+			config.WriteString("    env:\n")
+			config.WriteString("      - \"CUDA_VISIBLE_DEVICES=" + strconv.Itoa(gpuIndex) + "\"\n")
+		}
+
+		config.WriteString("\n")
+		currentPort++
+	}
+
+	// Add groups configuration for advanced setups
+	if len(sortedModels) > 2 {
+		config.WriteString(cg.generateGroupsConfig(sortedModels))
+	}
+
+	return config.String(), nil
+}
+
+// generateSingleModelConfig generates configuration for a single model with all optimizations
+func (cg *ConfigGenerator) generateSingleModelConfig(model ModelInfo, port int, usedIDs map[string]int) string {
+	var config strings.Builder
+	
+	baseID := cg.generateModelID(model)
+	modelID := baseID
+
+	// Handle duplicates by adding suffix (need mutex for thread safety)
+	if count, exists := usedIDs[baseID]; exists {
+		usedIDs[baseID] = count + 1
+		modelID = fmt.Sprintf("%s-%d", baseID, count+1)
+	} else {
+		usedIDs[baseID] = 1
+	}
+
+	config.WriteString("  \"" + modelID + "\":\n")
+	if model.Size != "" {
+		config.WriteString("    name: \"" + cg.generateModelName(model) + "\"\n")
+		config.WriteString("    description: \"" + cg.generateModelDescription(model) + "\"\n")
+	}
+
+	// Find a draft model if available and enabled
+	var draftModel *ModelInfo
+	if cg.Options.EnableDraftModels {
+		draftModel = FindDraftModel(cg.Models, model, cg.MemoryEstimator)
+	}
+
+	// Generate command
+	config.WriteString("    cmd: |\n")
+	config.WriteString("      ${llama-server-base}\n")
+	config.WriteString("      --model " + model.Path + "\n")
+
+	// Add context size based on optimal memory calculation
+	ctxSize := cg.getOptimalContextSize(model)
+	config.WriteString("      --ctx-size " + strconv.Itoa(ctxSize) + "\n")
+
+	// Add Jinja templating support if enabled
+	if cg.Options.EnableJinja {
+		config.WriteString("      --jinja\n")
+	}
+
+	// Add GPU layer configuration for CUDA/ROCm
+	if cg.Binary.Type == "cuda" || cg.Binary.Type == "rocm" {
+		nglLayers := cg.getOptimalGPULayers(model)
+		config.WriteString("      -ngl " + strconv.Itoa(nglLayers) + "\n")
+	}
+
+	// Add draft model for speculative decoding if available
+	if draftModel != nil {
+		config.WriteString("      --model-draft " + draftModel.Path + "\n")
+		config.WriteString("      -ngld 99\n")
+		config.WriteString("      --draft-max 16\n")
+		config.WriteString("      --draft-min 4\n")
+		config.WriteString("      --draft-p-min 0.4\n")
+
+		// Add GPU assignment for multi-GPU setups
+		if cg.System.HasCUDA && cg.hasMultipleGPUs() {
+			config.WriteString("      --device CUDA0\n")
+			config.WriteString("      --device-draft CUDA1\n")
+		}
+	}
+
+	// Add sampling parameters based on model type and intended use case
+	modelType := cg.detectModelType(model)
+	switch modelType {
+	case "embedding":
+		// Embedding models don't need sampling parameters
+		config.WriteString("      --embedding\n")
+	case "multimodal":
+		// Multimodal models need special handling
+		if model.IsInstruct {
+			config.WriteString("      --temp 0.7\n")
+			config.WriteString("      --repeat-penalty 1.05\n")
+			config.WriteString("      --repeat-last-n 256\n")
+			config.WriteString("      --top-p 0.9\n")
+			config.WriteString("      --top-k 40\n")
+			config.WriteString("      --min-p 0.1\n")
+		}
+	case "code":
+		// Code models benefit most from speculation due to structured syntax
+		config.WriteString("      --temp 0.3\n")        // Very low temp for predictable code
+		config.WriteString("      --repeat-penalty 1.02\n") // Light penalty for code
+		config.WriteString("      --repeat-last-n 128\n")
+		config.WriteString("      --top-p 0.95\n")
+		config.WriteString("      --min-p 0.05\n")
+	case "instruct":
+		// For chat/instruct models - optimized for speculative decoding
+		config.WriteString("      --temp 0.7\n")        // Lower temp = more predictable = better speculation
+		config.WriteString("      --repeat-penalty 1.05\n")
+		config.WriteString("      --repeat-last-n 256\n")
+		config.WriteString("      --top-p 0.9\n")       // More focused sampling helps speculation
+		config.WriteString("      --top-k 40\n")
+		config.WriteString("      --min-p 0.1\n")
+	case "base":
+		// For base/completion models, use moderate sampling
+		config.WriteString("      --temp 0.8\n")
+		config.WriteString("      --repeat-penalty 1.02\n")
+		config.WriteString("      --repeat-last-n 128\n")
+		config.WriteString("      --top-p 0.95\n")
+		config.WriteString("      --min-p 0.05\n")
+	}
+
+	// Add performance optimizations for large models
+	if cg.shouldOptimizeForPerformance(model) {
+		config.WriteString("      --cont-batching\n") // Continuous batching for throughput
+		config.WriteString("      --parallel 4\n")    // Allow multiple parallel requests
+	}
+
+	// Set proxy URL
+	config.WriteString("    proxy: \"http://127.0.0.1:${PORT}\"\n")
+
+	// Add common aliases for popular models
+	aliases := cg.generateAliases(model)
+	if len(aliases) > 0 {
+		config.WriteString("    aliases:\n")
+		for _, alias := range aliases {
+			config.WriteString("      - \"" + alias + "\"\n")
+		}
+	}
+
+	// Add TTL for larger models to save memory
+	if cg.shouldAddTTL(model) {
+		config.WriteString("    ttl: 300  # Auto-unload after 5 minutes of inactivity\n")
+	}
+
+	// Add environment variables for GPU selection
+	if cg.System.HasCUDA && len(cg.Models) > 1 {
+		config.WriteString("    env:\n")
+		config.WriteString("      - \"CUDA_VISIBLE_DEVICES=" + strconv.Itoa(port % cg.getGPUCount()) + "\"\n")
+	}
+
+	config.WriteString("\n")
+	return config.String()
+}
+
+// generateModelID creates a clean model ID from the filename
+func (cg *ConfigGenerator) generateModelID(model ModelInfo) string {
+	name := strings.ToLower(model.Name)
+
+	// Remove common suffixes
+	suffixes := []string{"-instruct", "-chat", "-gguf"}
+	for _, suffix := range suffixes {
+		name = strings.TrimSuffix(name, suffix)
+	}
+
+	// Remove quantization and replace with size if available
+	if model.Quantization != "" {
+		name = strings.ReplaceAll(name, strings.ToLower(model.Quantization), "")
+	}
+
+	// Clean up the name
+	name = strings.ReplaceAll(name, "_", "-")
+	name = strings.ReplaceAll(name, ".", "")
+	name = strings.Trim(name, "-")
+
+	// Add size if available
+	if model.Size != "" {
+		name = name + "-" + strings.ToLower(model.Size)
+	}
+
+	return name
+}
+
+// generateModelName creates a display name
+func (cg *ConfigGenerator) generateModelName(model ModelInfo) string {
+	name := model.Name
+	if model.Size != "" {
+		return fmt.Sprintf("%s %s", extractModelFamily(name), model.Size)
+	}
+	return name
+}
+
+// generateModelDescription creates a description
+func (cg *ConfigGenerator) generateModelDescription(model ModelInfo) string {
+	desc := "Auto-detected model"
+	if model.Size != "" {
+		desc += " (" + model.Size + ")"
+	}
+	if model.Quantization != "" {
+		desc += " with " + model.Quantization + " quantization"
+	}
+	if model.IsInstruct {
+		desc += " - Instruction-tuned"
+	}
+	return desc
+}
+
+// generateAliases creates common aliases for models
+func (cg *ConfigGenerator) generateAliases(model ModelInfo) []string {
+	var aliases []string
+	family := strings.ToLower(extractModelFamily(model.Name))
+
+	// Add family-based aliases
+	switch {
+	case strings.Contains(family, "qwen"):
+		if model.Size == "32B" {
+			aliases = append(aliases, "qwen-large", "coder")
+		} else if model.Size == "7B" || model.Size == "8B" {
+			aliases = append(aliases, "qwen-medium")
+		}
+	case strings.Contains(family, "llama"):
+		if model.Size == "70B" {
+			aliases = append(aliases, "llama-large")
+		} else if model.Size == "8B" {
+			aliases = append(aliases, "llama-medium")
+		}
+		if model.IsInstruct {
+			aliases = append(aliases, "gpt-4o-mini", "gpt-3.5-turbo")
+		}
+	case strings.Contains(family, "mistral"):
+		aliases = append(aliases, "mistral")
+	}
+
+	return aliases
+}
+
+// getOptimalContextSize returns optimal context size based on VRAM and model analysis
+func (cg *ConfigGenerator) getOptimalContextSize(model ModelInfo) int {
+	// Try to use memory estimator for optimal context size
+	if cg.MemoryEstimator != nil && cg.AvailableVRAMGB > 0 {
+		if cg.Options.EnableParallel {
+			fmt.Printf("   🧠 Analyzing memory for: %s\n", filepath.Base(model.Path))
+		}
+		optimalContext, err := cg.MemoryEstimator.FindOptimalContextSize(model.Path, cg.AvailableVRAMGB)
+		if err == nil && optimalContext > 0 {
+			// Ensure it's a reasonable size and not too small
+			if optimalContext < 4096 {
+				optimalContext = 4096 // Minimum context size
+			}
+			// Round to common context sizes
+			commonSizes := []int{4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576}
+			for i := len(commonSizes) - 1; i >= 0; i-- {
+				if optimalContext >= commonSizes[i] {
+					return commonSizes[i]
+				}
+			}
+			return optimalContext
+		}
+	}
+
+	// Fallback to size-based heuristics if memory estimation fails
+	switch model.Size {
+	case "0.5B", "1B", "1.5B":
+		return 8192
+	case "3B", "7B", "8B":
+		return 16384
+	case "13B":
+		return 32768
+	case "32B":
+		return 65536
+	case "70B", "405B":
+		return 131072
+	default:
+		return 16384
+	}
+}
+
+// getOptimalGPULayers calculates optimal number of GPU layers based on VRAM
+func (cg *ConfigGenerator) getOptimalGPULayers(model ModelInfo) int {
+	// Try to use memory estimator for optimal layer calculation
+	if cg.MemoryEstimator != nil && cg.AvailableVRAMGB > 0 {
+		// Get optimal context size first
+		ctxSize := cg.getOptimalContextSize(model)
+
+		// Try layer offloading analysis
+		offloadResult, err := cg.MemoryEstimator.FindOptimalContextSizeWithOffload(model.Path, cg.AvailableVRAMGB)
+		if err == nil && offloadResult != nil {
+			return offloadResult.GPULayers
+		}
+
+		// Fallback: try calculating layers for the context size
+		layerResult, err := cg.MemoryEstimator.CalculateOptimalLayers(model.Path, cg.AvailableVRAMGB, ctxSize)
+		if err == nil && layerResult != nil {
+			return layerResult.GPULayers
+		}
+	}
+
+	// Fallback to size-based heuristics if memory estimation fails
+	switch model.Size {
+	case "0.5B", "1B", "1.5B", "3B", "7B", "8B":
+		return 99 // All layers for small models
+	case "13B":
+		if cg.AvailableVRAMGB >= 16 {
+			return 99 // All layers if enough VRAM
+		}
+		return 32 // Partial offloading
+	case "32B":
+		if cg.AvailableVRAMGB >= 32 {
+			return 99
+		}
+		return 24
+	case "70B", "405B":
+		if cg.AvailableVRAMGB >= 64 {
+			return 99
+		}
+		return 16 // Heavy offloading for very large models
+	default:
+		// For unknown sizes, be conservative
+		if cg.AvailableVRAMGB >= 24 {
+			return 99
+		}
+		return 24
+	}
+}
+
+// shouldAddTTL determines if a model should have TTL
+func (cg *ConfigGenerator) shouldAddTTL(model ModelInfo) bool {
+	switch model.Size {
+	case "32B", "70B", "405B":
+		return true
+	}
+	return false
+}
+
+// shouldOptimizeForPerformance determines if a model needs performance optimizations
+func (cg *ConfigGenerator) shouldOptimizeForPerformance(model ModelInfo) bool {
+	// Enable performance optimizations for larger models or when VRAM is limited
+	switch model.Size {
+	case "13B", "32B", "70B", "405B":
+		return true
+	}
+
+	// Also enable for models that require offloading
+	if cg.MemoryEstimator != nil && cg.AvailableVRAMGB > 0 {
+		// Check if model requires layer offloading
+		memInfo, err := cg.MemoryEstimator.GetModelMemoryInfo(model.Path)
+		if err == nil {
+			minMemory := memInfo.ModelSizeGB + cg.MemoryEstimator.OverheadGB
+			if minMemory > cg.AvailableVRAMGB {
+				return true // Needs offloading, so enable performance opts
+			}
+		}
+	}
+
+	return false
+}
+
+// hasMultipleGPUs checks if system has multiple GPUs
+func (cg *ConfigGenerator) hasMultipleGPUs() bool {
+	// This is a simple heuristic - in a real implementation,
+	// you'd check nvidia-smi or similar
+	return cg.System.HasCUDA
+}
+
+// getGPUCount returns estimated GPU count
+func (cg *ConfigGenerator) getGPUCount() int {
+	if !cg.System.HasCUDA {
+		return 1
+	}
+
+	// Try to get actual GPU count using nvidia-smi
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		// Check Windows paths for nvidia-smi
+		paths := []string{
+			"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe",
+			"C:\\Windows\\System32\\nvidia-smi.exe",
+		}
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				cmd = exec.Command(path, "--list-gpus")
+				output, err := cmd.Output()
+				if err == nil {
+					// Count GPU lines
+					lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+					gpuCount := 0
+					for _, line := range lines {
+						if strings.Contains(line, "GPU") {
+							gpuCount++
+						}
+					}
+					if gpuCount > 0 {
+						return gpuCount
+					}
+				}
+				break
+			}
+		}
+	} else {
+		// Unix systems
+		if _, err := os.Stat("/usr/bin/nvidia-smi"); err == nil {
+			cmd = exec.Command("nvidia-smi", "--list-gpus")
+			output, err := cmd.Output()
+			if err == nil {
+				lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+				gpuCount := 0
+				for _, line := range lines {
+					if strings.Contains(line, "GPU") {
+						gpuCount++
+					}
+				}
+				if gpuCount > 0 {
+					return gpuCount
+				}
+			}
+		}
+	}
+
+	// Fallback - assume 1 GPU if detection fails
+	return 1
+}
+
+// generateGroupsConfig creates groups configuration for multiple models
+func (cg *ConfigGenerator) generateGroupsConfig(models []ModelInfo) string {
+	config := strings.Builder{}
+	config.WriteString("groups:\n")
+
+	// Create size-based groups
+	config.WriteString("  \"large-models\":\n")
+	config.WriteString("    swap: true\n")
+	config.WriteString("    exclusive: true\n")
+	config.WriteString("    members:\n")
+
+	for _, model := range models {
+		if model.IsDraft {
+			continue
+		}
+		switch model.Size {
+		case "32B", "70B", "405B":
+			config.WriteString("      - \"" + cg.generateModelID(model) + "\"\n")
+		}
+	}
+
+	config.WriteString("\n  \"small-models\":\n")
+	config.WriteString("    swap: false\n")
+	config.WriteString("    exclusive: false\n")
+	config.WriteString("    members:\n")
+
+	for _, model := range models {
+		if model.IsDraft {
+			continue
+		}
+		switch model.Size {
+		case "0.5B", "1B", "1.5B", "3B", "7B", "8B":
+			config.WriteString("      - \"" + cg.generateModelID(model) + "\"\n")
+		}
+	}
+
+	config.WriteString("\n")
+	return config.String()
+}
+
+// detectModelType determines the type of model for appropriate configuration
+func (cg *ConfigGenerator) detectModelType(model ModelInfo) string {
+	lower := strings.ToLower(model.Name)
+
+	// Check for embedding models
+	if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") {
+		return "embedding"
+	}
+
+	// Check for code models
+	if strings.Contains(lower, "code") || strings.Contains(lower, "coder") ||
+		strings.Contains(lower, "programming") || strings.Contains(lower, "codellama") ||
+		strings.Contains(lower, "starcoder") || strings.Contains(lower, "deepseek-coder") {
+		return "code"
+	}
+
+	// Check for multimodal models (vision capabilities)
+	if strings.Contains(lower, "vision") || strings.Contains(lower, "mmproj") ||
+		strings.Contains(lower, "internvl") || strings.Contains(lower, "llava") ||
+		strings.Contains(lower, "minicpm") {
+		return "multimodal"
+	}
+
+	// Check for instruct/chat models
+	if model.IsInstruct || strings.Contains(lower, "chat") || strings.Contains(lower, "instruct") ||
+		strings.Contains(lower, "tools") || strings.Contains(lower, "-it") ||
+		strings.Contains(lower, "assistant") {
+		return "instruct"
+	}
+
+	// Default to base model
+	return "base"
+}
+
+// extractModelFamily extracts the model family name from filename
+func extractModelFamily(filename string) string {
+	lower := strings.ToLower(filename)
+
+	families := []string{
+		"qwen", "llama", "codellama", "mistral", "phi", "gemma", "deepseek", "yi",
+	}
+
+	for _, family := range families {
+		if strings.Contains(lower, family) {
+			// Capitalize first letter manually since strings.Title is deprecated
+			if len(family) > 0 {
+				return strings.ToUpper(string(family[0])) + family[1:]
+			}
+		}
+	}
+
+	// Fallback: return first part before number or dash
+	parts := strings.FieldsFunc(filename, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.'
+	})
+
+	if len(parts) > 0 {
+		return parts[0]
+	}
+
+	return "Unknown"
+}
+
+// SaveConfig saves the generated config to a file
+func (cg *ConfigGenerator) SaveConfig(configPath string) error {
+	config, err := cg.GenerateConfig()
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, []byte(config), 0644)
+}

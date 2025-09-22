@@ -22,7 +22,7 @@ type ThemeProviderProps = {
 };
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [appTitle, setAppTitle] = usePersistentState("app-title", "llama-swap");
+  const [appTitle, setAppTitle] = usePersistentState("app-title", "Clara Core");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
 
   /**

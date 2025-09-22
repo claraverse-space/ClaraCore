@@ -1,56 +1,57 @@
-import { useCallback } from "react";
-import { RiMoonFill, RiSunFill } from "react-icons/ri";
+import { RiCpuLine } from "react-icons/ri";
 import { NavLink, type NavLinkRenderProps } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeProvider";
 import ConnectionStatusIcon from "./ConnectionStatus";
 
 export function Header() {
-  const { screenWidth, toggleTheme, isDarkMode, appTitle, setAppTitle } = useTheme();
-  const handleTitleChange = useCallback(
-    (newTitle: string) => {
-      setAppTitle(newTitle.replace(/\n/g, "").trim().substring(0, 64) || "llama-swap");
-    },
-    [setAppTitle]
-  );
+  const { screenWidth } = useTheme();
 
   const navLinkClass = ({ isActive }: NavLinkRenderProps) =>
-    `text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-gray-100 p-1 ${isActive ? "font-semibold" : ""}`;
+    `px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+      isActive
+        ? "bg-primary text-white shadow-sm"
+        : "text-gray-300 hover:text-white hover:bg-surface-hover"
+    }`;
 
   return (
-    <header className="flex items-center justify-between bg-surface border-b border-border p-2 px-4 h-[75px]">
-      {screenWidth !== "xs" && screenWidth !== "sm" && (
-        <h1
-          contentEditable
-          suppressContentEditableWarning
-          className="p-0 outline-none hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-          onBlur={(e) => handleTitleChange(e.currentTarget.textContent || "(set title)")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              handleTitleChange(e.currentTarget.textContent || "(set title)");
-              e.currentTarget.blur();
-            }
-          }}
-        >
-          {appTitle}
-        </h1>
-      )}
+    <nav className="flex items-center justify-between glass-surface px-6 py-3 h-16 sticky top-0 z-50">
+      {/* ClaraCore Branding */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-primary to-sakura-600 rounded-lg shadow-sm">
+          <RiCpuLine className="w-5 h-5 text-white" />
+        </div>
+        <div className="flex flex-col">
+          <h1 className="text-lg font-bold text-white leading-none">
+            ClaraCore
+          </h1>
+          {screenWidth !== "xs" && (
+            <span className="text-xs text-gray-400 leading-none">
+              AI Model Manager
+            </span>
+          )}
+        </div>
+      </div>
 
-      <menu className="flex items-center gap-4">
-        <NavLink to="/" className={navLinkClass} type="button">
-          Logs
-        </NavLink>
-        <NavLink to="/models" className={navLinkClass} type="button">
-          Models
-        </NavLink>
-        <NavLink to="/activity" className={navLinkClass} type="button">
-          Activity
-        </NavLink>
-        <button className="" onClick={toggleTheme}>
-          {isDarkMode ? <RiMoonFill /> : <RiSunFill />}
-        </button>
-        <ConnectionStatusIcon />
-      </menu>
-    </header>
+      {/* Navigation & Status */}
+      <div className="flex items-center gap-2">
+        {/* Navigation Links */}
+        <div className="flex items-center gap-1 mr-4">
+          <NavLink to="/" className={navLinkClass}>
+            Logs
+          </NavLink>
+          <NavLink to="/models" className={navLinkClass}>
+            Models
+          </NavLink>
+          <NavLink to="/activity" className={navLinkClass}>
+            Activity
+          </NavLink>
+        </div>
+
+        {/* Status */}
+        <div className="flex items-center gap-2 pl-4 border-l border-gray-600">
+          <ConnectionStatusIcon />
+        </div>
+      </div>
+    </nav>
   );
 }

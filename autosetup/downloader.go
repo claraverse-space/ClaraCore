@@ -2,6 +2,7 @@ package autosetup
 
 import (
 	"archive/zip"
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +22,24 @@ type SystemInfo struct {
 	HasROCm      bool
 	HasVulkan    bool
 	HasMetal     bool
+	// Extended system information
+	CPUCores      int
+	PhysicalCores int
+	TotalRAMGB    float64
+	CUDAVersion   string
+	ROCmVersion   string
+	VRAMDetails   []GPUInfo
+	TotalVRAMGB   float64
+	HasMLX        bool
+	HasIntel      bool
+}
+
+// GPUInfo contains information about individual GPUs
+type GPUInfo struct {
+	Name     string
+	VRAMGB   float64
+	Type     string // "CUDA", "ROCm", "MLX", "Intel"
+	DeviceID int
 }
 
 // BinaryInfo contains information about the downloaded binary
@@ -392,4 +412,1069 @@ func detectVulkan() bool {
 func detectMetal() bool {
 	// Metal is only available on macOS
 	return runtime.GOOS == "darwin"
+}
+
+// Enhanced system detection functions
+
+// EnhanceSystemInfo adds detailed system information to existing SystemInfo
+func EnhanceSystemInfo(info *SystemInfo) error {
+	// Add CPU information
+	info.CPUCores = runtime.NumCPU()
+	info.PhysicalCores = detectPhysicalCores()
+
+	// Add RAM information
+	info.TotalRAMGB = detectTotalRAM()
+
+	// Enhanced GPU detection
+	enhanceGPUDetection(info)
+
+	return nil
+}
+
+// detectPhysicalCores detects the number of physical CPU cores
+func detectPhysicalCores() int {
+	switch runtime.GOOS {
+	case "windows":
+		return detectWindowsPhysicalCores()
+	case "linux":
+		return detectLinuxPhysicalCores()
+	case "darwin":
+		return detectMacOSPhysicalCores()
+	default:
+		return runtime.NumCPU() / 2 // Fallback assumption
+	}
+}
+
+// detectWindowsPhysicalCores detects physical cores on Windows
+func detectWindowsPhysicalCores() int {
+	cmd := exec.Command("wmic", "cpu", "get", "NumberOfCores", "/value")
+	output, err := cmd.Output()
+	if err != nil {
+		return runtime.NumCPU() / 2
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "NumberOfCores=") {
+			coreStr := strings.TrimPrefix(line, "NumberOfCores=")
+			coreStr = strings.TrimSpace(coreStr)
+			if cores, err := strconv.Atoi(coreStr); err == nil {
+				return cores
+			}
+		}
+	}
+	return runtime.NumCPU() / 2
+}
+
+// detectLinuxPhysicalCores detects physical cores on Linux
+func detectLinuxPhysicalCores() int {
+	file, err := os.Open("/proc/cpuinfo")
+	if err != nil {
+		return runtime.NumCPU() / 2
+	}
+	defer file.Close()
+
+	physicalIDs := make(map[string]bool)
+	coresPerSocket := 0
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "physical id") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				physicalIDs[strings.TrimSpace(parts[1])] = true
+			}
+		} else if strings.HasPrefix(line, "cpu cores") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				if cores, err := strconv.Atoi(strings.TrimSpace(parts[1])); err == nil {
+					coresPerSocket = cores
+				}
+			}
+		}
+	}
+
+	if len(physicalIDs) > 0 && coresPerSocket > 0 {
+		return len(physicalIDs) * coresPerSocket
+	}
+	return runtime.NumCPU() / 2
+}
+
+// detectMacOSPhysicalCores detects physical cores on macOS
+func detectMacOSPhysicalCores() int {
+	cmd := exec.Command("sysctl", "-n", "hw.physicalcpu")
+	output, err := cmd.Output()
+	if err != nil {
+		return runtime.NumCPU() / 2
+	}
+
+	coreStr := strings.TrimSpace(string(output))
+	if cores, err := strconv.Atoi(coreStr); err == nil {
+		return cores
+	}
+	return runtime.NumCPU() / 2
+}
+
+// detectTotalRAM detects total system RAM in GB
+func detectTotalRAM() float64 {
+	switch runtime.GOOS {
+	case "windows":
+		return detectWindowsRAM()
+	case "linux":
+		return detectLinuxRAM()
+	case "darwin":
+		return detectMacOSRAM()
+	default:
+		return 16.0 // Fallback
+	}
+}
+
+// detectWindowsRAM detects RAM on Windows
+func detectWindowsRAM() float64 {
+	cmd := exec.Command("wmic", "computersystem", "get", "TotalPhysicalMemory", "/value")
+	output, err := cmd.Output()
+	if err != nil {
+		return 16.0
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "TotalPhysicalMemory=") {
+			memStr := strings.TrimPrefix(line, "TotalPhysicalMemory=")
+			memStr = strings.TrimSpace(memStr)
+			if memBytes, err := strconv.ParseInt(memStr, 10, 64); err == nil {
+				return float64(memBytes) / (1024 * 1024 * 1024)
+			}
+		}
+	}
+	return 16.0
+}
+
+// detectLinuxRAM detects RAM on Linux
+func detectLinuxRAM() float64 {
+	file, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 16.0
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "MemTotal:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				if memKB, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+					return float64(memKB) / (1024 * 1024)
+				}
+			}
+		}
+	}
+	return 16.0
+}
+
+// detectMacOSRAM detects RAM on macOS
+func detectMacOSRAM() float64 {
+	cmd := exec.Command("sysctl", "-n", "hw.memsize")
+	output, err := cmd.Output()
+	if err != nil {
+		return 16.0
+	}
+
+	memStr := strings.TrimSpace(string(output))
+	if memBytes, err := strconv.ParseInt(memStr, 10, 64); err == nil {
+		return float64(memBytes) / (1024 * 1024 * 1024)
+	}
+	return 16.0
+}
+
+// enhanceGPUDetection adds detailed GPU and VRAM information
+func enhanceGPUDetection(info *SystemInfo) {
+	// Enhanced CUDA detection
+	if info.HasCUDA {
+		enhanceCUDADetection(info)
+	}
+
+	// Enhanced ROCm detection
+	if info.HasROCm {
+		enhanceROCmDetection(info)
+	}
+
+	// MLX detection for Apple Silicon
+	if runtime.GOOS == "darwin" {
+		enhanceMLXDetection(info)
+	}
+
+	// Intel GPU detection
+	enhanceIntelGPUDetection(info)
+
+	// Calculate total VRAM
+	for _, gpu := range info.VRAMDetails {
+		info.TotalVRAMGB += gpu.VRAMGB
+	}
+}
+
+// enhanceCUDADetection gets detailed NVIDIA GPU information
+func enhanceCUDADetection(info *SystemInfo) {
+	// Try nvidia-smi for detailed info
+	cmd := exec.Command("nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits")
+	output, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	// Get CUDA version
+	versionCmd := exec.Command("nvcc", "--version")
+	if versionOutput, err := versionCmd.Output(); err == nil {
+		lines := strings.Split(string(versionOutput), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "release") {
+				parts := strings.Fields(line)
+				for i, part := range parts {
+					if part == "release" && i+1 < len(parts) {
+						info.CUDAVersion = strings.TrimSuffix(parts[i+1], ",")
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Parse GPU info
+	lines := strings.Split(string(output), "\n")
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Split(line, ", ")
+		if len(parts) >= 2 {
+			name := strings.TrimSpace(parts[0])
+			vramStr := strings.TrimSpace(parts[1])
+
+			if vramMB, err := strconv.ParseFloat(vramStr, 64); err == nil {
+				info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+					Name:     name,
+					VRAMGB:   vramMB / 1024.0,
+					Type:     "CUDA",
+					DeviceID: i,
+				})
+			}
+		}
+	}
+}
+
+// enhanceROCmDetection gets detailed AMD GPU information
+func enhanceROCmDetection(info *SystemInfo) {
+	// Try rocm-smi
+	cmd := exec.Command("rocm-smi", "--showproductname", "--showmeminfo", "vram")
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback: assume basic AMD GPU
+		info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+			Name:     "AMD GPU",
+			VRAMGB:   8.0, // Conservative estimate
+			Type:     "ROCm",
+			DeviceID: 0,
+		})
+		return
+	}
+
+	// Parse ROCm GPU info (simplified)
+	lines := strings.Split(string(output), "\n")
+	deviceID := 0
+	for _, line := range lines {
+		if strings.Contains(line, "GPU") && strings.Contains(line, "MB") {
+			// Basic parsing - would need more sophisticated parsing
+			info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+				Name:     "AMD GPU",
+				VRAMGB:   8.0, // Placeholder
+				Type:     "ROCm",
+				DeviceID: deviceID,
+			})
+			deviceID++
+		}
+	}
+}
+
+// enhanceMLXDetection detects Apple Metal/MLX capabilities
+func enhanceMLXDetection(info *SystemInfo) {
+	// Check for Metal support
+	cmd := exec.Command("system_profiler", "SPDisplaysDataType")
+	output, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	outputStr := string(output)
+	if strings.Contains(outputStr, "Metal") {
+		info.HasMLX = true
+
+		// Parse for Apple Silicon GPU info
+		// This is simplified - real implementation would parse more details
+		info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+			Name:     "Apple GPU",
+			VRAMGB:   16.0, // Placeholder - shared memory
+			Type:     "MLX",
+			DeviceID: 0,
+		})
+	}
+}
+
+// enhanceIntelGPUDetection detects Intel integrated GPUs
+func enhanceIntelGPUDetection(info *SystemInfo) {
+	switch runtime.GOOS {
+	case "windows":
+		cmd := exec.Command("wmic", "path", "win32_VideoController", "get", "name")
+		output, err := cmd.Output()
+		if err != nil {
+			return
+		}
+
+		if strings.Contains(strings.ToLower(string(output)), "intel") {
+			info.HasIntel = true
+			info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+				Name:     "Intel GPU",
+				VRAMGB:   4.0, // Shared memory estimate
+				Type:     "Intel",
+				DeviceID: 0,
+			})
+		}
+	case "linux":
+		// Check for Intel GPU on Linux
+		cmd := exec.Command("lspci", "-nn")
+		output, err := cmd.Output()
+		if err != nil {
+			return
+		}
+
+		if strings.Contains(strings.ToLower(string(output)), "intel") &&
+			strings.Contains(strings.ToLower(string(output)), "graphics") {
+			info.HasIntel = true
+			info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+				Name:     "Intel GPU",
+				VRAMGB:   4.0, // Shared memory estimate
+				Type:     "Intel",
+				DeviceID: 0,
+			})
+		}
+	}
+}
+
+// ModelFileInfo contains detailed information about a model file
+type ModelFileInfo struct {
+	Path           string
+	ActualSizeGB   float64
+	LayerCount     int
+	ContextLength  int
+	Architecture   string
+	ParameterCount string
+	Quantization   string
+	SlidingWindow  uint32
+}
+
+// GetModelFileInfo reads detailed information from a GGUF model file
+func GetModelFileInfo(modelPath string) (*ModelFileInfo, error) {
+	// Get file size
+	fileInfo, err := os.Stat(modelPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	actualSize := float64(fileInfo.Size()) / (1024 * 1024 * 1024) // Convert to GB
+
+	// Handle multi-part models
+	if strings.Contains(filepath.Base(modelPath), "-of-") {
+		actualSize = getTotalMultiPartSize(modelPath)
+	}
+
+	// Read GGUF metadata
+	metadata, err := ReadGGUFMetadata(modelPath)
+	if err != nil {
+		return &ModelFileInfo{
+			Path:          modelPath,
+			ActualSizeGB:  actualSize,
+			LayerCount:    0,
+			Quantization:  detectQuantizationFromFilename(modelPath),
+			SlidingWindow: 0,
+		}, nil // Return partial info even if GGUF reading fails
+	}
+
+	return &ModelFileInfo{
+		Path:           modelPath,
+		ActualSizeGB:   actualSize,
+		LayerCount:     int(metadata.BlockCount),
+		ContextLength:  int(metadata.ContextLength),
+		Architecture:   metadata.Architecture,
+		ParameterCount: metadata.ModelName,
+		Quantization:   detectQuantizationFromFilename(modelPath),
+		SlidingWindow:  metadata.SlidingWindow,
+	}, nil
+}
+
+// getTotalMultiPartSize calculates total size of multi-part models
+func getTotalMultiPartSize(modelPath string) float64 {
+	dir := filepath.Dir(modelPath)
+	base := filepath.Base(modelPath)
+
+	// Extract pattern like "model-00001-of-00003.gguf"
+	parts := strings.Split(base, "-")
+	if len(parts) < 3 {
+		return 0
+	}
+
+	var totalSize int64
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+
+	for _, file := range files {
+		if strings.Contains(file.Name(), "-of-") && strings.HasSuffix(file.Name(), ".gguf") {
+			if info, err := file.Info(); err == nil {
+				totalSize += info.Size()
+			}
+		}
+	}
+
+	return float64(totalSize) / (1024 * 1024 * 1024)
+}
+
+// detectQuantizationFromFilename detects quantization type from filename
+func detectQuantizationFromFilename(filename string) string {
+	filename = strings.ToUpper(filename)
+
+	quantTypes := []string{"Q4_K_M", "Q4_K_S", "Q5_K_M", "Q5_K_S", "Q8_0", "Q6_K", "IQ4_XS", "F16", "F32"}
+
+	for _, qtype := range quantTypes {
+		if strings.Contains(filename, qtype) {
+			return qtype
+		}
+	}
+
+	return "Unknown"
+}
+
+// PrintSystemInfo prints comprehensive system information
+func PrintSystemInfo(info *SystemInfo) {
+	fmt.Printf("🖥️  System Information:\n")
+	fmt.Printf("   OS: %s/%s\n", info.OS, info.Architecture)
+	fmt.Printf("   CPU Cores: %d logical, %d physical\n", info.CPUCores, info.PhysicalCores)
+	fmt.Printf("   Total RAM: %.1f GB\n", info.TotalRAMGB)
+
+	fmt.Printf("🎮 GPU Detection:\n")
+	if info.HasCUDA {
+		fmt.Printf("   ✅ NVIDIA CUDA detected")
+		if info.CUDAVersion != "" {
+			fmt.Printf(" (version %s)", info.CUDAVersion)
+		}
+		fmt.Printf("\n")
+	}
+	if info.HasROCm {
+		fmt.Printf("   ✅ AMD ROCm detected")
+		if info.ROCmVersion != "" {
+			fmt.Printf(" (version %s)", info.ROCmVersion)
+		}
+		fmt.Printf("\n")
+	}
+	if info.HasMLX {
+		fmt.Printf("   ✅ Apple MLX detected\n")
+	}
+	if info.HasIntel {
+		fmt.Printf("   ✅ Intel GPU detected\n")
+	}
+	if info.HasVulkan {
+		fmt.Printf("   ✅ Vulkan detected\n")
+	}
+	if info.HasMetal {
+		fmt.Printf("   ✅ Metal detected\n")
+	}
+
+	if len(info.VRAMDetails) > 0 {
+		fmt.Printf("   Total VRAM: %.1f GB\n", info.TotalVRAMGB)
+		for i, gpu := range info.VRAMDetails {
+			fmt.Printf("     GPU %d: %s (%.1f GB %s)\n", i, gpu.Name, gpu.VRAMGB, gpu.Type)
+		}
+	} else {
+		fmt.Printf("   No dedicated GPUs detected\n")
+	}
+}
+
+// PrintModelInfo prints detailed model information
+func PrintModelInfo(models []ModelInfo, modelsPath string) {
+	fmt.Printf("📁 Model Analysis:\n")
+
+	var totalSizeGB float64
+	validModels := 0
+
+	for _, model := range models {
+		if model.IsDraft {
+			continue
+		}
+
+		modelInfo, err := GetModelFileInfo(model.Path)
+		if err != nil {
+			fmt.Printf("   ⚠️  %s: Failed to read file info\n", model.Name)
+			continue
+		}
+
+		totalSizeGB += modelInfo.ActualSizeGB
+		validModels++
+
+		fmt.Printf("   📦 %s:\n", model.Name)
+		fmt.Printf("      Size: %.2f GB\n", modelInfo.ActualSizeGB)
+		if modelInfo.LayerCount > 0 {
+			fmt.Printf("      Layers: %d\n", modelInfo.LayerCount)
+		}
+		if modelInfo.ContextLength > 0 {
+			fmt.Printf("      Max Context: %d tokens\n", modelInfo.ContextLength)
+		}
+		if modelInfo.Architecture != "" {
+			fmt.Printf("      Architecture: %s\n", modelInfo.Architecture)
+		}
+		if modelInfo.SlidingWindow > 0 {
+			fmt.Printf("      SWA Support: Yes (window size: %d)\n", modelInfo.SlidingWindow)
+		}
+		fmt.Printf("      Quantization: %s\n", modelInfo.Quantization)
+	}
+
+	fmt.Printf("   📊 Summary: %d models, %.2f GB total\n", validModels, totalSizeGB)
+}
+
+// DebugMMProjMetadata reads and prints all metadata keys from mmproj files
+func DebugMMProjMetadata(modelsPath string) {
+	fmt.Printf("🔍 Scanning for mmproj files in: %s\n", modelsPath)
+
+	// Find all mmproj files
+	var mmprojFiles []string
+
+	err := filepath.Walk(modelsPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if !info.IsDir() && strings.Contains(strings.ToLower(info.Name()), "mmproj") && strings.HasSuffix(path, ".gguf") {
+			mmprojFiles = append(mmprojFiles, path)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		fmt.Printf("Error scanning directory: %v\n", err)
+		return
+	}
+
+	fmt.Printf("📦 Found %d mmproj files:\n", len(mmprojFiles))
+
+	for i, mmprojPath := range mmprojFiles {
+		fmt.Printf("\n--- mmproj file %d: %s ---\n", i+1, filepath.Base(mmprojPath))
+
+		// Try to read GGUF metadata
+		allKeys, err := ReadAllGGUFKeys(mmprojPath)
+		if err != nil {
+			fmt.Printf("❌ Failed to read metadata: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("📊 Total metadata keys found: %d\n", len(allKeys))
+		fmt.Printf("🎯 Interesting keys:\n")
+
+		// Print interesting keys for vision models
+		interestingPrefixes := []string{
+			"clip.",
+			"vision.",
+			"projector.",
+			"original.",
+			"general.",
+			"model.",
+			"llava.",
+			"mm.",
+		}
+
+		for key, value := range allKeys {
+			for _, prefix := range interestingPrefixes {
+				if strings.HasPrefix(strings.ToLower(key), prefix) {
+					fmt.Printf("   %s: %v\n", key, value)
+					break
+				}
+			}
+		}
+
+		fmt.Printf("\n📝 All keys (first 50):\n")
+		count := 0
+		for key := range allKeys {
+			if count >= 50 {
+				fmt.Printf("   ... and %d more keys\n", len(allKeys)-50)
+				break
+			}
+			fmt.Printf("   - %s\n", key)
+			count++
+		}
+	}
+
+	if len(mmprojFiles) == 0 {
+		fmt.Printf("❌ No mmproj files found\n")
+	}
+}
+
+// DebugModelMetadata reads and prints metadata keys from sample main model files to compare with mmproj
+func DebugModelMetadata(models []ModelInfo) {
+	fmt.Printf("\n🔍 Analyzing main model metadata for matching keys...\n")
+
+	// Pick a few different models to analyze (max 3 for brevity)
+	sampledModels := []ModelInfo{}
+	for _, model := range models {
+		if !model.IsDraft && len(sampledModels) < 3 {
+			sampledModels = append(sampledModels, model)
+		}
+		if len(sampledModels) >= 3 {
+			break
+		}
+	}
+
+	if len(sampledModels) == 0 {
+		fmt.Printf("❌ No valid models found for analysis\n")
+		return
+	}
+
+	fmt.Printf("📦 Analyzing %d sample models:\n", len(sampledModels))
+
+	for i, model := range sampledModels {
+		fmt.Printf("\n--- Model %d: %s ---\n", i+1, model.Name)
+
+		// Try to read GGUF metadata
+		allKeys, err := ReadAllGGUFKeys(model.Path)
+		if err != nil {
+			fmt.Printf("❌ Failed to read metadata: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("📊 Total metadata keys found: %d\n", len(allKeys))
+		fmt.Printf("🎯 Keys that might help match with mmproj:\n")
+
+		// Print keys that might be useful for matching with mmproj files
+		matchingPrefixes := []string{
+			"general.",
+			"llama.",
+			"model.",
+			"tokenizer.",
+			"clip.",
+			"vision.",
+		}
+
+		for key, value := range allKeys {
+			for _, prefix := range matchingPrefixes {
+				if strings.HasPrefix(strings.ToLower(key), prefix) {
+					// Only show keys that might contain model identification info
+					if strings.Contains(strings.ToLower(key), "name") ||
+						strings.Contains(strings.ToLower(key), "base") ||
+						strings.Contains(strings.ToLower(key), "type") ||
+						strings.Contains(strings.ToLower(key), "arch") ||
+						strings.Contains(strings.ToLower(key), "family") ||
+						strings.Contains(strings.ToLower(key), "id") {
+						fmt.Printf("   %s: %v\n", key, value)
+					}
+					break
+				}
+			}
+		}
+
+		fmt.Printf("\n📝 All general.* keys:\n")
+		for key, value := range allKeys {
+			if strings.HasPrefix(strings.ToLower(key), "general.") {
+				fmt.Printf("   %s: %v\n", key, value)
+			}
+		}
+	}
+}
+
+// MMProjMatch represents a matched mmproj file with a main model
+type MMProjMatch struct {
+	ModelPath    string
+	ModelName    string
+	MMProjPath   string
+	MMProjName   string
+	MatchType    string  // "architecture", "basename", "name_similarity"
+	Confidence   float64 // 0.0 to 1.0
+	MatchDetails string
+}
+
+// FindMMProjMatches finds and matches mmproj files with their corresponding main models
+func FindMMProjMatches(models []ModelInfo, modelsPath string) []MMProjMatch {
+	fmt.Printf("🔗 Searching for mmproj-to-model matches...\n")
+
+	// Find all mmproj files
+	var mmprojFiles []string
+	err := filepath.Walk(modelsPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && strings.Contains(strings.ToLower(info.Name()), "mmproj") && strings.HasSuffix(path, ".gguf") {
+			mmprojFiles = append(mmprojFiles, path)
+		}
+		return nil
+	})
+
+	if err != nil {
+		fmt.Printf("❌ Error scanning for mmproj files: %v\n", err)
+		return []MMProjMatch{}
+	}
+
+	var matches []MMProjMatch
+
+	// For each mmproj file, try to find matching models
+	for _, mmprojPath := range mmprojFiles {
+		fmt.Printf("\n🔍 Analyzing mmproj: %s\n", filepath.Base(mmprojPath))
+
+		// Read mmproj metadata
+		mmprojMeta, err := ReadAllGGUFKeys(mmprojPath)
+		if err != nil {
+			fmt.Printf("   ❌ Failed to read mmproj metadata: %v\n", err)
+			continue
+		}
+
+		// Extract key matching fields from mmproj
+		mmprojArch := getStringValue(mmprojMeta, "clip.projector_type")
+		mmprojName := getStringValue(mmprojMeta, "general.name")
+		mmprojBasename := getStringValue(mmprojMeta, "general.basename")
+		mmprojBaseModelName := getStringValue(mmprojMeta, "general.base_model.0.name")
+
+		fmt.Printf("   📋 mmproj fields: arch=%s, name=%s, basename=%s, base_model=%s\n",
+			mmprojArch, mmprojName, mmprojBasename, mmprojBaseModelName)
+
+		// Try to match with each main model
+		for _, model := range models {
+			if model.IsDraft {
+				continue // Skip draft models (including other mmproj files)
+			}
+
+			// Read model metadata
+			modelMeta, err := ReadAllGGUFKeys(model.Path)
+			if err != nil {
+				continue
+			}
+
+			// Extract key matching fields from model
+			modelArch := getStringValue(modelMeta, "general.architecture")
+			modelName := getStringValue(modelMeta, "general.name")
+			modelBasename := getStringValue(modelMeta, "general.basename")
+			modelBaseModelName := getStringValue(modelMeta, "general.base_model.0.name")
+
+			// Try different matching strategies
+
+			// 1. Direct architecture matching (highest confidence)
+			if mmprojArch != "" && modelArch != "" &&
+				strings.EqualFold(mmprojArch, modelArch) {
+				matches = append(matches, MMProjMatch{
+					ModelPath:    model.Path,
+					ModelName:    model.Name,
+					MMProjPath:   mmprojPath,
+					MMProjName:   filepath.Base(mmprojPath),
+					MatchType:    "architecture",
+					Confidence:   0.95,
+					MatchDetails: fmt.Sprintf("arch: %s → %s", mmprojArch, modelArch),
+				})
+				fmt.Printf("   ✅ ARCH MATCH: %s (conf: 0.95)\n", model.Name)
+				continue
+			}
+
+			// 2. Direct basename matching (high confidence)
+			if mmprojBasename != "" && modelBasename != "" &&
+				strings.EqualFold(mmprojBasename, modelBasename) {
+				matches = append(matches, MMProjMatch{
+					ModelPath:    model.Path,
+					ModelName:    model.Name,
+					MMProjPath:   mmprojPath,
+					MMProjName:   filepath.Base(mmprojPath),
+					MatchType:    "basename",
+					Confidence:   0.90,
+					MatchDetails: fmt.Sprintf("basename: %s → %s", mmprojBasename, modelBasename),
+				})
+				fmt.Printf("   ✅ BASENAME MATCH: %s (conf: 0.90)\n", model.Name)
+				continue
+			}
+
+			// 3. Name similarity matching (medium confidence)
+			nameSimilarity := calculateNameSimilarity(mmprojName, modelName)
+			if nameSimilarity > 0.7 {
+				matches = append(matches, MMProjMatch{
+					ModelPath:    model.Path,
+					ModelName:    model.Name,
+					MMProjPath:   mmprojPath,
+					MMProjName:   filepath.Base(mmprojPath),
+					MatchType:    "name_similarity",
+					Confidence:   nameSimilarity,
+					MatchDetails: fmt.Sprintf("name similarity: %.2f", nameSimilarity),
+				})
+				fmt.Printf("   ✅ NAME MATCH: %s (conf: %.2f)\n", model.Name, nameSimilarity)
+				continue
+			}
+
+			// 4. Base model name similarity (medium confidence)
+			if mmprojBaseModelName != "" && modelBaseModelName != "" {
+				baseModelSimilarity := calculateNameSimilarity(mmprojBaseModelName, modelBaseModelName)
+				if baseModelSimilarity > 0.7 {
+					matches = append(matches, MMProjMatch{
+						ModelPath:    model.Path,
+						ModelName:    model.Name,
+						MMProjPath:   mmprojPath,
+						MMProjName:   filepath.Base(mmprojPath),
+						MatchType:    "base_model_similarity",
+						Confidence:   baseModelSimilarity,
+						MatchDetails: fmt.Sprintf("base model similarity: %.2f", baseModelSimilarity),
+					})
+					fmt.Printf("   ✅ BASE MODEL MATCH: %s (conf: %.2f)\n", model.Name, baseModelSimilarity)
+					continue
+				}
+			}
+		}
+	}
+
+	// Report summary
+	fmt.Printf("\n📊 Matching Results:\n")
+	if len(matches) == 0 {
+		fmt.Printf("   ❌ No mmproj matches found\n")
+	} else {
+		fmt.Printf("   ✅ Found %d mmproj matches:\n", len(matches))
+		for i, match := range matches {
+			fmt.Printf("   %d. %s ↔ %s\n", i+1, match.MMProjName, match.ModelName)
+			fmt.Printf("      Type: %s, Confidence: %.2f, Details: %s\n",
+				match.MatchType, match.Confidence, match.MatchDetails)
+		}
+	}
+
+	return matches
+}
+
+// getStringValue safely extracts a string value from metadata map
+func getStringValue(metadata map[string]interface{}, key string) string {
+	if val, exists := metadata[key]; exists {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+// calculateNameSimilarity calculates similarity between two names using fuzzy matching
+func calculateNameSimilarity(name1, name2 string) float64 {
+	if name1 == "" || name2 == "" {
+		return 0.0
+	}
+
+	// Normalize names for comparison
+	norm1 := strings.ToLower(strings.ReplaceAll(name1, "-", " "))
+	norm2 := strings.ToLower(strings.ReplaceAll(name2, "-", " "))
+
+	// Exact match
+	if norm1 == norm2 {
+		return 1.0
+	}
+
+	// Contains check (bidirectional)
+	if strings.Contains(norm1, norm2) || strings.Contains(norm2, norm1) {
+		return 0.8
+	}
+
+	// Word-based similarity
+	words1 := strings.Fields(norm1)
+	words2 := strings.Fields(norm2)
+
+	commonWords := 0
+	totalWords := len(words1) + len(words2)
+
+	for _, w1 := range words1 {
+		for _, w2 := range words2 {
+			if w1 == w2 {
+				commonWords++
+				break
+			}
+		}
+	}
+
+	if totalWords == 0 {
+		return 0.0
+	}
+
+	return float64(commonWords*2) / float64(totalWords)
+}
+
+// DebugEmbeddingDetection analyzes models to debug embedding detection using GGUF metadata
+func DebugEmbeddingDetection(models []ModelInfo) {
+	fmt.Printf("\n🔍 Debugging embedding model detection using GGUF metadata...\n")
+
+	embeddingModels := []string{}
+	chatModels := []string{}
+	unknownModels := []string{}
+
+	for _, model := range models {
+		if model.IsDraft {
+			continue // Skip draft models
+		}
+
+		fmt.Printf("\n--- Analyzing: %s ---\n", model.Name)
+
+		// Read GGUF metadata
+		metadata, err := ReadAllGGUFKeys(model.Path)
+		if err != nil {
+			fmt.Printf("❌ Failed to read metadata: %v\n", err)
+			unknownModels = append(unknownModels, model.Name)
+			continue
+		}
+
+		// Extract key fields for embedding detection
+		architecture := getStringValue(metadata, "general.architecture")
+		modelType := getStringValue(metadata, "tokenizer.ggml.model")
+		contextLength := getIntValue(metadata, fmt.Sprintf("%s.context_length", architecture))
+		embeddingLength := getIntValue(metadata, fmt.Sprintf("%s.embedding_length", architecture))
+		poolingType := getStringValue(metadata, fmt.Sprintf("%s.pooling_type", architecture))
+		hasRope := hasKey(metadata, fmt.Sprintf("%s.rope", architecture))
+		hasHeadCount := hasKey(metadata, fmt.Sprintf("%s.head_count", architecture))
+
+		fmt.Printf("   📋 Metadata Analysis:\n")
+		fmt.Printf("      Architecture: %s\n", architecture)
+		fmt.Printf("      Model Type: %s\n", modelType)
+		fmt.Printf("      Context Length: %d\n", contextLength)
+		fmt.Printf("      Embedding Length: %d\n", embeddingLength)
+		fmt.Printf("      Pooling Type: %s\n", poolingType)
+		fmt.Printf("      Has RoPE: %t\n", hasRope)
+		fmt.Printf("      Has Head Count: %t\n", hasHeadCount)
+
+		// Apply embedding detection logic
+		isEmbedding := detectEmbeddingFromMetadata(metadata, architecture)
+		currentlyDetectedAsEmbedding := strings.Contains(strings.ToLower(model.Name), "embed")
+
+		fmt.Printf("   🎯 Detection Results:\n")
+		fmt.Printf("      New Algorithm: %s\n", boolToEmoji(isEmbedding))
+		fmt.Printf("      Current Algorithm: %s\n", boolToEmoji(currentlyDetectedAsEmbedding))
+
+		if isEmbedding != currentlyDetectedAsEmbedding {
+			fmt.Printf("   ⚠️  MISMATCH DETECTED!\n")
+		}
+
+		if isEmbedding {
+			embeddingModels = append(embeddingModels, model.Name)
+		} else {
+			chatModels = append(chatModels, model.Name)
+		}
+	}
+
+	// Summary
+	fmt.Printf("\n📊 Detection Summary:\n")
+	fmt.Printf("   📝 Embedding Models (%d):\n", len(embeddingModels))
+	for _, name := range embeddingModels {
+		fmt.Printf("      - %s\n", name)
+	}
+	fmt.Printf("   💬 Chat Models (%d):\n", len(chatModels))
+	for _, name := range chatModels {
+		fmt.Printf("      - %s\n", name)
+	}
+	if len(unknownModels) > 0 {
+		fmt.Printf("   ❓ Unknown Models (%d):\n", len(unknownModels))
+		for _, name := range unknownModels {
+			fmt.Printf("      - %s\n", name)
+		}
+	}
+}
+
+// detectEmbeddingFromMetadata uses comprehensive GGUF metadata to detect embedding models
+func detectEmbeddingFromMetadata(metadata map[string]interface{}, architecture string) bool {
+	// 1. Architecture check - dead giveaway
+	switch strings.ToLower(architecture) {
+	case "bert", "roberta", "nomic-bert", "jina-bert":
+		return true
+	case "llama", "mistral", "qwen", "gemma", "gemma3", "qwen2", "qwen3", "glm4moe", "seed_oss", "gpt-oss":
+		return false
+	}
+
+	// 2. Pooling type check - smoking gun
+	poolingType := getStringValue(metadata, fmt.Sprintf("%s.pooling_type", architecture))
+	if poolingType != "" {
+		// If pooling_type exists, it's definitely an embedding model
+		return true
+	}
+
+	// 3. Context length patterns
+	contextLength := getIntValue(metadata, fmt.Sprintf("%s.context_length", architecture))
+	if contextLength > 0 {
+		if contextLength <= 8192 {
+			// Typical embedding model context length
+			// But need more evidence since some chat models also have small context
+		} else if contextLength >= 32768 {
+			// Definitely a chat model
+			return false
+		}
+	}
+
+	// 4. Embedding dimension patterns
+	embeddingLength := getIntValue(metadata, fmt.Sprintf("%s.embedding_length", architecture))
+	if embeddingLength > 0 && embeddingLength <= 1024 {
+		// Small embedding dimensions typical of embedding models
+		// But check for other evidence
+	}
+
+	// 5. Missing chat model keys
+	hasRope := hasKey(metadata, fmt.Sprintf("%s.rope", architecture))
+	hasHeadCount := hasKey(metadata, fmt.Sprintf("%s.head_count", architecture))
+
+	// Chat models typically have these, embedding models don't
+	if !hasRope && !hasHeadCount && embeddingLength <= 1024 {
+		return true
+	}
+
+	// 6. Tokenizer model check
+	tokenizerModel := getStringValue(metadata, "tokenizer.ggml.model")
+	if strings.Contains(strings.ToLower(tokenizerModel), "bert") {
+		return true
+	}
+
+	// 7. Name-based fallback (least reliable)
+	modelName := getStringValue(metadata, "general.name")
+	lowerName := strings.ToLower(modelName)
+	if strings.Contains(lowerName, "embed") ||
+		strings.Contains(lowerName, "embedding") ||
+		strings.HasPrefix(lowerName, "e5") ||
+		strings.HasPrefix(lowerName, "bge") ||
+		strings.HasPrefix(lowerName, "gte") {
+		return true
+	}
+
+	// Default to chat model if no clear embedding indicators
+	return false
+}
+
+// Helper functions for metadata analysis
+func getIntValue(metadata map[string]interface{}, key string) int {
+	if val, exists := metadata[key]; exists {
+		switch v := val.(type) {
+		case int:
+			return v
+		case int32:
+			return int(v)
+		case int64:
+			return int(v)
+		case float64:
+			return int(v)
+		}
+	}
+	return 0
+}
+
+func hasKey(metadata map[string]interface{}, keyPrefix string) bool {
+	for key := range metadata {
+		if strings.HasPrefix(strings.ToLower(key), strings.ToLower(keyPrefix)) {
+			return true
+		}
+	}
+	return false
+}
+
+func boolToEmoji(b bool) string {
+	if b {
+		return "✅ Embedding"
+	}
+	return "💬 Chat"
 }

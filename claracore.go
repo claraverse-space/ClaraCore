@@ -28,10 +28,13 @@ var (
 func main() {
 	// Define a command-line flag for the port
 	configPath := flag.String("config", "config.yaml", "config file name")
-	listenStr := flag.String("listen", ":8080", "listen ip/port")
+	listenStr := flag.String("listen", ":5800", "listen ip/port")
 	showVersion := flag.Bool("version", false, "show version of build")
 	watchConfig := flag.Bool("watch-config", false, "Automatically reload config file on change")
 	modelsFolder := flag.String("models-folder", "", "automatically detect GGUF models in folder and generate config")
+	autoDraft := flag.Bool("auto-draft", false, "enable automatic draft model pairing for speculative decoding")
+	enableJinja := flag.Bool("jinja", true, "enable Jinja templating support for models (default: true)")
+	parallel := flag.Bool("parallel", true, "enable parallel processing for faster setup (default: true)")
 
 	flag.Parse() // Parse the command-line flags
 
@@ -43,7 +46,11 @@ func main() {
 	// Handle auto-setup mode
 	if *modelsFolder != "" {
 		fmt.Println("Running auto-setup mode...")
-		err := autosetup.AutoSetup(*modelsFolder)
+		err := autosetup.AutoSetupWithOptions(*modelsFolder, autosetup.SetupOptions{
+			EnableDraftModels: *autoDraft,
+			EnableJinja:       *enableJinja,
+			EnableParallel:    *parallel,
+		})
 		if err != nil {
 			fmt.Printf("Auto-setup failed: %v\n", err)
 			os.Exit(1)
@@ -180,7 +187,7 @@ func main() {
 	}()
 
 	// Start server
-	fmt.Printf("llama-swap listening on %s\n", *listenStr)
+	fmt.Printf("Clara Core listening on %s\n", *listenStr)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Fatal server error: %v\n", err)

@@ -19,16 +19,18 @@ function App() {
 
   return (
     <Router basename="/ui/">
-      <div className="flex flex-col h-screen">
+      <div className="flex flex-col h-screen bg-background">
         <Header />
 
-        <main className="flex-1 overflow-auto p-4">
-          <Routes>
-            <Route path="/" element={<LogViewerPage />} />
-            <Route path="/models" element={<ModelPage />} />
-            <Route path="/activity" element={<ActivityPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full overflow-auto p-6">
+            <Routes>
+              <Route path="/" element={<LogViewerPage />} />
+              <Route path="/models" element={<ModelPage />} />
+              <Route path="/activity" element={<ActivityPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
         </main>
       </div>
     </Router>

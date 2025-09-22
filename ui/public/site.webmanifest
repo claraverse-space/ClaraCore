@@ -1,6 +1,6 @@
 {
-  "name": "llama-swap",
-  "short_name": "llama-swap",
+  "name": "Clara Core",
+  "short_name": "Clara Core",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",

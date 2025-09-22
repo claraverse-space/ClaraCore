@@ -18,11 +18,9 @@ export default function ModelsPage() {
       </Panel>
 
       <PanelResizeHandle
-        className={
-          direction === "horizontal"
-            ? "w-2 h-full bg-primary hover:bg-success transition-colors rounded"
-            : "w-full h-2 bg-primary hover:bg-success transition-colors rounded"
-        }
+        className={`panel-resize-handle ${
+          direction === "horizontal" ? "w-3 h-full" : "w-full h-3 horizontal"
+        }`}
       />
       <Panel collapsible={true} defaultSize={50} minSize={0}>
         <div className="flex flex-col h-full space-y-4">
@@ -64,78 +62,174 @@ function ModelsPanel() {
   }, [showIdorName]);
 
   return (
-    <div className="card h-full flex flex-col">
-      <div className="shrink-0">
-        <h2>Models</h2>
-        <div className="flex justify-between">
-          <div className="flex gap-2">
-            <button
-              className="btn text-base flex items-center gap-2"
-              onClick={toggleIdorName}
-              style={{ lineHeight: "1.2" }}
-            >
-              <RiSwapBoxFill size="20" /> {showIdorName === "id" ? "ID" : "Name"}
-            </button>
-
-            <button
-              className="btn text-base flex items-center gap-2"
-              onClick={() => setShowUnlisted(!showUnlisted)}
-              style={{ lineHeight: "1.2" }}
-            >
-              {showUnlisted ? <RiEyeFill size="20" /> : <RiEyeOffFill size="20" />} unlisted
-            </button>
+    <div className="bg-surface rounded-xl h-full flex flex-col p-6 m-2 glass border border-gray-600/50">
+      {/* Enhanced Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-primary to-sakura-600 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-lg">M</span>
           </div>
-          <button
-            className="btn text-base flex items-center gap-2"
-            onClick={handleUnloadAllModels}
-            disabled={isUnloading}
+          <div>
+            <h2 className="text-2xl font-bold text-white">Models</h2>
+            <p className="text-gray-400 text-sm">{filteredModels.length} models available</p>
+          </div>
+        </div>
+        
+        <button
+          className={`btn-danger btn-lg flex items-center gap-3 ${isUnloading ? 'btn-loading' : ''}`}
+          onClick={handleUnloadAllModels}
+          disabled={isUnloading}
+        >
+          <RiStopCircleLine size="20" />
+          <span>{isUnloading ? "Unloading All..." : "Unload All Models"}</span>
+        </button>
+      </div>
+
+      {/* Controls */}
+      <div className="flex gap-3 mb-6">
+        <button
+          className="btn-secondary flex items-center gap-2"
+          onClick={toggleIdorName}
+        >
+          <RiSwapBoxFill size="18" />
+          <span>Show {showIdorName === "id" ? "Names" : "IDs"}</span>
+        </button>
+
+        <button
+          className={`flex items-center gap-2 ${showUnlisted ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setShowUnlisted(!showUnlisted)}
+        >
+          {showUnlisted ? <RiEyeFill size="18" /> : <RiEyeOffFill size="18" />}
+          <span>{showUnlisted ? "Hide" : "Show"} Unlisted</span>
+        </button>
+      </div>
+
+      {/* Card List */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="space-y-3">
+          {filteredModels.map((model) => (
+            <ModelCard 
+              key={model.id} 
+              model={model} 
+              showIdorName={showIdorName}
+              onLoad={() => loadModel(model.id)}
+            />
+          ))}
+        </div>
+        
+        {filteredModels.length === 0 && (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-800 rounded-full mx-auto mb-4 flex items-center justify-center">
+              <span className="text-gray-500 text-2xl">📦</span>
+            </div>
+            <p className="text-gray-400">No models found</p>
+            <p className="text-gray-500 text-sm">Try adjusting your filters</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// New ModelCard component
+interface ModelCardProps {
+  model: any;
+  showIdorName: "id" | "name";
+  onLoad: () => void;
+}
+
+function ModelCard({ model, showIdorName, onLoad }: ModelCardProps) {
+  const displayName = showIdorName === "id" ? model.id : (model.name || model.id);
+  const isAvailable = model.state === "stopped";
+  
+  return (
+    <div className={`glass rounded-xl p-4 border transition-all duration-300 hover:shadow-xl ${
+      model.unlisted ? 'border-gray-700 opacity-75' : 'border-gray-600'
+    } ${isAvailable ? 'hover:border-primary/50' : ''}`}>
+      
+      <div className="flex items-center justify-between">
+        {/* Left side: Model info */}
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          {/* Model Avatar */}
+          <div className="w-12 h-12 bg-gradient-to-br from-primary to-sakura-600 rounded-lg flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-bold text-lg">
+              {displayName.charAt(0).toUpperCase()}
+            </span>
+          </div>
+          
+          {/* Model Details */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-1">
+              <h3 className={`font-semibold text-lg ${
+                model.unlisted ? 'text-gray-400' : 'text-white'
+              } truncate`}>
+                {displayName}
+              </h3>
+              <ModelStatusBadge state={model.state} />
+            </div>
+            
+            {showIdorName === "name" && model.name && (
+              <p className="text-gray-500 text-sm font-mono mb-1 truncate">{model.id}</p>
+            )}
+            
+            {model.description && (
+              <p className={`text-sm line-clamp-1 ${
+                model.unlisted ? 'text-gray-500' : 'text-gray-300'
+              }`}>
+                {model.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Right side: Actions */}
+        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+          <a 
+            href={`/upstream/${model.id}/`} 
+            target="_blank"
+            className="btn-secondary btn-sm px-3 py-2"
+            title="View model details"
           >
-            <RiStopCircleLine size="24" /> {isUnloading ? "Unloading..." : "Unload"}
+            <span className="text-sm">🔗</span>
+          </a>
+          
+          <button
+            className={`btn-sm px-4 py-2 min-w-[80px] ${isAvailable ? 'btn-primary' : 'btn-secondary'}`}
+            disabled={!isAvailable}
+            onClick={onLoad}
+          >
+            {isAvailable ? "Load" : model.state}
           </button>
         </div>
       </div>
-
-      <div className="flex-1 overflow-y-auto">
-        <table className="w-full">
-          <thead className="sticky top-0 bg-card z-10">
-            <tr className="text-left border-b border-gray-200 dark:border-white/10 bg-surface">
-              <th>{showIdorName === "id" ? "Model ID" : "Name"}</th>
-              <th></th>
-              <th>State</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredModels.map((model) => (
-              <tr key={model.id} className="border-b hover:bg-secondary-hover border-gray-200">
-                <td className={`${model.unlisted ? "text-txtsecondary" : ""}`}>
-                  <a href={`/upstream/${model.id}/`} className="font-semibold" target="_blank">
-                    {showIdorName === "id" ? model.id : model.name !== "" ? model.name : model.id}
-                  </a>
-
-                  {!!model.description && (
-                    <p className={model.unlisted ? "text-opacity-70" : ""}>
-                      <em>{model.description}</em>
-                    </p>
-                  )}
-                </td>
-                <td className="w-12">
-                  <button
-                    className="btn btn--sm"
-                    disabled={model.state !== "stopped"}
-                    onClick={() => loadModel(model.id)}
-                  >
-                    Load
-                  </button>
-                </td>
-                <td className="w-20">
-                  <span className={`w-16 text-center status status--${model.state}`}>{model.state}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
+  );
+}
+
+// Enhanced StatusBadge component
+function ModelStatusBadge({ state }: { state: string }) {
+  const getStatusConfig = (state: string) => {
+    switch (state) {
+      case 'stopped':
+        return { color: 'bg-gray-700 text-gray-300', icon: '⏹️' };
+      case 'loading':
+        return { color: 'bg-blue-900/50 text-blue-300', icon: '⏳' };
+      case 'ready':
+        return { color: 'bg-green-900/50 text-green-300', icon: '✅' };
+      case 'error':
+        return { color: 'bg-red-900/50 text-red-300', icon: '❌' };
+      default:
+        return { color: 'bg-gray-700 text-gray-300', icon: '❓' };
+    }
+  };
+  
+  const config = getStatusConfig(state);
+  
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${config.color}`}>
+      <span className="text-xs">{config.icon}</span>
+      {state}
+    </span>
   );
 }
 
@@ -154,27 +248,27 @@ function StatsPanel() {
   }, [metrics]);
 
   return (
-    <div className="card">
-      <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-white/10">
+    <div className="bg-surface rounded-lg p-4">
+      <div className="rounded-lg overflow-hidden border border-gray-600">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200 dark:border-white/10 text-right">
-              <th>Requests</th>
-              <th className="border-l border-gray-200 dark:border-white/10">Processed</th>
-              <th className="border-l border-gray-200 dark:border-white/10">Generated</th>
-              <th className="border-l border-gray-200 dark:border-white/10">Tokens/Sec</th>
+            <tr className="border-b border-gray-600 text-right bg-surface-elevated">
+              <th className="text-gray-200 py-3 px-4">Requests</th>
+              <th className="border-l border-gray-600 text-gray-200 py-3 px-4">Processed</th>
+              <th className="border-l border-gray-600 text-gray-200 py-3 px-4">Generated</th>
+              <th className="border-l border-gray-600 text-gray-200 py-3 px-4">Tokens/Sec</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="text-right">
-              <td className="border-r border-gray-200 dark:border-white/10">{totalRequests}</td>
-              <td className="border-r border-gray-200 dark:border-white/10">
+            <tr className="text-right text-gray-300">
+              <td className="border-r border-gray-600 py-3 px-4">{totalRequests}</td>
+              <td className="border-r border-gray-600 py-3 px-4">
                 {new Intl.NumberFormat().format(totalInputTokens)}
               </td>
-              <td className="border-r border-gray-200 dark:border-white/10">
+              <td className="border-r border-gray-600 py-3 px-4">
                 {new Intl.NumberFormat().format(totalOutputTokens)}
               </td>
-              <td>{avgTokensPerSecond}</td>
+              <td className="py-3 px-4">{avgTokensPerSecond}</td>
             </tr>
           </tbody>
         </table>

@@ -6,8 +6,32 @@ import (
 	"path/filepath"
 )
 
-// AutoSetup performs automatic model detection and configuration
+// SetupOptions contains configuration options for auto-setup
+type SetupOptions struct {
+	EnableDraftModels bool
+	EnableJinja       bool
+	EnableParallel    bool // Enable parallel processing (should be renamed to EnableDeployment)
+	ThroughputFirst   bool // Prioritize speed over maximum context
+	MaxSpeed          bool // Maximum GPU utilization, minimum context
+	MinContext        int  // Minimum context size (default: 16384)
+	PreferredContext  int  // Preferred context size (default: 32768)
+}
+
+// AutoSetup performs automatic model detection and configuration with default options
 func AutoSetup(modelsFolder string) error {
+	return AutoSetupWithOptions(modelsFolder, SetupOptions{
+		EnableDraftModels: false, // Disabled by default
+		EnableJinja:       true,  // Enabled by default
+		EnableParallel:    false, // Disabled by default - only enable for deployment
+		ThroughputFirst:   true,  // Prioritize speed by default
+		MaxSpeed:          false, // Balanced approach by default
+		MinContext:        16384, // 16K minimum context
+		PreferredContext:  32768, // 32K preferred context
+	})
+}
+
+// AutoSetupWithOptions performs automatic model detection and configuration with custom options
+func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 	fmt.Println("🚀 Starting llama-swap auto-setup...")
 
 	// Validate models folder
@@ -21,8 +45,8 @@ func AutoSetup(modelsFolder string) error {
 
 	fmt.Printf("📁 Scanning models in: %s\n", modelsFolder)
 
-	// Detect models
-	models, err := DetectModels(modelsFolder)
+	// Detect models with options
+	models, err := DetectModelsWithOptions(modelsFolder, options)
 	if err != nil {
 		return fmt.Errorf("failed to detect models: %v", err)
 	}
@@ -53,18 +77,35 @@ func AutoSetup(modelsFolder string) error {
 	fmt.Println("\n🔍 Detecting system capabilities...")
 	system := DetectSystem()
 
-	fmt.Printf("   OS: %s/%s\n", system.OS, system.Architecture)
-	if system.HasCUDA {
-		fmt.Println("   GPU: CUDA detected ✅")
-	} else if system.HasROCm {
-		fmt.Println("   GPU: ROCm detected ✅")
-	} else if system.HasVulkan {
-		fmt.Println("   GPU: Vulkan detected ✅")
-	} else if system.HasMetal {
-		fmt.Println("   GPU: Metal detected ✅")
-	} else {
-		fmt.Println("   GPU: CPU-only mode")
+	// Enhance system information with detailed detection
+	if err := EnhanceSystemInfo(&system); err != nil {
+		fmt.Printf("Warning: Failed to enhance system detection: %v\n", err)
 	}
+
+	// Print comprehensive system information
+	fmt.Printf("\n")
+	PrintSystemInfo(&system)
+	fmt.Printf("\n")
+
+	// Print detailed model information
+	PrintModelInfo(models, modelsFolder)
+	fmt.Printf("\n")
+
+	// Debug mmproj files (temporary for testing)
+	DebugMMProjMetadata(modelsFolder)
+	fmt.Printf("\n")
+
+	// Debug main model metadata to find matching keys
+	DebugModelMetadata(models)
+	fmt.Printf("\n")
+
+	// Debug embedding detection to verify classification accuracy
+	DebugEmbeddingDetection(models)
+	fmt.Printf("\n")
+
+	// Find mmproj matches using metadata-based matching
+	mmprojMatches := FindMMProjMatches(models, modelsFolder)
+	fmt.Printf("\n")
 
 	// Download binary
 	fmt.Println("\n⬇️  Downloading llama-server binary...")
@@ -81,18 +122,52 @@ func AutoSetup(modelsFolder string) error {
 	// Generate configuration
 	fmt.Println("\n⚙️  Generating configuration...")
 
-	generator := &ConfigGenerator{
-		Models:    models,
-		Binary:    binary,
-		System:    system,
-		StartPort: 5800,
-		ModelsDir: modelsFolder,
+	if options.EnableDraftModels {
+		fmt.Println("🚀 Draft models enabled - Speculative decoding will be used for suitable models")
+	} else {
+		fmt.Println("⏭️  Draft models disabled - Use --auto-draft to enable speculative decoding")
 	}
 
+	if options.EnableJinja {
+		fmt.Println("📝 Jinja templating enabled for chat models")
+	}
+
+	if options.EnableParallel {
+		fmt.Println("⚡ Parallel processing enabled for faster setup")
+	}
+
+	// Initialize memory estimator
+	memEstimator := NewMemoryEstimator()
+
+	// Use total GPU VRAM instead of available VRAM for allocation
+	totalVRAM := system.TotalVRAMGB
+	if totalVRAM == 0 {
+		// Fallback to memory estimator if system detection failed
+		fmt.Print("🔍 Detecting available VRAM... ")
+		availableVRAM, err := memEstimator.GetAvailableVRAM()
+		if err != nil {
+			fmt.Printf("failed (using default 12GB): %v\n", err)
+			totalVRAM = 12.0 // Default fallback
+		} else {
+			fmt.Printf("%.1f GB detected\n", availableVRAM)
+			totalVRAM = availableVRAM
+		}
+	} else {
+		fmt.Printf("🎯 Using total GPU VRAM: %.1f GB for allocation\n", totalVRAM)
+	}
+
+	// Use simple config generator with smart GPU allocation
 	configPath := "config.yaml"
-	err = generator.SaveConfig(configPath)
+	generator := NewSimpleConfigGenerator(modelsFolder, binary.Path, configPath, options)
+	generator.SetAvailableVRAM(totalVRAM)
+	generator.SetBinaryType(binary.Type)
+	generator.SetSystemInfo(&system)          // Pass system info for optimal parameters
+	generator.SetMMProjMatches(mmprojMatches) // Pass mmproj matches to config generator
+
+	fmt.Printf("⚙️  Generating configuration (SMART GPU ALLOCATION: fit max layers in VRAM)...\n")
+	err = generator.GenerateConfig(models)
 	if err != nil {
-		return fmt.Errorf("failed to save configuration: %v", err)
+		return fmt.Errorf("failed to generate configuration: %v", err)
 	}
 
 	fmt.Printf("✅ Configuration saved to: %s\n", configPath)
