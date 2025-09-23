@@ -400,8 +400,8 @@ models:
       ${llama-embed-base}
       --model C:\BackUP\llama-modelsss\embedding\mxbai-embed-large-v1.Q4_K_S.gguf
       --pooling mean
-      --batch-size 4096
-      --ubatch-size 256
+      --batch-size 1024
+      --ubatch-size 512
       -ngl 999
       --threads 8
       --keep 1024
@@ -422,8 +422,8 @@ models:
       ${llama-embed-base}
       --model C:\BackUP\llama-modelsss\embedding\mxbai-large.IQ4_XS.gguf
       --pooling mean
-      --batch-size 4096
-      --ubatch-size 256
+      --batch-size 1024
+      --ubatch-size 512
       -ngl 999
       --threads 8
       --keep 1024
@@ -444,8 +444,8 @@ models:
       ${llama-embed-base}
       --model C:\BackUP\llama-modelsss\mxbai-embed-large-v1-f16.gguf
       --pooling mean
-      --batch-size 4096
-      --ubatch-size 256
+      --batch-size 1024
+      --ubatch-size 512
       -ngl 999
       --threads 8
       --keep 1024
@@ -464,6 +464,7 @@ groups:
   "large-models":
     swap: true
     exclusive: true
+    startPort: 5800
     members:
       - "bytedance-seed-seed-oss-36b-instruct-36b"
       - "glm-45-air-iq4-xs-00001-of-00002"
@@ -484,6 +485,8 @@ groups:
   "small-models":
     swap: false
     exclusive: false
+    persistent: true
+    startPort: 6000
     members:
       - "mxbai-embed-large-v1q4-k-s"
       - "mxbai-largeiq4-xs"

@@ -414,8 +414,8 @@ func (scg *SimpleConfigGenerator) writeOptimizations(config *strings.Builder, mo
 		// NO ctx-size for embedding models as per specifications
 
 		// Optimal batch settings for embedding models
-		config.WriteString("      --batch-size 4096\n")
-		config.WriteString("      --ubatch-size 256\n")
+		config.WriteString("      --batch-size 1024\n")
+		config.WriteString("      --ubatch-size 512\n")
 		config.WriteString("      -ngl 999\n") // Calculate optimal threads (half of physical cores)
 		if scg.SystemInfo != nil && scg.SystemInfo.PhysicalCores > 0 {
 			threads := scg.SystemInfo.PhysicalCores / 2
@@ -585,6 +585,7 @@ func (scg *SimpleConfigGenerator) writeGroups(config *strings.Builder, models []
 		config.WriteString("  \"large-models\":\n")
 		config.WriteString("    swap: true\n")
 		config.WriteString("    exclusive: true\n")
+		config.WriteString("    startPort: 5800\n")
 		config.WriteString("    members:\n")
 		for _, model := range largeModels {
 			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))
@@ -596,6 +597,8 @@ func (scg *SimpleConfigGenerator) writeGroups(config *strings.Builder, models []
 		config.WriteString("  \"small-models\":\n")
 		config.WriteString("    swap: false\n")
 		config.WriteString("    exclusive: false\n")
+		config.WriteString("    persistent: true\n")
+		config.WriteString("    startPort: 6000\n")
 		config.WriteString("    members:\n")
 		for _, model := range smallModels {
 			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))
