@@ -111,7 +111,7 @@ func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
 
 // writeHeader writes the configuration header
 func (scg *ConfigGenerator) writeHeader(config *strings.Builder) {
-	config.WriteString("# Auto-generated llama-swap configuration (SMART GPU ALLOCATION)\n")
+	config.WriteString("# Auto-generated Clara Core configuration (SMART GPU ALLOCATION)\n")
 	config.WriteString(fmt.Sprintf("# Generated from models in: %s\n", scg.ModelsPath))
 	config.WriteString(fmt.Sprintf("# Binary: %s (%s)\n", scg.BinaryPath, scg.BinaryType))
 	config.WriteString(fmt.Sprintf("# System: %s/%s\n", runtime.GOOS, runtime.GOARCH))

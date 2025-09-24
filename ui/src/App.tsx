@@ -6,6 +6,10 @@ import { useTheme } from "./contexts/ThemeProvider";
 import ActivityPage from "./pages/Activity";
 import LogViewerPage from "./pages/LogViewer";
 import ModelPage from "./pages/Models";
+import ModelDownloaderPage from "./pages/ModelDownloader";
+import Configuration from "./pages/Configuration";
+import OnboardConfig from "./pages/OnboardConfig";
+import ComponentsDemo from "./pages/ComponentsDemo";
 
 function App() {
   const { setConnectionState } = useTheme();
@@ -28,6 +32,10 @@ function App() {
               <Route path="/" element={<LogViewerPage />} />
               <Route path="/models" element={<ModelPage />} />
               <Route path="/activity" element={<ActivityPage />} />
+              <Route path="/downloader" element={<ModelDownloaderPage />} />
+              <Route path="/config" element={<Configuration />} />
+              <Route path="/setup" element={<OnboardConfig />} />
+              <Route path="/demo" element={<ComponentsDemo />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>

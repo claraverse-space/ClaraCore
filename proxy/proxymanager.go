@@ -37,6 +37,8 @@ type ProxyManager struct {
 
 	metricsMonitor *MetricsMonitor
 
+	downloadManager *DownloadManager
+
 	processGroups map[string]*ProcessGroup
 
 	// shutdown signaling
@@ -74,6 +76,12 @@ func New(config Config) *ProxyManager {
 
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 
+	// Set up download directory
+	downloadDir := config.DownloadDir
+	if downloadDir == "" {
+		downloadDir = "./downloads"
+	}
+
 	pm := &ProxyManager{
 		config:    config,
 		ginEngine: gin.New(),
@@ -82,7 +90,8 @@ func New(config Config) *ProxyManager {
 		muxLogger:      stdoutLogger,
 		upstreamLogger: upstreamLogger,
 
-		metricsMonitor: NewMetricsMonitor(&config),
+		metricsMonitor:  NewMetricsMonitor(&config),
+		downloadManager: NewDownloadManager(downloadDir, proxyLogger),
 
 		processGroups: make(map[string]*ProcessGroup),
 
@@ -360,7 +369,7 @@ func (pm *ProxyManager) listModelsHandler(c *gin.Context) {
 			"id":       id,
 			"object":   "model",
 			"created":  createdTime,
-			"owned_by": "llama-swap",
+			"owned_by": "ClaraCore",
 		}
 
 		if name := strings.TrimSpace(modelConfig.Name); name != "" {

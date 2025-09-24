@@ -124,9 +124,13 @@ func GetOptimalBinaryURL(system SystemInfo) (string, string, error) {
 
 	switch system.OS {
 	case "windows":
+		// Windows: CUDA > ROCm > Vulkan > CPU
 		if system.HasCUDA {
 			filename = "llama-b6527-bin-win-cuda-12.4-x64.zip"
 			binaryType = "cuda"
+		} else if system.HasROCm {
+			filename = "llama-b6527-bin-win-rocm-x64.zip"
+			binaryType = "rocm"
 		} else if system.HasVulkan {
 			filename = "llama-b6527-bin-win-vulkan-x64.zip"
 			binaryType = "vulkan"
@@ -135,9 +139,13 @@ func GetOptimalBinaryURL(system SystemInfo) (string, string, error) {
 			binaryType = "cpu"
 		}
 	case "linux":
+		// Linux: CUDA > ROCm > Vulkan > CPU
 		if system.HasCUDA {
 			filename = "llama-b6527-bin-ubuntu-x64.zip"
 			binaryType = "cuda"
+		} else if system.HasROCm {
+			filename = "llama-b6527-bin-ubuntu-rocm-x64.zip"
+			binaryType = "rocm"
 		} else if system.HasVulkan {
 			filename = "llama-b6527-bin-ubuntu-vulkan-x64.zip"
 			binaryType = "vulkan"
@@ -146,10 +154,13 @@ func GetOptimalBinaryURL(system SystemInfo) (string, string, error) {
 			binaryType = "cpu"
 		}
 	case "darwin":
+		// macOS: Metal (Apple Silicon) > CPU (Intel)
 		if system.Architecture == "arm64" {
+			// Apple Silicon Macs - Metal acceleration
 			filename = "llama-b6527-bin-macos-arm64.zip"
 			binaryType = "metal"
 		} else {
+			// Intel Macs - CPU only
 			filename = "llama-b6527-bin-macos-x64.zip"
 			binaryType = "cpu"
 		}
@@ -448,39 +459,144 @@ func detectCUDA() bool {
 }
 
 func detectROCm() bool {
-	// Check for ROCm installation
-	paths := []string{
-		"/opt/rocm",
-		"/usr/bin/rocm-smi",
-	}
-
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			return true
+	switch runtime.GOOS {
+	case "windows":
+		// Check Windows ROCm installation paths
+		paths := []string{
+			"C:\\Program Files\\AMD\\ROCm\\5.7\\bin\\rocm-smi.exe",
+			"C:\\Program Files\\AMD\\ROCm\\5.6\\bin\\rocm-smi.exe",
+			"C:\\Program Files\\AMD\\ROCm\\5.5\\bin\\rocm-smi.exe",
+			"C:\\AMD\\ROCm\\bin\\rocm-smi.exe",
 		}
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				// Found rocm-smi, try to query for devices
+				cmd := exec.Command(path, "--showid")
+				output, err := cmd.Output()
+				if err == nil && len(output) > 0 {
+					return strings.Contains(string(output), "GPU")
+				}
+				return false
+			}
+		}
+
+		// Check for AMD GPU with ROCm driver
+		cmd := exec.Command("wmic", "path", "win32_VideoController", "get", "name")
+		output, err := cmd.Output()
+		if err == nil && strings.Contains(strings.ToLower(string(output)), "amd") {
+			// Check for ROCm runtime
+			if _, err := os.Stat("C:\\Windows\\System32\\amdhip64.dll"); err == nil {
+				return true
+			}
+		}
+
+	case "linux":
+		// Check for ROCm installation on Linux
+		paths := []string{
+			"/opt/rocm/bin/rocm-smi",
+			"/usr/bin/rocm-smi",
+			"/opt/rocm",
+		}
+
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				// Try to query ROCm devices
+				if strings.HasSuffix(path, "rocm-smi") {
+					cmd := exec.Command(path, "--showid")
+					output, err := cmd.Output()
+					if err == nil && len(output) > 0 {
+						return strings.Contains(string(output), "GPU")
+					}
+				}
+				return true
+			}
+		}
+
+		// Check for AMD GPU with ROCm driver
+		cmd := exec.Command("lspci", "-nn")
+		output, err := cmd.Output()
+		if err == nil {
+			outputStr := strings.ToLower(string(output))
+			if strings.Contains(outputStr, "amd") && strings.Contains(outputStr, "display") {
+				// Check for ROCm runtime
+				if _, err := os.Stat("/usr/lib/x86_64-linux-gnu/libamdhip64.so"); err == nil {
+					return true
+				}
+			}
+		}
+
+	case "darwin":
+		// ROCm not supported on macOS
+		return false
 	}
 
 	return false
 }
 
 func detectVulkan() bool {
-	// Check for Vulkan library
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		// Check for vulkan-1.dll in system32
 		if _, err := os.Stat("C:\\Windows\\System32\\vulkan-1.dll"); err == nil {
+			// Try to verify Vulkan devices exist
+			cmd := exec.Command("vulkaninfo", "--summary")
+			output, err := cmd.Output()
+			if err == nil && strings.Contains(string(output), "deviceType") {
+				return true
+			}
+			// Vulkan library exists even if vulkaninfo fails
 			return true
 		}
-	} else {
-		// Check for libvulkan.so
-		paths := []string{
+
+	case "linux":
+		// Check for libvulkan.so on Linux
+		vulkanPaths := []string{
 			"/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
 			"/usr/lib/libvulkan.so.1",
 			"/usr/lib64/libvulkan.so.1",
+			"/usr/local/lib/libvulkan.so.1",
+			"/lib/x86_64-linux-gnu/libvulkan.so.1",
 		}
-		for _, path := range paths {
+
+		for _, path := range vulkanPaths {
+			if _, err := os.Stat(path); err == nil {
+				// Try to verify Vulkan devices exist
+				cmd := exec.Command("vulkaninfo", "--summary")
+				output, err := cmd.Output()
+				if err == nil && strings.Contains(string(output), "deviceType") {
+					return true
+				}
+				// Vulkan library exists even if vulkaninfo fails
+				return true
+			}
+		}
+
+		// Check for Vulkan using ldconfig
+		cmd := exec.Command("ldconfig", "-p")
+		output, err := cmd.Output()
+		if err == nil && strings.Contains(string(output), "libvulkan.so") {
+			return true
+		}
+
+	case "darwin":
+		// Check for MoltenVK on macOS (Vulkan → Metal translation layer)
+		moltenVKPaths := []string{
+			"/usr/local/lib/libvulkan.1.dylib",
+			"/opt/homebrew/lib/libvulkan.1.dylib",
+			"/System/Library/Frameworks/Vulkan.framework",
+			"/Library/Frameworks/vulkan.framework",
+		}
+
+		for _, path := range moltenVKPaths {
 			if _, err := os.Stat(path); err == nil {
 				return true
 			}
+		}
+
+		// Check if MoltenVK is installed via Homebrew
+		cmd := exec.Command("brew", "list", "molten-vk")
+		if err := cmd.Run(); err == nil {
+			return true
 		}
 	}
 
@@ -489,7 +605,42 @@ func detectVulkan() bool {
 
 func detectMetal() bool {
 	// Metal is only available on macOS
-	return runtime.GOOS == "darwin"
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+
+	// Check if Metal framework exists
+	metalFrameworkPaths := []string{
+		"/System/Library/Frameworks/Metal.framework",
+		"/System/Library/PrivateFrameworks/Metal.framework",
+	}
+
+	for _, path := range metalFrameworkPaths {
+		if _, err := os.Stat(path); err == nil {
+			// Metal framework exists, verify GPU support
+			cmd := exec.Command("system_profiler", "SPDisplaysDataType")
+			output, err := cmd.Output()
+			if err == nil {
+				outputStr := strings.ToLower(string(output))
+				// Check for Apple Silicon or modern Intel GPUs with Metal support
+				if strings.Contains(outputStr, "apple") ||
+					strings.Contains(outputStr, "metal") ||
+					strings.Contains(outputStr, "intel iris") ||
+					strings.Contains(outputStr, "amd radeon") {
+					return true
+				}
+			}
+			// Framework exists, assume Metal support
+			return true
+		}
+	}
+
+	// For Apple Silicon, Metal is always available
+	if runtime.GOARCH == "arm64" {
+		return true
+	}
+
+	return false
 }
 
 // Enhanced system detection functions
@@ -776,64 +927,308 @@ func enhanceROCmDetection(info *SystemInfo) {
 
 // enhanceMLXDetection detects Apple Metal/MLX capabilities
 func enhanceMLXDetection(info *SystemInfo) {
-	// Check for Metal support
-	cmd := exec.Command("system_profiler", "SPDisplaysDataType")
-	output, err := cmd.Output()
-	if err != nil {
+	// MLX is only for Apple Silicon Macs
+	if runtime.GOARCH != "arm64" {
 		return
 	}
 
-	outputStr := string(output)
-	if strings.Contains(outputStr, "Metal") {
-		info.HasMLX = true
+	// Check for Metal Performance Shaders framework
+	metalFrameworks := []string{
+		"/System/Library/Frameworks/Metal.framework",
+		"/System/Library/Frameworks/MetalPerformanceShaders.framework",
+	}
 
-		// Parse for Apple Silicon GPU info
-		// This is simplified - real implementation would parse more details
+	hasMetalFramework := false
+	for _, framework := range metalFrameworks {
+		if _, err := os.Stat(framework); err == nil {
+			hasMetalFramework = true
+			break
+		}
+	}
+
+	if !hasMetalFramework {
+		return
+	}
+
+	// Get detailed system info for Apple Silicon
+	cmd := exec.Command("system_profiler", "SPHardwareDataType", "SPDisplaysDataType")
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback for Apple Silicon
+		info.HasMLX = true
 		info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
 			Name:     "Apple GPU",
-			VRAMGB:   16.0, // Placeholder - shared memory
+			VRAMGB:   getAppleSiliconUnifiedMemory(),
 			Type:     "MLX",
 			DeviceID: 0,
 		})
+		return
 	}
+
+	outputStr := strings.ToLower(string(output))
+
+	// Detect Apple Silicon chip type for memory estimates
+	var gpuName string
+	var unifiedMemoryGB float64
+
+	if strings.Contains(outputStr, "apple m1") {
+		if strings.Contains(outputStr, "m1 max") {
+			gpuName = "Apple M1 Max"
+			unifiedMemoryGB = 32.0 // M1 Max typical config
+		} else if strings.Contains(outputStr, "m1 pro") {
+			gpuName = "Apple M1 Pro"
+			unifiedMemoryGB = 16.0 // M1 Pro typical config
+		} else {
+			gpuName = "Apple M1"
+			unifiedMemoryGB = 8.0 // Base M1 typical config
+		}
+	} else if strings.Contains(outputStr, "apple m2") {
+		if strings.Contains(outputStr, "m2 ultra") {
+			gpuName = "Apple M2 Ultra"
+			unifiedMemoryGB = 96.0 // M2 Ultra high-end config
+		} else if strings.Contains(outputStr, "m2 max") {
+			gpuName = "Apple M2 Max"
+			unifiedMemoryGB = 38.0 // M2 Max typical config
+		} else if strings.Contains(outputStr, "m2 pro") {
+			gpuName = "Apple M2 Pro"
+			unifiedMemoryGB = 16.0 // M2 Pro typical config
+		} else {
+			gpuName = "Apple M2"
+			unifiedMemoryGB = 8.0 // Base M2 typical config
+		}
+	} else if strings.Contains(outputStr, "apple m3") {
+		if strings.Contains(outputStr, "m3 max") {
+			gpuName = "Apple M3 Max"
+			unifiedMemoryGB = 48.0 // M3 Max typical config
+		} else if strings.Contains(outputStr, "m3 pro") {
+			gpuName = "Apple M3 Pro"
+			unifiedMemoryGB = 18.0 // M3 Pro typical config
+		} else {
+			gpuName = "Apple M3"
+			unifiedMemoryGB = 8.0 // Base M3 typical config
+		}
+	} else if strings.Contains(outputStr, "apple m4") {
+		if strings.Contains(outputStr, "m4 max") {
+			gpuName = "Apple M4 Max"
+			unifiedMemoryGB = 64.0 // M4 Max estimated config
+		} else if strings.Contains(outputStr, "m4 pro") {
+			gpuName = "Apple M4 Pro"
+			unifiedMemoryGB = 24.0 // M4 Pro estimated config
+		} else {
+			gpuName = "Apple M4"
+			unifiedMemoryGB = 10.0 // Base M4 estimated config
+		}
+	} else {
+		// Unknown Apple Silicon - use conservative estimate
+		gpuName = "Apple Silicon GPU"
+		unifiedMemoryGB = getAppleSiliconUnifiedMemory()
+	}
+
+	// Check for actual total memory and adjust
+	if info.TotalRAMGB > 0 {
+		// Use 70% of total RAM as available for GPU tasks (conservative)
+		adjustedMemory := info.TotalRAMGB * 0.7
+		if adjustedMemory < unifiedMemoryGB {
+			unifiedMemoryGB = adjustedMemory
+		}
+	}
+
+	info.HasMLX = true
+	info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+		Name:     gpuName,
+		VRAMGB:   unifiedMemoryGB,
+		Type:     "MLX",
+		DeviceID: 0,
+	})
+}
+
+// getAppleSiliconUnifiedMemory estimates unified memory for Apple Silicon
+func getAppleSiliconUnifiedMemory() float64 {
+	// Get total system memory and estimate GPU portion
+	cmd := exec.Command("sysctl", "-n", "hw.memsize")
+	output, err := cmd.Output()
+	if err != nil {
+		return 8.0 // Conservative fallback
+	}
+
+	memStr := strings.TrimSpace(string(output))
+	if memBytes, err := strconv.ParseInt(memStr, 10, 64); err == nil {
+		totalGB := float64(memBytes) / (1024 * 1024 * 1024)
+		// Use 70% of total memory as available for GPU tasks
+		return totalGB * 0.7
+	}
+	return 8.0 // Fallback
+}
+
+// PrintPlatformSupportSummary prints a comprehensive summary of platform support
+func PrintPlatformSupportSummary() {
+	fmt.Printf("\n🌍 ClaraCore Platform Support Matrix:\n")
+	fmt.Printf("══════════════════════════════════════════════════════════════\n")
+
+	// Windows Support
+	fmt.Printf("🪟 WINDOWS SUPPORT:\n")
+	fmt.Printf("   ✅ NVIDIA CUDA    - Best performance (RTX 40/30/20 series, GTX)\n")
+	fmt.Printf("   ✅ AMD ROCm       - AMD GPU acceleration (RX 7000/6000/5000 series)\n")
+	fmt.Printf("   ✅ Vulkan        - Cross-platform GPU support\n")
+	fmt.Printf("   ✅ Intel GPU     - Integrated graphics acceleration\n")
+	fmt.Printf("   ✅ CPU           - Multithreaded fallback\n")
+	fmt.Printf("   🎯 Priority: CUDA > ROCm > Vulkan > CPU\n\n")
+
+	// Linux Support
+	fmt.Printf("🐧 LINUX SUPPORT:\n")
+	fmt.Printf("   ✅ NVIDIA CUDA    - Optimal for data centers & gaming rigs\n")
+	fmt.Printf("   ✅ AMD ROCm       - Open-source AMD GPU acceleration\n")
+	fmt.Printf("   ✅ Vulkan        - Modern GPU API support\n")
+	fmt.Printf("   ✅ Intel GPU     - Integrated & discrete Intel graphics\n")
+	fmt.Printf("   ✅ CPU           - Excellent Linux optimization\n")
+	fmt.Printf("   🎯 Priority: CUDA > ROCm > Vulkan > CPU\n\n")
+
+	// macOS Support
+	fmt.Printf("🍎 macOS SUPPORT:\n")
+	fmt.Printf("   ✅ Apple MLX      - Apple Silicon unified memory (M1/M2/M3/M4)\n")
+	fmt.Printf("   ✅ Metal         - Apple GPU acceleration framework\n")
+	fmt.Printf("   ✅ Vulkan (MoltenVK) - Cross-platform compatibility layer\n")
+	fmt.Printf("   ✅ Intel GPU     - Intel Mac integrated graphics\n")
+	fmt.Printf("   ✅ CPU           - macOS-optimized processing\n")
+	fmt.Printf("   🎯 Priority: Metal+MLX > Vulkan > CPU\n\n")
+
+	// Hardware Recommendations
+	fmt.Printf("🔧 HARDWARE RECOMMENDATIONS:\n")
+	fmt.Printf("   🥇 Best:    NVIDIA RTX 4090 (24GB) / RTX 4080 (16GB) - Windows/Linux\n")
+	fmt.Printf("   🥇 Best:    Apple M3 Max (128GB) / M2 Ultra (192GB) - macOS\n")
+	fmt.Printf("   🥈 Great:   AMD RX 7900XTX (24GB) / RTX 3080 Ti (12GB)\n")
+	fmt.Printf("   🥉 Good:    RTX 3060 (12GB) / Intel Arc A770 (16GB)\n")
+	fmt.Printf("   💻 Budget:  CPU-only with 32GB+ RAM\n\n")
+
+	// Model Size Recommendations
+	fmt.Printf("📊 MODEL SIZE vs HARDWARE:\n")
+	fmt.Printf("   🤖 70B+ models:  24GB+ VRAM or Apple Silicon with 64GB+ unified memory\n")
+	fmt.Printf("   🤖 30B models:   16GB+ VRAM or 32GB+ unified memory\n")
+	fmt.Printf("   🤖 13B models:   8GB+ VRAM or 16GB+ unified memory\n")
+	fmt.Printf("   🤖 7B models:    6GB+ VRAM or 8GB+ unified memory\n")
+	fmt.Printf("   🤖 3B models:    4GB+ VRAM or 4GB+ unified memory\n\n")
+
+	// Installation Notes
+	fmt.Printf("📝 INSTALLATION NOTES:\n")
+	fmt.Printf("   Windows: Automatic driver detection and binary selection\n")
+	fmt.Printf("   Linux:   Install CUDA/ROCm drivers manually for best performance\n")
+	fmt.Printf("   macOS:   Metal/MLX work out-of-the-box on Apple Silicon\n")
+	fmt.Printf("══════════════════════════════════════════════════════════════\n")
 }
 
 // enhanceIntelGPUDetection detects Intel integrated GPUs
 func enhanceIntelGPUDetection(info *SystemInfo) {
 	switch runtime.GOOS {
 	case "windows":
-		cmd := exec.Command("wmic", "path", "win32_VideoController", "get", "name")
+		cmd := exec.Command("wmic", "path", "win32_VideoController", "get", "name,AdapterRAM")
 		output, err := cmd.Output()
 		if err != nil {
 			return
 		}
 
-		if strings.Contains(strings.ToLower(string(output)), "intel") {
+		outputStr := strings.ToLower(string(output))
+		if strings.Contains(outputStr, "intel") {
+			// Parse Intel GPU details
+			lines := strings.Split(string(output), "\n")
+			var gpuName string
+			var sharedMemoryGB float64 = 4.0 // Default estimate
+
+			for _, line := range lines {
+				if strings.Contains(strings.ToLower(line), "intel") && !strings.Contains(line, "AdapterRAM") {
+					parts := strings.Fields(line)
+					if len(parts) > 0 {
+						// Extract GPU name and memory estimate
+						if strings.Contains(strings.ToLower(line), "iris xe") {
+							gpuName = "Intel Iris Xe"
+							sharedMemoryGB = 8.0 // Modern integrated GPU
+						} else if strings.Contains(strings.ToLower(line), "iris") {
+							gpuName = "Intel Iris"
+							sharedMemoryGB = 6.0
+						} else {
+							gpuName = "Intel HD Graphics"
+							sharedMemoryGB = 4.0
+						}
+						break
+					}
+				}
+			}
+
 			info.HasIntel = true
 			info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
-				Name:     "Intel GPU",
-				VRAMGB:   4.0, // Shared memory estimate
+				Name:     gpuName,
+				VRAMGB:   sharedMemoryGB,
 				Type:     "Intel",
 				DeviceID: 0,
 			})
 		}
+
 	case "linux":
 		// Check for Intel GPU on Linux
-		cmd := exec.Command("lspci", "-nn")
+		cmd := exec.Command("lspci", "-v")
 		output, err := cmd.Output()
 		if err != nil {
 			return
 		}
 
-		if strings.Contains(strings.ToLower(string(output)), "intel") &&
-			strings.Contains(strings.ToLower(string(output)), "graphics") {
+		outputStr := strings.ToLower(string(output))
+		if strings.Contains(outputStr, "intel") && strings.Contains(outputStr, "graphics") {
+			var gpuName string
+			var sharedMemoryGB float64 = 4.0
+
+			// Parse for specific Intel GPU types
+			if strings.Contains(outputStr, "iris xe") {
+				gpuName = "Intel Iris Xe"
+				sharedMemoryGB = 8.0
+			} else if strings.Contains(outputStr, "iris") {
+				gpuName = "Intel Iris"
+				sharedMemoryGB = 6.0
+			} else if strings.Contains(outputStr, "uhd") {
+				gpuName = "Intel UHD Graphics"
+				sharedMemoryGB = 5.0
+			} else {
+				gpuName = "Intel HD Graphics"
+				sharedMemoryGB = 4.0
+			}
+
 			info.HasIntel = true
 			info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
-				Name:     "Intel GPU",
-				VRAMGB:   4.0, // Shared memory estimate
+				Name:     gpuName,
+				VRAMGB:   sharedMemoryGB,
 				Type:     "Intel",
 				DeviceID: 0,
 			})
+		}
+
+	case "darwin":
+		// Check for Intel GPU on Intel-based Macs
+		if runtime.GOARCH == "amd64" { // Intel Macs
+			cmd := exec.Command("system_profiler", "SPDisplaysDataType")
+			output, err := cmd.Output()
+			if err != nil {
+				return
+			}
+
+			outputStr := strings.ToLower(string(output))
+			if strings.Contains(outputStr, "intel") {
+				var gpuName string
+				var sharedMemoryGB float64 = 1.5 // macOS Intel integrated
+
+				if strings.Contains(outputStr, "iris") {
+					gpuName = "Intel Iris Pro"
+					sharedMemoryGB = 2.0
+				} else {
+					gpuName = "Intel HD Graphics"
+					sharedMemoryGB = 1.5
+				}
+
+				info.HasIntel = true
+				info.VRAMDetails = append(info.VRAMDetails, GPUInfo{
+					Name:     gpuName,
+					VRAMGB:   sharedMemoryGB,
+					Type:     "Intel",
+					DeviceID: 0,
+				})
+			}
 		}
 	}
 }
@@ -932,48 +1327,162 @@ func detectQuantizationFromFilename(filename string) string {
 	return "Unknown"
 }
 
-// PrintSystemInfo prints comprehensive system information
+// PrintSystemInfo prints comprehensive system information with platform-specific details
 func PrintSystemInfo(info *SystemInfo) {
 	fmt.Printf("🖥️  System Information:\n")
 	fmt.Printf("   OS: %s/%s\n", info.OS, info.Architecture)
 	fmt.Printf("   CPU Cores: %d logical, %d physical\n", info.CPUCores, info.PhysicalCores)
 	fmt.Printf("   Total RAM: %.1f GB\n", info.TotalRAMGB)
 
-	fmt.Printf("🎮 GPU Detection:\n")
-	if info.HasCUDA {
-		fmt.Printf("   ✅ NVIDIA CUDA detected")
-		if info.CUDAVersion != "" {
-			fmt.Printf(" (version %s)", info.CUDAVersion)
+	// Platform-specific acceleration support
+	fmt.Printf("🚀 Platform Acceleration Support:\n")
+
+	switch info.OS {
+	case "windows":
+		fmt.Printf("   🪟 Windows Platform:\n")
+		if info.HasCUDA {
+			fmt.Printf("      ✅ NVIDIA CUDA")
+			if info.CUDAVersion != "" {
+				fmt.Printf(" (v%s)", info.CUDAVersion)
+			}
+			fmt.Printf(" - Best performance for NVIDIA GPUs\n")
 		}
-		fmt.Printf("\n")
-	}
-	if info.HasROCm {
-		fmt.Printf("   ✅ AMD ROCm detected")
-		if info.ROCmVersion != "" {
-			fmt.Printf(" (version %s)", info.ROCmVersion)
+		if info.HasROCm {
+			fmt.Printf("      ✅ AMD ROCm")
+			if info.ROCmVersion != "" {
+				fmt.Printf(" (v%s)", info.ROCmVersion)
+			}
+			fmt.Printf(" - AMD GPU acceleration\n")
 		}
-		fmt.Printf("\n")
-	}
-	if info.HasMLX {
-		fmt.Printf("   ✅ Apple MLX detected\n")
-	}
-	if info.HasIntel {
-		fmt.Printf("   ✅ Intel GPU detected\n")
-	}
-	if info.HasVulkan {
-		fmt.Printf("   ✅ Vulkan detected\n")
-	}
-	if info.HasMetal {
-		fmt.Printf("   ✅ Metal detected\n")
+		if info.HasVulkan {
+			fmt.Printf("      ✅ Vulkan - Cross-platform GPU acceleration\n")
+		}
+		if info.HasIntel {
+			fmt.Printf("      ✅ Intel GPU - Integrated graphics acceleration\n")
+		}
+		if !info.HasCUDA && !info.HasROCm && !info.HasVulkan && !info.HasIntel {
+			fmt.Printf("      💻 CPU-only - Software acceleration\n")
+		}
+
+	case "linux":
+		fmt.Printf("   🐧 Linux Platform:\n")
+		if info.HasCUDA {
+			fmt.Printf("      ✅ NVIDIA CUDA")
+			if info.CUDAVersion != "" {
+				fmt.Printf(" (v%s)", info.CUDAVersion)
+			}
+			fmt.Printf(" - Optimal for NVIDIA GPUs\n")
+		}
+		if info.HasROCm {
+			fmt.Printf("      ✅ AMD ROCm")
+			if info.ROCmVersion != "" {
+				fmt.Printf(" (v%s)", info.ROCmVersion)
+			}
+			fmt.Printf(" - AMD GPU acceleration\n")
+		}
+		if info.HasVulkan {
+			fmt.Printf("      ✅ Vulkan - Universal GPU acceleration\n")
+		}
+		if info.HasIntel {
+			fmt.Printf("      ✅ Intel GPU - Integrated graphics support\n")
+		}
+		if !info.HasCUDA && !info.HasROCm && !info.HasVulkan && !info.HasIntel {
+			fmt.Printf("      💻 CPU-only - Multithreaded processing\n")
+		}
+
+	case "darwin":
+		fmt.Printf("   🍎 macOS Platform:\n")
+		if info.HasMLX && runtime.GOARCH == "arm64" {
+			fmt.Printf("      ✅ Apple MLX - Optimized for Apple Silicon\n")
+		}
+		if info.HasMetal {
+			fmt.Printf("      ✅ Metal - Apple GPU acceleration\n")
+		}
+		if info.HasVulkan {
+			fmt.Printf("      ✅ Vulkan (MoltenVK) - Cross-platform compatibility\n")
+		}
+		if info.HasIntel && runtime.GOARCH == "amd64" {
+			fmt.Printf("      ✅ Intel GPU - Intel Mac graphics\n")
+		}
+		if runtime.GOARCH == "amd64" && !info.HasMetal && !info.HasVulkan && !info.HasIntel {
+			fmt.Printf("      💻 CPU-only - Intel Mac software processing\n")
+		}
 	}
 
+	// GPU Memory Details
 	if len(info.VRAMDetails) > 0 {
-		fmt.Printf("   Total VRAM: %.1f GB\n", info.TotalVRAMGB)
+		fmt.Printf("\n💾 GPU Memory Information:\n")
+		fmt.Printf("   Total Available: %.1f GB\n", info.TotalVRAMGB)
 		for i, gpu := range info.VRAMDetails {
-			fmt.Printf("     GPU %d: %s (%.1f GB %s)\n", i, gpu.Name, gpu.VRAMGB, gpu.Type)
+			emoji := getGPUEmoji(gpu.Type)
+			fmt.Printf("   %s GPU %d: %s (%.1f GB)\n", emoji, i, gpu.Name, gpu.VRAMGB)
+
+			// Add platform-specific notes
+			switch gpu.Type {
+			case "CUDA":
+				fmt.Printf("      🎯 Optimal for large language models\n")
+			case "ROCm":
+				fmt.Printf("      🔥 AMD GPU acceleration with ROCm\n")
+			case "MLX":
+				fmt.Printf("      🧠 Unified memory for Apple Silicon efficiency\n")
+			case "Intel":
+				fmt.Printf("      ⚡ Shared system memory for GPU tasks\n")
+			}
 		}
 	} else {
-		fmt.Printf("   No dedicated GPUs detected\n")
+		fmt.Printf("\n💻 No dedicated GPU memory - Using system RAM\n")
+	}
+
+	// Platform recommendations
+	fmt.Printf("\n💡 Platform Recommendations:\n")
+	switch info.OS {
+	case "windows":
+		if info.HasCUDA {
+			fmt.Printf("   🥇 CUDA backend recommended for best performance\n")
+		} else if info.HasROCm {
+			fmt.Printf("   🥈 ROCm backend recommended for AMD GPUs\n")
+		} else if info.HasVulkan {
+			fmt.Printf("   🥉 Vulkan backend for cross-platform compatibility\n")
+		} else {
+			fmt.Printf("   💻 CPU backend - Consider GPU upgrade for better performance\n")
+		}
+	case "linux":
+		if info.HasCUDA {
+			fmt.Printf("   🥇 CUDA backend optimal for NVIDIA hardware\n")
+		} else if info.HasROCm {
+			fmt.Printf("   🥈 ROCm backend excellent for AMD GPUs\n")
+		} else if info.HasVulkan {
+			fmt.Printf("   🥉 Vulkan backend for modern GPU support\n")
+		} else {
+			fmt.Printf("   💻 CPU backend with excellent Linux optimization\n")
+		}
+	case "darwin":
+		if info.HasMLX && runtime.GOARCH == "arm64" {
+			fmt.Printf("   🥇 Metal backend optimal for Apple Silicon\n")
+			fmt.Printf("   ⚡ MLX framework provides best efficiency\n")
+		} else if info.HasMetal {
+			fmt.Printf("   🥈 Metal backend for GPU acceleration\n")
+		} else if info.HasVulkan {
+			fmt.Printf("   🥉 Vulkan (MoltenVK) for compatibility\n")
+		} else {
+			fmt.Printf("   💻 CPU backend with macOS optimizations\n")
+		}
+	}
+}
+
+// getGPUEmoji returns appropriate emoji for GPU type
+func getGPUEmoji(gpuType string) string {
+	switch gpuType {
+	case "CUDA":
+		return "🟢" // NVIDIA green
+	case "ROCm":
+		return "🔴" // AMD red
+	case "MLX":
+		return "🍎" // Apple
+	case "Intel":
+		return "🔵" // Intel blue
+	default:
+		return "⚪" // Generic
 	}
 }
 

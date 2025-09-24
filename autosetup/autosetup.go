@@ -222,10 +222,13 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 	fmt.Printf("   Configuration: %s\n", configPath)
 	fmt.Printf("   Models detected: %d\n", len(models))
 
+	// Print platform support summary
+	PrintPlatformSupportSummary()
+
 	// Print next steps
 	fmt.Println("\n🎉 Setup complete! Next steps:")
 	fmt.Println("   1. Review the generated config.yaml file")
-	fmt.Println("   2. Start llama-swap: ./llama-swap")
+	fmt.Println("   2. Start ClaraCore: ./clara-core")
 	fmt.Println("   3. Test with: curl http://localhost:8080/v1/models")
 
 	// Print available models

@@ -4,7 +4,9 @@ import { LogPanel } from "./LogViewer";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useTheme } from "../contexts/ThemeProvider";
-import { RiEyeFill, RiEyeOffFill, RiStopCircleLine, RiSwapBoxFill } from "react-icons/ri";
+import { EyeIcon, EyeOffIcon, StopCircleIcon, RefreshCwIcon, ExternalLinkIcon, CpuIcon } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Table } from "../components";
+import { motion } from "framer-motion";
 
 export default function ModelsPage() {
   const { isNarrow } = useTheme();
@@ -38,7 +40,7 @@ function ModelsPanel() {
   const { models, loadModel, unloadAllModels } = useAPI();
   const [isUnloading, setIsUnloading] = useState(false);
   const [showUnlisted, setShowUnlisted] = usePersistentState("showUnlisted", true);
-  const [showIdorName, setShowIdorName] = usePersistentState<"id" | "name">("showIdorName", "id"); // true = show ID, false = show name
+  const [showIdorName, setShowIdorName] = usePersistentState<"id" | "name">("showIdorName", "id");
 
   const filteredModels = useMemo(() => {
     return models.filter((model) => showUnlisted || !model.unlisted);
@@ -59,79 +61,94 @@ function ModelsPanel() {
 
   const toggleIdorName = useCallback(() => {
     setShowIdorName((prev) => (prev === "name" ? "id" : "name"));
-  }, [showIdorName]);
+  }, [setShowIdorName]);
 
   return (
-    <div className="bg-surface rounded-xl h-full flex flex-col p-6 m-2 glass border border-gray-600/50">
-      {/* Enhanced Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-gradient-to-br from-primary to-sakura-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-lg">M</span>
+    <Card className="h-full flex flex-col m-2">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-gradient-to-br from-brand-500 to-brand-600 rounded-lg flex items-center justify-center">
+              <CpuIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <CardTitle className="text-2xl">Models</CardTitle>
+              <CardDescription>{filteredModels.length} models available</CardDescription>
+            </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-white">Models</h2>
-            <p className="text-gray-400 text-sm">{filteredModels.length} models available</p>
-          </div>
+          
+          <Button
+            variant="danger"
+            size="lg"
+            loading={isUnloading}
+            onClick={handleUnloadAllModels}
+            disabled={isUnloading}
+            className="flex items-center gap-3"
+          >
+            <StopCircleIcon className="w-5 h-5" />
+            {isUnloading ? "Unloading All..." : "Unload All Models"}
+          </Button>
         </div>
-        
-        <button
-          className={`btn-danger btn-lg flex items-center gap-3 ${isUnloading ? 'btn-loading' : ''}`}
-          onClick={handleUnloadAllModels}
-          disabled={isUnloading}
-        >
-          <RiStopCircleLine size="20" />
-          <span>{isUnloading ? "Unloading All..." : "Unload All Models"}</span>
-        </button>
-      </div>
 
-      {/* Controls */}
-      <div className="flex gap-3 mb-6">
-        <button
-          className="btn-secondary flex items-center gap-2"
-          onClick={toggleIdorName}
-        >
-          <RiSwapBoxFill size="18" />
-          <span>Show {showIdorName === "id" ? "Names" : "IDs"}</span>
-        </button>
+        {/* Controls */}
+        <div className="flex gap-3 mt-4">
+          <Button
+            variant="secondary"
+            onClick={toggleIdorName}
+            className="flex items-center gap-2"
+          >
+            <RefreshCwIcon className="w-4 h-4" />
+            Show {showIdorName === "id" ? "Names" : "IDs"}
+          </Button>
 
-        <button
-          className={`flex items-center gap-2 ${showUnlisted ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setShowUnlisted(!showUnlisted)}
-        >
-          {showUnlisted ? <RiEyeFill size="18" /> : <RiEyeOffFill size="18" />}
-          <span>{showUnlisted ? "Hide" : "Show"} Unlisted</span>
-        </button>
-      </div>
+          <Button
+            variant={showUnlisted ? "primary" : "secondary"}
+            onClick={() => setShowUnlisted(!showUnlisted)}
+            className="flex items-center gap-2"
+          >
+            {showUnlisted ? <EyeIcon className="w-4 h-4" /> : <EyeOffIcon className="w-4 h-4" />}
+            {showUnlisted ? "Hide" : "Show"} Unlisted
+          </Button>
+        </div>
+      </CardHeader>
 
-      {/* Card List */}
-      <div className="flex-1 overflow-y-auto">
+      <CardContent className="flex-1 overflow-y-auto">
         <div className="space-y-3">
-          {filteredModels.map((model) => (
-            <ModelCard 
-              key={model.id} 
-              model={model} 
-              showIdorName={showIdorName}
-              onLoad={() => loadModel(model.id)}
-            />
+          {filteredModels.map((model, index) => (
+            <motion.div
+              key={model.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+            >
+              <ModelCard 
+                model={model} 
+                showIdorName={showIdorName}
+                onLoad={() => loadModel(model.id)}
+              />
+            </motion.div>
           ))}
         </div>
         
         {filteredModels.length === 0 && (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-gray-800 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <span className="text-gray-500 text-2xl">📦</span>
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-12"
+          >
+            <div className="w-16 h-16 bg-surface-secondary rounded-full mx-auto mb-4 flex items-center justify-center">
+              <CpuIcon className="w-8 h-8 text-text-tertiary" />
             </div>
-            <p className="text-gray-400">No models found</p>
-            <p className="text-gray-500 text-sm">Try adjusting your filters</p>
-          </div>
+            <p className="text-text-secondary mb-2">No models found</p>
+            <p className="text-text-tertiary text-sm">Try adjusting your filters</p>
+          </motion.div>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
-// New ModelCard component
+// Modern ModelCard component
 interface ModelCardProps {
   model: any;
   showIdorName: "id" | "name";
@@ -143,136 +160,149 @@ function ModelCard({ model, showIdorName, onLoad }: ModelCardProps) {
   const isAvailable = model.state === "stopped";
   
   return (
-    <div className={`glass rounded-xl p-4 border transition-all duration-300 hover:shadow-xl ${
-      model.unlisted ? 'border-gray-700 opacity-75' : 'border-gray-600'
-    } ${isAvailable ? 'hover:border-primary/50' : ''}`}>
-      
-      <div className="flex items-center justify-between">
-        {/* Left side: Model info */}
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          {/* Model Avatar */}
-          <div className="w-12 h-12 bg-gradient-to-br from-primary to-sakura-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-lg">
-              {displayName.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          
-          {/* Model Details */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-1">
-              <h3 className={`font-semibold text-lg ${
-                model.unlisted ? 'text-gray-400' : 'text-white'
-              } truncate`}>
-                {displayName}
-              </h3>
-              <ModelStatusBadge state={model.state} />
+    <Card 
+      variant="elevated" 
+      hover={isAvailable}
+      className={`transition-all duration-300 ${
+        model.unlisted ? 'opacity-75' : ''
+      } ${isAvailable ? 'hover:border-brand-500/50' : ''}`}
+    >
+      <CardContent>
+        <div className="flex items-center justify-between">
+          {/* Left side: Model info */}
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            {/* Model Avatar */}
+            <div className="w-12 h-12 bg-gradient-to-br from-brand-500 to-brand-600 rounded-lg flex items-center justify-center flex-shrink-0">
+              <span className="text-white font-bold text-lg">
+                {displayName.charAt(0).toUpperCase()}
+              </span>
             </div>
             
-            {showIdorName === "name" && model.name && (
-              <p className="text-gray-500 text-sm font-mono mb-1 truncate">{model.id}</p>
-            )}
+            {/* Model Details */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mb-1">
+                <h3 className={`font-semibold text-lg ${
+                  model.unlisted ? 'text-text-tertiary' : 'text-text-primary'
+                } truncate`}>
+                  {displayName}
+                </h3>
+                <ModelStatusBadge state={model.state} />
+              </div>
+              
+              {showIdorName === "name" && model.name && (
+                <p className="text-text-tertiary text-sm font-mono mb-1 truncate">{model.id}</p>
+              )}
+              
+              {model.description && (
+                <p className={`text-sm line-clamp-1 ${
+                  model.unlisted ? 'text-text-tertiary' : 'text-text-secondary'
+                }`}>
+                  {model.description}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Right side: Actions */}
+          <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+            <a 
+              href={`/upstream/${model.id}/`} 
+              target="_blank"
+              title="View model details"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-border-secondary bg-surface hover:bg-surface-secondary transition-colors"
+            >
+              <ExternalLinkIcon className="w-4 h-4" />
+            </a>
             
-            {model.description && (
-              <p className={`text-sm line-clamp-1 ${
-                model.unlisted ? 'text-gray-500' : 'text-gray-300'
-              }`}>
-                {model.description}
-              </p>
-            )}
+            <Button
+              variant={isAvailable ? "primary" : "secondary"}
+              size="sm"
+              disabled={!isAvailable}
+              onClick={onLoad}
+              className="min-w-[80px]"
+            >
+              {isAvailable ? "Load" : model.state}
+            </Button>
           </div>
         </div>
-
-        {/* Right side: Actions */}
-        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-          <a 
-            href={`/upstream/${model.id}/`} 
-            target="_blank"
-            className="btn-secondary btn-sm px-3 py-2"
-            title="View model details"
-          >
-            <span className="text-sm">🔗</span>
-          </a>
-          
-          <button
-            className={`btn-sm px-4 py-2 min-w-[80px] ${isAvailable ? 'btn-primary' : 'btn-secondary'}`}
-            disabled={!isAvailable}
-            onClick={onLoad}
-          >
-            {isAvailable ? "Load" : model.state}
-          </button>
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
-// Enhanced StatusBadge component
+// Modern StatusBadge component
 function ModelStatusBadge({ state }: { state: string }) {
   const getStatusConfig = (state: string) => {
     switch (state) {
       case 'stopped':
-        return { color: 'bg-gray-700 text-gray-300', icon: '⏹️' };
+        return { color: 'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300', icon: '⏹️' };
       case 'loading':
-        return { color: 'bg-blue-900/50 text-blue-300', icon: '⏳' };
+        return { color: 'bg-info-100 text-info-800 dark:bg-info-900/20 dark:text-info-300', icon: '⏳' };
       case 'ready':
-        return { color: 'bg-green-900/50 text-green-300', icon: '✅' };
+        return { color: 'bg-success-100 text-success-800 dark:bg-success-900/20 dark:text-success-300', icon: '✅' };
       case 'error':
-        return { color: 'bg-red-900/50 text-red-300', icon: '❌' };
+        return { color: 'bg-error-100 text-error-800 dark:bg-error-900/20 dark:text-error-300', icon: '❌' };
       default:
-        return { color: 'bg-gray-700 text-gray-300', icon: '❓' };
+        return { color: 'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300', icon: '❓' };
     }
   };
   
   const config = getStatusConfig(state);
   
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${config.color}`}>
+    <motion.span 
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${config.color}`}
+    >
       <span className="text-xs">{config.icon}</span>
       {state}
-    </span>
+    </motion.span>
   );
 }
 
 function StatsPanel() {
   const { metrics } = useAPI();
 
-  const [totalRequests, totalInputTokens, totalOutputTokens, avgTokensPerSecond] = useMemo(() => {
+  const statsData = useMemo(() => {
     const totalRequests = metrics.length;
     if (totalRequests === 0) {
-      return [0, 0, 0];
+      return [{
+        requests: '0',
+        processed: '0',
+        generated: '0',
+        tokensPerSec: '0.00'
+      }];
     }
     const totalInputTokens = metrics.reduce((sum, m) => sum + m.input_tokens, 0);
     const totalOutputTokens = metrics.reduce((sum, m) => sum + m.output_tokens, 0);
     const avgTokensPerSecond = (metrics.reduce((sum, m) => sum + m.tokens_per_second, 0) / totalRequests).toFixed(2);
-    return [totalRequests, totalInputTokens, totalOutputTokens, avgTokensPerSecond];
+    
+    return [{
+      requests: totalRequests.toString(),
+      processed: new Intl.NumberFormat().format(totalInputTokens),
+      generated: new Intl.NumberFormat().format(totalOutputTokens),
+      tokensPerSec: avgTokensPerSecond
+    }];
   }, [metrics]);
 
+  const columns = [
+    { key: 'requests', title: 'Requests', dataIndex: 'requests' as const, align: 'right' as const },
+    { key: 'processed', title: 'Processed', dataIndex: 'processed' as const, align: 'right' as const },
+    { key: 'generated', title: 'Generated', dataIndex: 'generated' as const, align: 'right' as const },
+    { key: 'tokensPerSec', title: 'Tokens/Sec', dataIndex: 'tokensPerSec' as const, align: 'right' as const },
+  ];
+
   return (
-    <div className="bg-surface rounded-lg p-4">
-      <div className="rounded-lg overflow-hidden border border-gray-600">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-600 text-right bg-surface-elevated">
-              <th className="text-gray-200 py-3 px-4">Requests</th>
-              <th className="border-l border-gray-600 text-gray-200 py-3 px-4">Processed</th>
-              <th className="border-l border-gray-600 text-gray-200 py-3 px-4">Generated</th>
-              <th className="border-l border-gray-600 text-gray-200 py-3 px-4">Tokens/Sec</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="text-right text-gray-300">
-              <td className="border-r border-gray-600 py-3 px-4">{totalRequests}</td>
-              <td className="border-r border-gray-600 py-3 px-4">
-                {new Intl.NumberFormat().format(totalInputTokens)}
-              </td>
-              <td className="border-r border-gray-600 py-3 px-4">
-                {new Intl.NumberFormat().format(totalOutputTokens)}
-              </td>
-              <td className="py-3 px-4">{avgTokensPerSecond}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <Card>
+      <CardContent className="p-0">
+        <Table 
+          data={statsData}
+          columns={columns}
+          sortable={false}
+          className="[&_th]:text-right [&_td]:text-right"
+        />
+      </CardContent>
+    </Card>
   );
 }

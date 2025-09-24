@@ -88,9 +88,12 @@ All the power of llama-swap, plus intelligent automation:
 ```bash
 # Just point to your models
 ./claracore --models-folder ~/models
-
-# Or use traditional config (fully compatible with llama-swap)
-./claracore --config config.yaml
+```
+### Manual Setup - for devices like strix halo and others who want to customize or setup without relying on auto-detection
+```bash
+# Create a config file
+./claracore -ram 64 -vram 24 -backend cuda
+# it will download the binaries and create a config file automatically and UI will have all the features needed to manage models
 ```
 
 ### API Usage

@@ -166,6 +166,9 @@ type Config struct {
 
 	// hooks, see: #209
 	Hooks HooksConfig `yaml:"hooks"`
+
+	// download management
+	DownloadDir string `yaml:"downloadDir"`
 }
 
 func (c *Config) RealModelName(search string) (string, bool) {

@@ -2,15 +2,17 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useAPI } from "../contexts/APIProvider";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import {
-  RiTextWrap,
-  RiAlignJustify,
-  RiFontSize,
-  RiMenuSearchLine,
-  RiMenuSearchFill,
-  RiCloseCircleFill,
-} from "react-icons/ri";
+import { 
+  WrapTextIcon, 
+  AlignJustifyIcon, 
+  TypeIcon, 
+  SearchIcon, 
+  XIcon,
+  FilterIcon
+} from "lucide-react";
 import { useTheme } from "../contexts/ThemeProvider";
+import { Card, CardHeader, CardTitle, CardContent, Button, Input } from "../components";
+import { motion } from "framer-motion";
 
 const LogViewer = () => {
   const { proxyLogs, upstreamLogs } = useAPI();
@@ -65,11 +67,11 @@ export const LogPanel = ({ id, title, logData }: LogPanelProps) => {
           return "xxs";
       }
     });
-  }, []);
+  }, [setFontSize]);
 
   const toggleWrapText = useCallback(() => {
     setTextWrap((prev) => !prev);
-  }, []);
+  }, [setTextWrap]);
 
   const toggleFilter = useCallback(() => {
     if (showFilter) {
@@ -78,7 +80,7 @@ export const LogPanel = ({ id, title, logData }: LogPanelProps) => {
     } else {
       setShowFilter(true);
     }
-  }, [filterRegex, setFilterRegex, showFilter]);
+  }, [showFilter, setShowFilter]);
 
   const fontSizeClass = useMemo(() => {
     switch (fontSize) {
@@ -105,6 +107,10 @@ export const LogPanel = ({ id, title, logData }: LogPanelProps) => {
     }
   }, [logData, filterRegex]);
 
+  const lineCount = useMemo(() => {
+    return logData.split('\n').filter(line => line.trim()).length;
+  }, [logData]);
+
   // auto scroll to bottom
   const preTagRef = useRef<HTMLPreElement>(null);
   useEffect(() => {
@@ -113,87 +119,94 @@ export const LogPanel = ({ id, title, logData }: LogPanelProps) => {
   }, [filteredLogs]);
 
   return (
-    <div className="glass rounded-xl overflow-hidden flex flex-col h-full m-2 border border-gray-600/50">
-      {/* Header with better styling */}
-      <div className="bg-gradient-to-r from-surface-elevated to-surface-hover px-6 py-4 border-b border-gray-600/50">
+    <Card className="h-full flex flex-col m-2 overflow-hidden">
+      <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full bg-primary animate-pulse"></div>
-            <h3 className="text-lg font-semibold text-white">{title}</h3>
-            <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded-full">
-              {logData.split('\n').filter(line => line.trim()).length} lines
+            <motion.div 
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="w-3 h-3 rounded-full bg-brand-500"
+            />
+            <CardTitle className="text-lg">{title}</CardTitle>
+            <span className="text-xs text-text-tertiary bg-surface-secondary px-2 py-1 rounded-full">
+              {lineCount} lines
             </span>
           </div>
 
           <div className="flex gap-2 items-center">
-            <button 
-              className="btn-secondary btn-sm flex items-center gap-1.5" 
+            <Button 
+              variant="ghost" 
+              size="sm"
               onClick={toggleFontSize}
-              title="Toggle font size"
+              className="flex items-center gap-1.5"
             >
-              <RiFontSize className="w-4 h-4" />
+              <TypeIcon className="w-4 h-4" />
               <span className="text-xs">{fontSize.toUpperCase()}</span>
-            </button>
-            <button 
-              className="btn-secondary btn-sm flex items-center gap-1.5" 
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm"
               onClick={toggleWrapText}
-              title="Toggle text wrapping"
+              className="flex items-center gap-1.5"
             >
-              {wrapText ? <RiTextWrap className="w-4 h-4" /> : <RiAlignJustify className="w-4 h-4" />}
-            </button>
-            <button 
-              className={`btn-sm flex items-center gap-1.5 ${showFilter ? 'btn-primary' : 'btn-secondary'}`}
+              {wrapText ? <WrapTextIcon className="w-4 h-4" /> : <AlignJustifyIcon className="w-4 h-4" />}
+            </Button>
+            <Button 
+              variant={showFilter ? "primary" : "ghost"}
+              size="sm"
               onClick={toggleFilter}
-              title="Toggle filter"
+              className="flex items-center gap-1.5"
             >
-              {showFilter ? <RiMenuSearchFill className="w-4 h-4" /> : <RiMenuSearchLine className="w-4 h-4" />}
+              <FilterIcon className="w-4 h-4" />
               {showFilter && <span className="text-xs">Filter</span>}
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Enhanced filtering UI */}
         {showFilter && (
-          <div className="mt-4 flex gap-3 items-center">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                className="w-full text-sm p-3 pl-10 rounded-lg bg-surface border border-gray-600 text-white placeholder-gray-400 focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all"
-                placeholder="Filter logs (regex supported)..."
-                value={filterRegex}
-                onChange={(e) => setFilterRegex(e.target.value)}
-              />
-              <RiMenuSearchLine className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            </div>
-            <button 
-              className="btn-danger btn-sm flex items-center gap-1.5" 
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 flex gap-3 items-center"
+          >
+            <Input
+              placeholder="Filter logs (regex supported)..."
+              value={filterRegex}
+              onChange={(e) => setFilterRegex(e.target.value)}
+              icon={<SearchIcon className="w-4 h-4" />}
+              className="flex-1"
+            />
+            <Button 
+              variant="ghost" 
+              size="sm" 
               onClick={() => setFilterRegex("")}
-              title="Clear filter"
+              className="flex items-center gap-1.5"
             >
-              <RiCloseCircleFill className="w-4 h-4" />
-            </button>
-          </div>
+              <XIcon className="w-4 h-4" />
+            </Button>
+          </motion.div>
         )}
-      </div>
+      </CardHeader>
 
-      {/* Enhanced log display */}
-      <div className="flex-1 overflow-hidden relative">
-        <pre 
-          ref={preTagRef} 
-          className={`${textWrapClass} ${fontSizeClass} h-full overflow-auto p-6 text-gray-200 font-mono leading-relaxed log-content`}
-          style={{
-            background: 'linear-gradient(180deg, rgba(10,10,10,0.95) 0%, rgba(17,17,17,0.95) 100%)'
-          }}
-        >
-          {filteredLogs}
-        </pre>
-        
-        {/* Scroll indicator */}
-        <div className="absolute bottom-4 right-4 bg-gray-800/80 text-gray-300 text-xs px-2 py-1 rounded-full backdrop-blur-sm">
-          {filteredLogs.split('\n').length} lines
+      <CardContent className="flex-1 overflow-hidden p-0">
+        <div className="relative h-full">
+          <pre 
+            ref={preTagRef} 
+            className={`${textWrapClass} ${fontSizeClass} h-full overflow-auto p-6 text-text-secondary font-mono leading-relaxed bg-surface-secondary`}
+          >
+            {filteredLogs || "Waiting for log data..."}
+          </pre>
+          
+          {/* Scroll indicator */}
+          <div className="absolute bottom-4 right-4 bg-surface/80 text-text-tertiary text-xs px-2 py-1 rounded-full backdrop-blur-sm border border-border-secondary">
+            {filteredLogs.split('\n').length} lines
+          </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };
 export default LogViewer;
