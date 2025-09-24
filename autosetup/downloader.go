@@ -394,9 +394,9 @@ func findLlamaServer(dir string) (string, error) {
 
 	// Priority order for searching llama-server executable
 	searchPaths := []string{
-		filepath.Join(dir, "build", "bin"),     // Most common: build/bin/llama-server
-		filepath.Join(dir, "bin"),              // Alternative: bin/llama-server  
-		filepath.Join(dir),                     // Root: llama-server
+		filepath.Join(dir, "build", "bin"), // Most common: build/bin/llama-server
+		filepath.Join(dir, "bin"),          // Alternative: bin/llama-server
+		filepath.Join(dir),                 // Root: llama-server
 	}
 
 	// Define possible executable names based on OS
@@ -410,7 +410,7 @@ func findLlamaServer(dir string) (string, error) {
 	} else {
 		executableNames = []string{
 			"llama-server",
-			"server", 
+			"server",
 			"main", // Some builds use main
 		}
 	}
@@ -443,10 +443,10 @@ func findLlamaServer(dir string) (string, error) {
 
 		name := info.Name()
 		// Look for any file that might be the server executable
-		if strings.Contains(strings.ToLower(name), "llama-server") || 
-		   strings.Contains(strings.ToLower(name), "server") ||
-		   (strings.Contains(strings.ToLower(name), "main") && !strings.Contains(strings.ToLower(name), ".")) {
-			
+		if strings.Contains(strings.ToLower(name), "llama-server") ||
+			strings.Contains(strings.ToLower(name), "server") ||
+			(strings.Contains(strings.ToLower(name), "main") && !strings.Contains(strings.ToLower(name), ".")) {
+
 			if runtime.GOOS == "windows" && strings.HasSuffix(name, ".exe") {
 				serverPath = path
 				return filepath.SkipDir
