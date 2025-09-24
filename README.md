@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="header2.png" alt="ClaraCore Banner" width="100%">
+  <img src="banner.png" alt="ClaraCore Banner" width="100%">
 </div>
 
 # ClaraCore 🚀
