@@ -188,6 +188,7 @@ func DownloadBinary(downloadDir string, system SystemInfo) (*BinaryInfo, error) 
 	extractDir := filepath.Join(downloadDir, "llama-server")
 
 	// Check if binary already exists
+	fmt.Printf("🔍 Checking for existing binary in: %s\n", extractDir)
 	existingServerPath, err := findLlamaServer(extractDir)
 	if err == nil {
 		// Binary exists, check if it's the right type for our system
@@ -293,10 +294,12 @@ func DownloadBinary(downloadDir string, system SystemInfo) (*BinaryInfo, error) 
 	}
 
 	// Find the llama-server executable
+	fmt.Printf("🔍 Searching for llama-server executable in: %s\n", extractDir)
 	serverPath, err := findLlamaServer(extractDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find llama-server executable: %v", err)
 	}
+	fmt.Printf("✅ Found llama-server at: %s\n", serverPath)
 
 	// Make it executable on Unix systems
 	if system.OS != "windows" {
@@ -389,19 +392,70 @@ func extractZip(src, dest string) error {
 func findLlamaServer(dir string) (string, error) {
 	var serverPath string
 
+	// Priority order for searching llama-server executable
+	searchPaths := []string{
+		filepath.Join(dir, "build", "bin"),     // Most common: build/bin/llama-server
+		filepath.Join(dir, "bin"),              // Alternative: bin/llama-server  
+		filepath.Join(dir),                     // Root: llama-server
+	}
+
+	// Define possible executable names based on OS
+	var executableNames []string
+	if runtime.GOOS == "windows" {
+		executableNames = []string{
+			"llama-server.exe",
+			"server.exe",
+			"main.exe", // Some builds use main.exe
+		}
+	} else {
+		executableNames = []string{
+			"llama-server",
+			"server", 
+			"main", // Some builds use main
+		}
+	}
+
+	// Search each path in priority order
+	for _, searchPath := range searchPaths {
+		for _, execName := range executableNames {
+			candidatePath := filepath.Join(searchPath, execName)
+			if _, err := os.Stat(candidatePath); err == nil {
+				// Found the executable, verify it's actually executable
+				if runtime.GOOS != "windows" {
+					if info, err := os.Stat(candidatePath); err == nil {
+						if info.Mode()&0111 != 0 { // Check if executable bit is set
+							return candidatePath, nil
+						}
+					}
+				} else {
+					// On Windows, if file exists and has .exe extension, it's executable
+					return candidatePath, nil
+				}
+			}
+		}
+	}
+
+	// Fallback: Walk the entire directory tree as before (for unusual structures)
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		name := info.Name()
-		if strings.Contains(name, "llama-server") || strings.Contains(name, "server") {
+		// Look for any file that might be the server executable
+		if strings.Contains(strings.ToLower(name), "llama-server") || 
+		   strings.Contains(strings.ToLower(name), "server") ||
+		   (strings.Contains(strings.ToLower(name), "main") && !strings.Contains(strings.ToLower(name), ".")) {
+			
 			if runtime.GOOS == "windows" && strings.HasSuffix(name, ".exe") {
 				serverPath = path
 				return filepath.SkipDir
 			} else if runtime.GOOS != "windows" && !strings.Contains(name, ".") {
-				serverPath = path
-				return filepath.SkipDir
+				// Verify it's executable on Unix systems
+				if info.Mode()&0111 != 0 {
+					serverPath = path
+					return filepath.SkipDir
+				}
 			}
 		}
 
@@ -413,7 +467,7 @@ func findLlamaServer(dir string) (string, error) {
 	}
 
 	if serverPath == "" {
-		return "", fmt.Errorf("llama-server executable not found in extracted files")
+		return "", fmt.Errorf("llama-server executable not found in extracted files. Searched paths: %v", searchPaths)
 	}
 
 	return serverPath, nil
