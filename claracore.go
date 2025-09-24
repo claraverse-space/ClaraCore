@@ -49,6 +49,25 @@ func main() {
 		os.Exit(0)
 	}
 
+    // Ensure config file exists; create an empty one if missing
+    if _, statErr := os.Stat(*configPath); statErr != nil {
+        if os.IsNotExist(statErr) {
+            // Create parent directory if necessary
+            if err := os.MkdirAll(filepath.Dir(*configPath), 0755); err != nil {
+                fmt.Printf("Error creating config directory: %v\n", err)
+                os.Exit(1)
+            }
+            if err := os.WriteFile(*configPath, []byte{}, 0644); err != nil {
+                fmt.Printf("Error creating empty config file: %v\n", err)
+                os.Exit(1)
+            }
+            fmt.Printf("Created empty config at %s\n", *configPath)
+        } else {
+            fmt.Printf("Error checking config file: %v\n", statErr)
+            os.Exit(1)
+        }
+    }
+
 	// Handle auto-setup mode
 	if *modelsFolder != "" {
 		fmt.Println("Running auto-setup mode...")
