@@ -1,462 +1,61 @@
-# Auto-generated llama-swap configuration (SMART GPU ALLOCATION)
-# Generated from models in: C:\BackUP\llama-modelsss
-# Binary: binaries\llama-server\llama-server.exe (cuda)
-# System: windows/amd64
-# Hardware monitoring: STATIC (total memory)
-# Total GPU VRAM: 24.0 GB
-# Algorithm: Hybrid VRAM+RAM allocation with intelligent layer distribution
-
+groups:
+    large-models:
+        exclusive: true
+        members:
+            - qwen3-0.6b.q2-k
+            - tinyllama-1.1b-chat-v1.0.q4-0
+        startPort: 5800
+        swap: true
 healthCheckTimeout: 300
 logLevel: info
-startPort: 5800
 macros:
-    "llama-server-base": >
-        binaries\llama-server\llama-server.exe --host 127.0.0.1 --port ${PORT} --metrics --flash-attn auto --no-warmup --dry-penalty-last-n 0 --batch-size 2048 --ubatch-size 512
-
-    "llama-embed-base": >
-        binaries\llama-server\llama-server.exe --host 127.0.0.1 --port ${PORT} --embedding
-
+    llama-embed-base: binaries\llama-server\llama-server.exe --host 127.0.0.1 --port ${PORT} --embedding
+    llama-server-base: binaries\llama-server\llama-server.exe --host 127.0.0.1 --port ${PORT} --metrics --flash-attn auto --no-warmup --dry-penalty-last-n 0 --batch-size 2048 --ubatch-size 512
 models:
-    "bytedance-seed-seed-oss-36b-instruct-36b":
-        name: "ByteDance-Seed_Seed-OSS-36B-Instruct-Q4_K_M"
-        description: "Model size: 36B - Quantization: Q4_K_M - Instruction-tuned"
-        cmd: |
+    qwen3-0.6b.q2-k:
+        cmd: |-
             ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\ByteDance-Seed_Seed-OSS-36B-Instruct-Q4_K_M.gguf
-            --ctx-size 20480
-            -ngl 999
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --cont-batching
-            --defrag-thold 0.1
-            --batch-size 2048
-            --ubatch-size 256
-            --keep 2048
-            --parallel 2
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
+                  --model C:\Users\prave\ClaraCore\downloads\Qwen3-0.6B.Q2_K.gguf
+                  --ctx-size 8192
+                  -ngl 999
+                  --cache-type-k q4_0
+                  --cache-type-v q4_0
+                  --jinja
+                  --batch-size 2048
+                  --ubatch-size 1024
+                  --temp 0.7
+                  --repeat-penalty 1.05
+                  --repeat-last-n 256
+                  --top-p 0.9
+                  --top-k 40
+                  --min-p 0.1
+        description: Auto-added from downloads - Qwen3-0.6B.Q2_K
         env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "glm-45-air-iq4-xs-00001-of-00002":
-        name: "GLM-4.5-Air-IQ4_XS-00001-of-00002"
-        description: "Quantization: IQ4_XS"
-        cmd: |
+            - CUDA_VISIBLE_DEVICES=0
+        modelId: qwen3-0.6b.q2-k
+        name: Qwen3-0.6B.Q2_K
+        proxy: http://127.0.0.1:${PORT}
+    tinyllama-1.1b-chat-v1.0.q4-0:
+        cmd: |-
             ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\GLM-4.5-Air-IQ4_XS\GLM-4.5-Air-IQ4_XS-00001-of-00002.gguf
-            --ctx-size 24576
-            -ngl 18
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
+                  --model C:\Users\prave\ClaraCore\downloads\tinyllama-1.1b-chat-v1.0.Q4_0.gguf
+                  --ctx-size 8192
+                  -ngl 999
+                  --cache-type-k q4_0
+                  --cache-type-v q4_0
+                  --jinja
+                  --batch-size 2048
+                  --ubatch-size 1024
+                  --temp 0.7
+                  --repeat-penalty 1.05
+                  --repeat-last-n 256
+                  --top-p 0.9
+                  --top-k 40
+                  --min-p 0.1
+        description: Auto-added from downloads - tinyllama-1.1b-chat-v1.0.Q4_0
         env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "gemma-3-27b-toolsq4-k-m-7b":
-        name: "gemma-3-27b-tools.Q4_K_M"
-        description: "Model size: 7B - Quantization: Q4_K_M - Instruction-tuned"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Gemma\gemma-3-27b-tools.Q4_K_M.gguf
-            --mmproj C:\BackUP\llama-modelsss\Gemma\gemma-3-27b-tools.mmproj-f16.gguf
-            --ctx-size 16384
-            -ngl 999
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --batch-size 1024
-            --ubatch-size 256
-            --keep 2048
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "gemma-3-4b-it-4b":
-        name: "gemma-3-4b-it-Q4_K_S"
-        description: "Model size: 4B - Quantization: Q4_K_S - Instruction-tuned"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Gemma\gemma-3-4b-it-Q4_K_S.gguf
-            --ctx-size 49152
-            -ngl 999
-            --cache-type-k f16
-            --cache-type-v f16
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "gemma-3n-e4b-it-4b":
-        name: "gemma-3n-e4b-it-q4_k_m"
-        description: "Model size: 4B - Quantization: Q4_K_M - Instruction-tuned"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Gemma\gemma-3n-e4b-it-q4_k_m.gguf
-            --ctx-size 32768
-            -ngl 999
-            --cache-type-k f16
-            --cache-type-v f16
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "jan-nano-128k":
-        name: "Jan-nano-128k-Q8_0"
-        description: "Quantization: Q8_0"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Jan\Jan-nano-128k-Q8_0.gguf
-            --ctx-size 131072
-            -ngl 999
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "webgenoss-20b-20b":
-        name: "WEBGENOSS-20B"
-        description: "Model size: 20B"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Jan\WEBGENOSS-20B.gguf
-            --ctx-size 32768
-            -ngl 999
-            --cache-type-k f16
-            --cache-type-v f16
-            --jinja
-            --cont-batching
-            --defrag-thold 0.1
-            --batch-size 1024
-            --ubatch-size 256
-            --keep 2048
-            --parallel 4
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "gpt-oss-20b-20b":
-        name: "gpt-oss-20b-Q5_K_M"
-        description: "Model size: 20B - Quantization: Q5_K_M"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\OpenAI\gpt-oss-20b-Q5_K_M.gguf
-            --ctx-size 65536
-            -ngl 999
-            --cache-type-k f16
-            --cache-type-v f16
-            --jinja
-            --cont-batching
-            --defrag-thold 0.1
-            --batch-size 1024
-            --ubatch-size 256
-            --keep 2048
-            --parallel 4
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "josiefied-qwen3-30b-a3b-abliterated-v2q4-k-m-3b":
-        name: "Josiefied-Qwen3-30B-A3B-abliterated-v2.Q4_K_M"
-        description: "Model size: 3B - Quantization: Q4_K_M"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Qwen\Josiefied-Qwen3-30B-A3B-abliterated-v2.Q4_K_M.gguf
-            --ctx-size 28672
-            -ngl 999
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "qwen3-06b-0.6b":
-        name: "Qwen3-0.6B-Q8_0"
-        description: "Model size: 0.6B - Quantization: Q8_0"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Qwen\Qwen3-0.6B-Q8_0.gguf
-            --ctx-size 40960
-            -ngl 999
-            --cache-type-k f16
-            --cache-type-v f16
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "qwen3-4b-thinking-2507-4b":
-        name: "Qwen3-4B-Thinking-2507-Q8_0"
-        description: "Model size: 4B - Quantization: Q8_0"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Qwen\Qwen3-4B-Thinking-2507-Q8_0.gguf
-            --ctx-size 163840
-            -ngl 999
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "qwen3-4bq4-k-m-4b":
-        name: "Qwen3-4B.Q4_K_M"
-        description: "Model size: 4B - Quantization: Q4_K_M"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Qwen\Qwen3-4B.Q4_K_M.gguf
-            --ctx-size 40960
-            -ngl 999
-            --cache-type-k f16
-            --cache-type-v f16
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "qwen-qwen3-30b-a3b-instruct-2507-3b":
-        name: "Qwen_Qwen3-30B-A3B-Instruct-2507-Q5_K_M"
-        description: "Model size: 3B - Quantization: Q5_K_M - Instruction-tuned"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Qwen\Qwen_Qwen3-30B-A3B-Instruct-2507-Q5_K_M.gguf
-            --ctx-size 16384
-            -ngl 999
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "huihui-internvl3-14b-abliterated-q6-k-4b":
-        name: "huihui-internvl3-14b-abliterated-q6_k"
-        description: "Model size: 4B - Quantization: Q6_K"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Qwen\huihui-internvl3-14b-abliterated-q6_k.gguf
-            --mmproj C:\BackUP\llama-modelsss\Qwen\mmproj-Huihui-InternVL3-14B-abliterated-F32.gguf
-            --ctx-size 32768
-            -ngl 999
-            --cache-type-k q4_0
-            --cache-type-v q4_0
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "qwen3-06b-0.6b-v2":
-        name: "Qwen3-0.6B-Q8_0"
-        description: "Model size: 0.6B - Quantization: Q8_0"
-        cmd: |
-            ${llama-server-base}
-            --model C:\BackUP\llama-modelsss\Qwen3-0.6B-Q8_0.gguf
-            --ctx-size 40960
-            -ngl 999
-            --cache-type-k f16
-            --cache-type-v f16
-            --jinja
-            --batch-size 2048
-            --ubatch-size 512
-            --keep 4096
-            --temp 0.7
-            --repeat-penalty 1.05
-            --repeat-last-n 256
-            --top-p 0.9
-            --top-k 40
-            --min-p 0.1
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "mxbai-embed-large-v1q4-k-s":
-        name: "mxbai-embed-large-v1.Q4_K_S"
-        description: "Quantization: Q4_K_S"
-        cmd: |
-            ${llama-embed-base}
-            --model C:\BackUP\llama-modelsss\embedding\mxbai-embed-large-v1.Q4_K_S.gguf
-            --pooling mean
-            --batch-size 1024
-            --ubatch-size 512
-            -ngl 999
-            --threads 8
-            --keep 1024
-            --defrag-thold 0.1
-            --mlock
-            --flash-attn on
-            --cont-batching
-            --jinja
-            --no-warmup
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "mxbai-largeiq4-xs":
-        name: "mxbai-large.IQ4_XS"
-        description: "Quantization: IQ4_XS"
-        cmd: |
-            ${llama-embed-base}
-            --model C:\BackUP\llama-modelsss\embedding\mxbai-large.IQ4_XS.gguf
-            --pooling mean
-            --batch-size 1024
-            --ubatch-size 512
-            -ngl 999
-            --threads 8
-            --keep 1024
-            --defrag-thold 0.1
-            --mlock
-            --flash-attn on
-            --cont-batching
-            --jinja
-            --no-warmup
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-    "mxbai-embed-large-v1-f16":
-        name: "mxbai-embed-large-v1-f16"
-        description: "Quantization: F16"
-        cmd: |
-            ${llama-embed-base}
-            --model C:\BackUP\llama-modelsss\mxbai-embed-large-v1-f16.gguf
-            --pooling mean
-            --batch-size 1024
-            --ubatch-size 512
-            -ngl 999
-            --threads 8
-            --keep 1024
-            --defrag-thold 0.1
-            --mlock
-            --flash-attn on
-            --cont-batching
-            --jinja
-            --no-warmup
-        proxy: "http://127.0.0.1:${PORT}"
-        env:
-            - "CUDA_VISIBLE_DEVICES=0"
-groups:
-    "large-models":
-        swap: true
-        exclusive: true
-        startPort: 5800
-        members:
-            - "bytedance-seed-seed-oss-36b-instruct-36b"
-            - "glm-45-air-iq4-xs-00001-of-00002"
-            - "gemma-3-27b-toolsq4-k-m-7b"
-            - "gemma-3-4b-it-4b"
-            - "gemma-3n-e4b-it-4b"
-            - "jan-nano-128k"
-            - "webgenoss-20b-20b"
-            - "gpt-oss-20b-20b"
-            - "josiefied-qwen3-30b-a3b-abliterated-v2q4-k-m-3b"
-            - "qwen3-06b-0.6b"
-            - "qwen3-4b-thinking-2507-4b"
-            - "qwen3-4bq4-k-m-4b"
-            - "qwen-qwen3-30b-a3b-instruct-2507-3b"
-            - "huihui-internvl3-14b-abliterated-q6-k-4b"
-            - "qwen3-06b-0.6b-v2"
-    "small-models":
-        swap: false
-        exclusive: false
-        persistent: true
-        startPort: 6000
-        members:
-            - "mxbai-embed-large-v1q4-k-s"
-            - "mxbai-largeiq4-xs"
-            - "mxbai-embed-large-v1-f16"
+            - CUDA_VISIBLE_DEVICES=0
+        modelId: tinyllama-1.1b-chat-v1.0.q4-0
+        name: tinyllama-1.1b-chat-v1.0.Q4_0
+        proxy: http://127.0.0.1:${PORT}
+startPort: 5800

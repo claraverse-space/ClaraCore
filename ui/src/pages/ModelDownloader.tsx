@@ -153,8 +153,25 @@ const ModelDownloaderPage: React.FC = () => {
             const index = updated.findIndex(d => d.id === progressData.downloadId);
             
             if (index !== -1) {
+              const oldStatus = updated[index].status;
+              const newStatus = progressData.info?.status;
+              
               // Update existing download
               updated[index] = { ...updated[index], ...progressData.info };
+              
+              // Check if download just completed
+              if (oldStatus !== 'completed' && newStatus === 'completed') {
+                const completedDownload = updated[index];
+                if (completedDownload.filename && completedDownload.filename.toLowerCase().endsWith('.gguf')) {
+                  // Construct the full path to the downloaded model
+                  const filePath = `./downloads/${completedDownload.filename}`;
+                  
+                  // Add model to config after a short delay to ensure file is fully written
+                  setTimeout(() => {
+                    addModelToConfig(filePath);
+                  }, 2000);
+                }
+              }
             } else if (progressData.info) {
               // Add new download
               updated.push(progressData.info);
@@ -300,6 +317,42 @@ const ModelDownloaderPage: React.FC = () => {
     }
   };
 
+  // Add downloaded model to config
+  const addModelToConfig = async (filePath: string) => {
+    try {
+      console.log('Adding model to config:', filePath);
+      
+      const response = await fetch('/api/config/append-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filePath,
+          options: {
+            enableJinja: true,
+            throughputFirst: true,
+            minContext: 16384,
+            preferredContext: 32768,
+          }
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Model added to config:', result);
+        
+        // Show success notification (you might want to add a toast/notification system)
+        alert(`✅ Model "${result.modelInfo.name}" has been added to your configuration and is ready to use!`);
+      } else {
+        const error = await response.text();
+        console.error('Failed to add model to config:', error);
+        alert(`❌ Failed to add model to configuration: ${error}`);
+      }
+    } catch (error) {
+      console.error('Failed to add model to config:', error);
+      alert(`❌ Failed to add model to configuration: ${error}`);
+    }
+  };
+
   // Format file size
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -415,6 +468,16 @@ const ModelDownloaderPage: React.FC = () => {
                             {download.filename}
                           </span>
                           <div className="flex items-center gap-2">
+                            {download.status === 'completed' && download.filename.toLowerCase().endsWith('.gguf') && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => addModelToConfig(`./downloads/${download.filename}`)}
+                                className="text-xs"
+                              >
+                                📋 Add to Config
+                              </Button>
+                            )}
                             {download.status === 'downloading' && (
                               <Button
                                 variant="ghost"
@@ -433,13 +496,15 @@ const ModelDownloaderPage: React.FC = () => {
                                 ▶️
                               </Button>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => cancelDownload(download.id)}
-                            >
-                              <XIcon className="w-3 h-3" />
-                            </Button>
+                            {download.status !== 'completed' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => cancelDownload(download.id)}
+                              >
+                                <XIcon className="w-3 h-3" />
+                              </Button>
+                            )}
                           </div>
                         </div>
                         <div className="w-full bg-surface-secondary rounded-full h-2">

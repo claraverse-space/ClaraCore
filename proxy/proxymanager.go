@@ -107,6 +107,58 @@ func New(config Config) *ProxyManager {
 
 	pm.setupGinEngine()
 
+	// Validate models on startup and remove missing ones
+	configReloaded := false
+	if pm.fileExists("config.yaml") {
+		removedModels, err := pm.validateAndCleanupConfig("config.yaml")
+		if err != nil {
+			proxyLogger.Warnf("Failed to validate models on startup: %v", err)
+		} else if len(removedModels) > 0 {
+			proxyLogger.Infof("Removed %d missing models from config on startup: %v", len(removedModels), removedModels)
+
+			// Reload config after cleanup
+			if newConfig, err := LoadConfig("config.yaml"); err == nil {
+				pm.config = newConfig
+				configReloaded = true
+
+				// Recreate process groups with updated config
+				pm.processGroups = make(map[string]*ProcessGroup)
+				for groupID := range newConfig.Groups {
+					processGroup := NewProcessGroup(groupID, newConfig, proxyLogger, upstreamLogger)
+					pm.processGroups[groupID] = processGroup
+				}
+			} else {
+				proxyLogger.Warnf("Failed to reload config after model cleanup: %v", err)
+			}
+		}
+	}
+
+	// Scan downloads folder and auto-add any new models
+	if pm.fileExists("config.yaml") {
+		addedModels, err := pm.scanAndAddDownloadedModels("config.yaml")
+		if err != nil {
+			proxyLogger.Warnf("Failed to scan downloads folder on startup: %v", err)
+		} else if len(addedModels) > 0 {
+			proxyLogger.Infof("Auto-added %d new models from downloads folder: %v", len(addedModels), addedModels)
+
+			// Reload config after adding models (only if not already reloaded)
+			if !configReloaded {
+				if newConfig, err := LoadConfig("config.yaml"); err == nil {
+					pm.config = newConfig
+
+					// Recreate process groups with updated config
+					pm.processGroups = make(map[string]*ProcessGroup)
+					for groupID := range newConfig.Groups {
+						processGroup := NewProcessGroup(groupID, newConfig, proxyLogger, upstreamLogger)
+						pm.processGroups[groupID] = processGroup
+					}
+				} else {
+					proxyLogger.Warnf("Failed to reload config after adding models: %v", err)
+				}
+			}
+		}
+	}
+
 	// run any startup hooks
 	if len(config.Hooks.OnStartup.Preload) > 0 {
 		// do it in the background, don't block startup -- not sure if good idea yet
@@ -247,6 +299,14 @@ func (pm *ProxyManager) setupGinEngine() {
 	pm.ginEngine.GET("/favicon.ico", func(c *gin.Context) {
 		if data, err := reactStaticFS.ReadFile("ui_dist/favicon.ico"); err == nil {
 			c.Data(http.StatusOK, "image/x-icon", data)
+		} else {
+			c.String(http.StatusInternalServerError, err.Error())
+		}
+	})
+
+	pm.ginEngine.GET("/apple-touch-icon.png", func(c *gin.Context) {
+		if data, err := reactStaticFS.ReadFile("ui_dist/apple-touch-icon.png"); err == nil {
+			c.Data(http.StatusOK, "image/png", data)
 		} else {
 			c.String(http.StatusInternalServerError, err.Error())
 		}
