@@ -39,10 +39,10 @@ interface ModelScanResult {
 
 interface SystemConfig {
   hasGPU: boolean;
-  gpuType: 'nvidia' | 'amd' | 'intel' | 'none';
+  gpuType: 'nvidia' | 'amd' | 'intel' | 'apple' | 'none';
   vramGB: number;
   ramGB: number;
-  backend: 'cuda' | 'rocm' | 'vulkan' | 'cpu';
+  backend: 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
   preferredContext: number;
   throughputFirst: boolean;
 }
@@ -107,11 +107,16 @@ const OnboardConfig: React.FC = () => {
         
         // Auto-populate system config based on detection
         if (detection.primaryGPU) {
+          let gpuType: 'nvidia' | 'amd' | 'intel' | 'apple' = 'intel';
+          if (detection.primaryGPU.brand === 'nvidia') gpuType = 'nvidia';
+          else if (detection.primaryGPU.brand === 'amd') gpuType = 'amd';
+          else if (detection.primaryGPU.brand === 'apple') gpuType = 'apple';
+          else if (detection.primaryGPU.brand === 'intel') gpuType = 'intel';
+
           setSystemConfig(prev => ({
             ...prev,
             hasGPU: detection.gpuDetected || false,
-            gpuType: detection.primaryGPU.brand === 'nvidia' ? 'nvidia' : 
-                     detection.primaryGPU.brand === 'amd' ? 'amd' : 'intel',
+            gpuType: gpuType,
             vramGB: Math.floor(detection.primaryGPU.vramGB || 0),
             backend: detection.recommendations?.primaryBackend || 'cuda',
           }));
@@ -485,8 +490,12 @@ const OnboardConfig: React.FC = () => {
                       <select
                         value={systemConfig.gpuType}
                         onChange={(e) => {
-                          const gpuType = e.target.value as 'nvidia' | 'amd' | 'intel';
-                          const backend = gpuType === 'nvidia' ? 'cuda' : gpuType === 'amd' ? 'rocm' : 'vulkan';
+                          const gpuType = e.target.value as 'nvidia' | 'amd' | 'intel' | 'apple';
+                          let backend: 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
+                          if (gpuType === 'nvidia') backend = 'cuda';
+                          else if (gpuType === 'amd') backend = 'rocm';
+                          else if (gpuType === 'apple') backend = 'metal';
+                          else backend = 'vulkan';
                           setSystemConfig(prev => ({ ...prev, gpuType, backend }));
                         }}
                         className="w-full p-3 border border-border-secondary rounded-lg bg-background text-text-primary focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
@@ -494,6 +503,7 @@ const OnboardConfig: React.FC = () => {
                         <option value="nvidia">NVIDIA (RTX, GTX)</option>
                         <option value="amd">AMD (RX, Radeon)</option>
                         <option value="intel">Intel (Arc, Iris)</option>
+                        <option value="apple">Apple Silicon (M1, M2, M3, M4)</option>
                       </select>
                     </div>
                     

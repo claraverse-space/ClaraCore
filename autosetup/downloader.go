@@ -1025,56 +1025,61 @@ func enhanceMLXDetection(info *SystemInfo) {
 	var gpuName string
 	var unifiedMemoryGB float64
 
-	if strings.Contains(outputStr, "apple m1") {
-		if strings.Contains(outputStr, "m1 max") {
+	// Look for chip name patterns in the output - be more flexible with matching
+	if strings.Contains(outputStr, "m1") || strings.Contains(outputStr, "apple m1") {
+		if strings.Contains(outputStr, "max") {
 			gpuName = "Apple M1 Max"
 			unifiedMemoryGB = 32.0 // M1 Max typical config
-		} else if strings.Contains(outputStr, "m1 pro") {
+		} else if strings.Contains(outputStr, "pro") {
 			gpuName = "Apple M1 Pro"
 			unifiedMemoryGB = 16.0 // M1 Pro typical config
 		} else {
 			gpuName = "Apple M1"
 			unifiedMemoryGB = 8.0 // Base M1 typical config
 		}
-	} else if strings.Contains(outputStr, "apple m2") {
-		if strings.Contains(outputStr, "m2 ultra") {
+	} else if strings.Contains(outputStr, "m2") || strings.Contains(outputStr, "apple m2") {
+		if strings.Contains(outputStr, "ultra") {
 			gpuName = "Apple M2 Ultra"
 			unifiedMemoryGB = 96.0 // M2 Ultra high-end config
-		} else if strings.Contains(outputStr, "m2 max") {
+		} else if strings.Contains(outputStr, "max") {
 			gpuName = "Apple M2 Max"
 			unifiedMemoryGB = 38.0 // M2 Max typical config
-		} else if strings.Contains(outputStr, "m2 pro") {
+		} else if strings.Contains(outputStr, "pro") {
 			gpuName = "Apple M2 Pro"
 			unifiedMemoryGB = 16.0 // M2 Pro typical config
 		} else {
 			gpuName = "Apple M2"
 			unifiedMemoryGB = 8.0 // Base M2 typical config
 		}
-	} else if strings.Contains(outputStr, "apple m3") {
-		if strings.Contains(outputStr, "m3 max") {
+	} else if strings.Contains(outputStr, "m3") || strings.Contains(outputStr, "apple m3") {
+		if strings.Contains(outputStr, "max") {
 			gpuName = "Apple M3 Max"
 			unifiedMemoryGB = 48.0 // M3 Max typical config
-		} else if strings.Contains(outputStr, "m3 pro") {
+		} else if strings.Contains(outputStr, "pro") {
 			gpuName = "Apple M3 Pro"
 			unifiedMemoryGB = 18.0 // M3 Pro typical config
 		} else {
 			gpuName = "Apple M3"
 			unifiedMemoryGB = 8.0 // Base M3 typical config
 		}
-	} else if strings.Contains(outputStr, "apple m4") {
-		if strings.Contains(outputStr, "m4 max") {
+	} else if strings.Contains(outputStr, "m4") || strings.Contains(outputStr, "apple m4") {
+		if strings.Contains(outputStr, "max") {
 			gpuName = "Apple M4 Max"
 			unifiedMemoryGB = 64.0 // M4 Max estimated config
-		} else if strings.Contains(outputStr, "m4 pro") {
+		} else if strings.Contains(outputStr, "pro") {
 			gpuName = "Apple M4 Pro"
 			unifiedMemoryGB = 24.0 // M4 Pro estimated config
 		} else {
 			gpuName = "Apple M4"
 			unifiedMemoryGB = 10.0 // Base M4 estimated config
 		}
-	} else {
-		// Unknown Apple Silicon - use conservative estimate
+	} else if runtime.GOARCH == "arm64" {
+		// Running on Apple Silicon but couldn't detect specific chip
 		gpuName = "Apple Silicon GPU"
+		unifiedMemoryGB = getAppleSiliconUnifiedMemory()
+	} else {
+		// Intel Mac or unknown - use conservative estimate
+		gpuName = "Apple GPU"
 		unifiedMemoryGB = getAppleSiliconUnifiedMemory()
 	}
 

@@ -62,7 +62,7 @@ export interface SystemDetection {
   detectionTimestamp: string;
 }
 
-export type BackendType = 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'cpu';
+export type BackendType = 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
 
 // ===== MODEL TYPES =====
 
