@@ -13,7 +13,9 @@ import {
   MonitorIcon,
   MemoryStickIcon,
   SearchIcon,
-  InfoIcon
+  InfoIcon,
+  DownloadIcon,
+  FolderIcon
 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -68,6 +70,7 @@ const OnboardConfig: React.FC = () => {
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
   const [hasExistingModels, setHasExistingModels] = useState(false);
   const [showSetup, setShowSetup] = useState(true);
+  const [modelSource, setModelSource] = useState<'existing' | 'download' | null>(null);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
     setNotification({ type, message });
@@ -169,7 +172,7 @@ const OnboardConfig: React.FC = () => {
         setScanResults(data.models || []);
         if (data.models && data.models.length > 0) {
           showNotification('success', `Found ${data.models.length} GGUF models!`);
-          setCurrentStep(2); // Move to model selection step
+          setCurrentStep(3); // Move to model selection step
         } else {
           showNotification('error', 'No GGUF models found in this folder');
         }
@@ -213,7 +216,7 @@ const OnboardConfig: React.FC = () => {
 
       await response.json();
       showNotification('success', '🎉 Configuration generated successfully!');
-      setCurrentStep(4); // Move to completion step
+      setCurrentStep(5); // Move to completion step
       
     } catch (error) {
       showNotification('error', 'Error generating configuration: ' + error);
@@ -252,7 +255,104 @@ const OnboardConfig: React.FC = () => {
       )
     },
     {
-      title: "Step 1: Where are your models? 📁",
+      title: "Step 1: Choose Your Model Source 🎯",
+      description: "Do you have existing models or would you like to download new ones?",
+      component: (
+        <div className="py-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+            {/* Existing Folder Option */}
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className={`p-8 rounded-xl border-2 cursor-pointer transition-all ${
+                modelSource === 'existing'
+                  ? 'border-brand-500  dark:bg-brand-900/20'
+                  : 'border-border-secondary bg-surface hover:border-brand-300 hover:bg-surface-secondary'
+              }`}
+              onClick={() => setModelSource('existing')}
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FolderIcon className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-text-primary mb-2">
+                  I Have Models
+                </h3>
+                <p className="text-text-secondary mb-4">
+                  I already have GGUF model files on my system that I want to use
+                </p>
+                <div className="text-sm text-text-secondary space-y-1">
+                  <div>✓ Use existing model collection</div>
+                  <div>✓ Scan local folder</div>
+                  <div>✓ Quick setup</div>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Download New Option */}
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className={`p-8 rounded-xl border-2 cursor-pointer transition-all ${
+                modelSource === 'download'
+                  ? 'border-brand-500  dark:bg-brand-900/20'
+                  : 'border-border-secondary bg-surface hover:border-brand-300 hover:bg-surface-secondary'
+              }`}
+              onClick={() => setModelSource('download')}
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <DownloadIcon className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-text-primary mb-2">
+                  Download Models
+                </h3>
+                <p className="text-text-secondary mb-4">
+                  I want to browse and download new models from Hugging Face
+                </p>
+                <div className="text-sm text-text-secondary space-y-1">
+                  <div>✓ Browse model library</div>
+                  <div>✓ Download latest models</div>
+                  <div>✓ Guided selection</div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-center mt-8 space-x-4">
+            {modelSource === 'existing' && (
+              <Button
+                onClick={() => setCurrentStep(2)}
+                icon={<ArrowRightIcon size={16} />}
+                size="lg"
+              >
+                Continue with Existing Models
+              </Button>
+            )}
+            {modelSource === 'download' && (
+              <Button
+                onClick={() => window.location.href = '/ui/downloader'}
+                icon={<DownloadIcon size={16} />}
+                size="lg"
+                className="bg-green-500 hover:bg-green-600 text-white"
+              >
+                Go to Model Downloader
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => setCurrentStep(0)}
+              icon={<ArrowLeftIcon size={16} />}
+            >
+              Back
+            </Button>
+          </div>
+        </div>
+      )
+    },
+    {
+      title: "Step 2: Where are your models? 📁",
       description: "Point us to the folder containing your GGUF model files",
       component: (
         <div className="py-6">
@@ -282,7 +382,7 @@ const OnboardConfig: React.FC = () => {
             </Button>
             <Button
               variant="outline"
-              onClick={() => setCurrentStep(0)}
+              onClick={() => setCurrentStep(1)}
               icon={<ArrowLeftIcon size={16} />}
             >
               Back
@@ -332,14 +432,14 @@ const OnboardConfig: React.FC = () => {
           
           <div className="flex space-x-4">
             <Button
-              onClick={() => setCurrentStep(3)}
+              onClick={() => setCurrentStep(4)}
               icon={<ArrowRightIcon size={16} />}
             >
               Configure These Models
             </Button>
             <Button
               variant="outline"
-              onClick={() => setCurrentStep(1)}
+              onClick={() => setCurrentStep(2)}
               icon={<ArrowLeftIcon size={16} />}
             >
               Back
@@ -349,7 +449,7 @@ const OnboardConfig: React.FC = () => {
       )
     },
     {
-      title: "Step 2: System Configuration",
+      title: "Step 3: System Configuration",
       description: "Configure your hardware settings for optimal AI model performance.",
       component: (
         <div className="py-6 space-y-8">
@@ -730,7 +830,7 @@ const OnboardConfig: React.FC = () => {
           <div className="flex items-center justify-between pt-6 border-t border-border-secondary">
             <Button
               variant="outline"
-              onClick={() => setCurrentStep(1)}
+              onClick={() => setCurrentStep(3)}
               className="bg-background hover:bg-surface text-text-primary border-border-secondary hover:border-brand-500"
             >
               <ArrowLeftIcon className="w-4 h-4 mr-2" />

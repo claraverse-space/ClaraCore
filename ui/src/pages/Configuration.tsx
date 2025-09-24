@@ -292,7 +292,7 @@ const Configuration: React.FC = () => {
                     onClick={() => selectModel(model)}
                     className={`p-3 rounded-lg border cursor-pointer transition-all hover:border-brand-500 ${
                       selectedModel?.id === model.id 
-                        ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30' 
+                        ? 'border-brand-500  dark:bg-brand-900/30' 
                         : 'border-border-secondary hover:bg-surface-secondary'
                     }`}
                   >

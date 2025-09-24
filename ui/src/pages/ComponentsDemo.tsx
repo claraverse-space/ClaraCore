@@ -100,7 +100,7 @@ const ComponentsDemo: React.FC = () => {
           key={item.label}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
             item.active 
-              ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-900/20 dark:text-brand-300'
+              ? ' text-brand-700 border border-brand-200 dark:bg-brand-900/20 dark:text-brand-300'
               : 'text-text-secondary hover:text-text-primary hover:bg-surface-secondary'
           }`}
           whileHover={{ x: 4 }}

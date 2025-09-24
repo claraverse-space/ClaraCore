@@ -378,7 +378,7 @@ ${models.map(model => `      - "${model.id}"`).join('\n')}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <Card className="border-l-4 border-l-brand-500 bg-brand-50 dark:bg-brand-900/20">
+          <Card className="border-l-4 border-l-brand-500  dark:bg-brand-900/20">
             <CardContent className="flex items-center justify-between p-6">
               <div className="flex items-center space-x-4">
                 <div className="p-3 bg-brand-500 rounded-full">
