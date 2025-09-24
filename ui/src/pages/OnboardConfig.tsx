@@ -68,6 +68,16 @@ const OnboardConfig: React.FC = () => {
   const [isDetecting, setIsDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
+  
+  // Progress tracking for config generation
+  const [generationProgress, setGenerationProgress] = useState({
+    current: 0,
+    total: 0,
+    currentModel: '',
+    stage: 'Initializing...',
+    startTime: null as Date | null,
+    estimatedTimeRemaining: null as number | null
+  });
   const [hasExistingModels, setHasExistingModels] = useState(false);
   const [showSetup, setShowSetup] = useState(true);
   const [modelSource, setModelSource] = useState<'existing' | 'download' | null>(null);
@@ -188,8 +198,55 @@ const OnboardConfig: React.FC = () => {
 
   const generateSmartConfig = async () => {
     setIsGenerating(true);
+    const startTime = new Date();
+    
+    // Initialize progress
+    setGenerationProgress({
+      current: 0,
+      total: scanResults.length,
+      currentModel: '',
+      stage: 'Initializing configuration generation...',
+      startTime,
+      estimatedTimeRemaining: null
+    });
+    
     try {
       showNotification('info', '🚀 Generating your personalized SMART configuration...');
+      
+      // Simulate progress updates during the API call
+      const progressInterval = setInterval(() => {
+        setGenerationProgress(prev => {
+          const elapsed = (new Date().getTime() - startTime.getTime()) / 1000;
+          const avgTimePerModel = elapsed / Math.max(1, prev.current);
+          const remaining = (prev.total - prev.current) * avgTimePerModel;
+          
+          // Simulate progression through models
+          if (prev.current < prev.total) {
+            const nextIndex = Math.min(prev.current + 1, prev.total);
+            const currentModel = scanResults[nextIndex - 1]?.filename || '';
+            
+            // Update stage based on progress
+            const stages = [
+              'Analyzing model compatibility...',
+              'Optimizing memory allocation...',
+              'Configuring GPU settings...',
+              'Finalizing configuration...'
+            ];
+            const progress = nextIndex / prev.total;
+            const stageIndex = Math.floor(progress * stages.length);
+            const currentStage = stages[Math.min(stageIndex, stages.length - 1)];
+            
+            return {
+              ...prev,
+              current: nextIndex,
+              currentModel,
+              stage: currentStage,
+              estimatedTimeRemaining: remaining > 0 ? Math.ceil(remaining) : null
+            };
+          }
+          return prev;
+        });
+      }, Math.max(1000, (scanResults.length * 2000) / scanResults.length)); // Adaptive interval
       
       const response = await fetch('/api/config/generate-all', {
         method: 'POST',
@@ -210,9 +267,19 @@ const OnboardConfig: React.FC = () => {
         }),
       });
 
+      clearInterval(progressInterval);
+
       if (!response.ok) {
         throw new Error('Failed to generate configuration');
       }
+
+      // Complete progress
+      setGenerationProgress(prev => ({
+        ...prev,
+        current: prev.total,
+        stage: 'Configuration generated successfully!',
+        estimatedTimeRemaining: 0
+      }));
 
       await response.json();
       showNotification('success', '🎉 Configuration generated successfully!');
@@ -222,6 +289,7 @@ const OnboardConfig: React.FC = () => {
       showNotification('error', 'Error generating configuration: ' + error);
     } finally {
       setIsGenerating(false);
+      setGenerationProgress(prev => ({ ...prev, estimatedTimeRemaining: 0 }));
     }
   };
 
@@ -826,6 +894,61 @@ const OnboardConfig: React.FC = () => {
             </Card>
           )}
           
+          {/* Progress Display during Generation */}
+          {isGenerating && (
+            <Card className="border-brand-500/20 bg-gradient-to-r from-brand-50 to-brand-100 dark:from-brand-900/20 dark:to-brand-800/20">
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-brand-700 dark:text-brand-300">Configuration Generation in Progress</h3>
+                    <span className="text-sm text-brand-600 dark:text-brand-400">
+                      {generationProgress.current}/{generationProgress.total} models
+                    </span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-brand-200 dark:bg-brand-800 rounded-full h-2.5">
+                    <motion.div
+                      className="bg-gradient-to-r from-brand-500 to-brand-600 h-2.5 rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ 
+                        width: `${generationProgress.total > 0 ? (generationProgress.current / generationProgress.total) * 100 : 0}%` 
+                      }}
+                      transition={{ duration: 0.5, ease: "easeOut" }}
+                    />
+                  </div>
+                  
+                  {/* Current Status */}
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <motion.div
+                        className="w-3 h-3 border-2 border-brand-500 border-t-transparent rounded-full"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      />
+                      <span className="text-brand-700 dark:text-brand-300">
+                        {generationProgress.stage}
+                      </span>
+                    </div>
+                    
+                    {generationProgress.estimatedTimeRemaining && generationProgress.estimatedTimeRemaining > 0 && (
+                      <span className="text-brand-600 dark:text-brand-400 font-mono">
+                        ~{generationProgress.estimatedTimeRemaining}s remaining
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Current Model */}
+                  {generationProgress.currentModel && (
+                    <div className="text-xs text-brand-600 dark:text-brand-400 bg-brand-100 dark:bg-brand-800/50 px-3 py-2 rounded-md">
+                      <span className="font-medium">Currently processing:</span> {generationProgress.currentModel}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
           {/* Navigation */}
           <div className="flex items-center justify-between pt-6 border-t border-border-secondary">
             <Button
@@ -845,14 +968,14 @@ const OnboardConfig: React.FC = () => {
               className="bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-white shadow-lg"
             >
               {isGenerating ? (
-                <>
+                <div className="flex items-center justify-center">
                   <motion.div
-                    className="w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-2"
+                    className="w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-3"
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                   />
-                  Generating Configuration...
-                </>
+                  <span>Processing {generationProgress.current}/{generationProgress.total}</span>
+                </div>
               ) : (
                 <>
                   <WandIcon className="w-4 h-4 mr-2" />
