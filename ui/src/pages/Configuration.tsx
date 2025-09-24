@@ -330,7 +330,7 @@ const Configuration: React.FC = () => {
                         </div>
                       </div>
                       {selectedModel?.id === model.id && (
-                        <div className="w-2 h-2 bg-brand-500 rounded-full flex-shrink-0 mt-1"></div>
+                        <div className="w-2 h-2 0 rounded-full flex-shrink-0 mt-1"></div>
                       )}
                     </div>
                   </motion.div>
@@ -375,7 +375,7 @@ const Configuration: React.FC = () => {
                       <MemoryStickIcon className="w-5 h-5 text-brand-500" />
                       <label className="font-medium text-text-primary">Context Size</label>
                     </div>
-                    <span className="text-sm font-medium text-brand-500 bg-brand-50 dark:bg-brand-900/20 px-2 py-1 rounded">
+                    <span className="text-sm font-medium text-brand-500  dark:bg-brand-900/20 px-2 py-1 rounded">
                       {modelSettings.contextSize.toLocaleString()} tokens
                     </span>
                   </div>
@@ -402,7 +402,7 @@ const Configuration: React.FC = () => {
                       <LayersIcon className="w-5 h-5 text-brand-500" />
                       <label className="font-medium text-text-primary">GPU Layers</label>
                     </div>
-                    <span className="text-sm font-medium text-brand-500 bg-brand-50 dark:bg-brand-900/20 px-2 py-1 rounded">
+                    <span className="text-sm font-medium text-brand-500  dark:bg-brand-900/20 px-2 py-1 rounded">
                       {modelSettings.layers === 999 ? 'All' : modelSettings.layers} layers
                     </span>
                   </div>
@@ -435,7 +435,7 @@ const Configuration: React.FC = () => {
                         onClick={() => updateModelSettings({ cacheType: type as any })}
                         className={`p-3 rounded-lg border text-center transition-all ${
                           modelSettings.cacheType === type
-                            ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-200'
+                            ? 'border-brand-500  dark:bg-brand-900/20 text-brand-700 dark:text-brand-200'
                             : 'border-border-secondary hover:border-border-accent text-text-secondary hover:text-text-primary'
                         }`}
                       >
@@ -457,7 +457,7 @@ const Configuration: React.FC = () => {
                       <ZapIcon className="w-5 h-5 text-brand-500" />
                       <label className="font-medium text-text-primary">Batch Size</label>
                     </div>
-                    <span className="text-sm font-medium text-brand-500 bg-brand-50 dark:bg-brand-900/20 px-2 py-1 rounded">
+                    <span className="text-sm font-medium text-brand-500  dark:bg-brand-900/20 px-2 py-1 rounded">
                       {modelSettings.batchSize}
                     </span>
                   </div>

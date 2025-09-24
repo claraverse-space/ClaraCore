@@ -516,15 +516,30 @@ button:hover {
 }
 
 /* Outline button specific fixes */
-.btn-outline, button[class*="outline"] {
-  background-color: transparent !important;
+.btn-outline, 
+button[class*="outline"],
+button[class*="border-border-secondary"] {
+  background-color: var(--surface-secondary) !important;
   border: 1px solid var(--border-secondary) !important;
   color: var(--text-primary) !important;
 }
 
-.btn-outline:hover, button[class*="outline"]:hover {
-  background-color: var(--surface-secondary) !important;
+.btn-outline:hover, 
+button[class*="outline"]:hover,
+button[class*="border-border-secondary"]:hover {
+  background-color: var(--surface-tertiary) !important;
   border-color: var(--brand-500) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Fix specific re-detect button styling */
+button[class*="bg-background"] {
+  background-color: var(--surface-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+button[class*="bg-background"]:hover {
+  background-color: var(--surface-tertiary) !important;
   color: var(--text-primary) !important;
 }
 
