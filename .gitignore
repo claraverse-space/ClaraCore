@@ -10,9 +10,3 @@ config.yaml
 claracore
 claracore.exe
 /downloads/*
-/downloads/gguf/*
-/downloads/gguf/gguf/*
-/downloads/gguf/gguf/gguf/*
-/downloads/gguf/gguf/gguf/gguf/*
-/downloads/gguf/gguf/gguf/gguf/gguf/*
-/downloads/gguf/gguf/gguf/gguf/gguf/*
