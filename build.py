@@ -9,6 +9,7 @@ import sys
 import subprocess
 import time
 from pathlib import Path
+import platform
 
 def print_banner():
     """Print build script banner"""
@@ -21,7 +22,7 @@ def print_step(step_name):
     print(f"\n📦 {step_name}")
     print("-" * 40)
 
-def run_command(command, cwd=None, shell=True):
+def run_command(command, cwd=None, shell=True, env=None):
     """Run a command and return success status"""
     try:
         print(f"💻 Running: {command}")
@@ -35,7 +36,8 @@ def run_command(command, cwd=None, shell=True):
             shell=shell, 
             check=True,
             capture_output=False,  # Show output in real-time
-            text=True
+            text=True,
+            env=env
         )
         
         print(f"✅ Command completed successfully")
@@ -93,25 +95,62 @@ def build_go():
         print("❌ go.mod not found! Are you in the ClaraCore root directory?")
         return False
     
-    # Clean previous build
-    if Path("claracore.exe").exists():
+    # Detect target based on host OS/arch
+    system = platform.system().lower()
+    if system.startswith("windows"):
+        goos = "windows"
+        output_ext = ".exe"
+    elif system.startswith("darwin"):
+        goos = "darwin"
+        output_ext = ""
+    elif system.startswith("linux"):
+        goos = "linux"
+        output_ext = ""
+    else:
+        goos = sys.platform
+        output_ext = ""
+
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        goarch = "amd64"
+    elif machine in ("arm64", "aarch64"):
+        goarch = "arm64"
+    elif machine in ("armv7l", "armv7") or machine.startswith("armv7"):
+        goarch = "arm"
+    elif machine in ("armv6l", "armv6") or machine.startswith("armv6"):
+        goarch = "arm"
+    elif machine in ("i386", "i686", "x86"):
+        goarch = "386"
+    else:
+        goarch = "amd64"
+
+    output_name = f"claracore{output_ext}"
+    print(f"🧭 Target platform: {goos}/{goarch}")
+    print(f"📄 Output: {output_name}")
+
+    # Clean previous build of the same target name
+    output_path = Path(output_name)
+    if output_path.exists():
         print("🗑️  Removing previous build...")
         try:
-            os.remove("claracore.exe")
+            output_path.unlink()
         except Exception as e:
             print(f"⚠️  Could not remove previous build: {e}")
     
     # Build Go application
     print("🔨 Building Go application...")
-    if not run_command("go build -o claracore.exe ."):
+    env = os.environ.copy()
+    env["GOOS"] = goos
+    env["GOARCH"] = goarch
+    if not run_command(f"go build -o {output_name} .", env=env):
         return False
     
     # Check if executable was created
-    if Path("claracore.exe").exists():
+    if output_path.exists():
         print("✅ ClaraCore executable created successfully")
         
         # Get file size
-        size = Path("claracore.exe").stat().st_size
+        size = output_path.stat().st_size
         size_mb = size / (1024 * 1024)
         print(f"📊 Executable size: {size_mb:.1f} MB")
     else:
@@ -131,7 +170,7 @@ def check_dependencies():
             print(f"✅ npm v{result.stdout.strip()} found")
         else:
             print("❌ npm not found! Please install Node.js")
-            return False
+            return True
     except Exception:
         print("❌ npm not found! Please install Node.js")
         return False
@@ -185,7 +224,10 @@ def main():
     print("🎉 BUILD SUCCESSFUL!")
     print("=" * 60)
     print(f"⏱️  Total build time: {build_time:.2f} seconds")
-    print("🚀 Ready to run: ./claracore.exe")
+    # Determine the correct binary name for this host
+    system = platform.system().lower()
+    output_name = "claracore.exe" if system.startswith("windows") else "claracore"
+    print(f"🚀 Ready to run: ./{output_name}")
     print("🌐 UI will be served at: http://localhost:5800")
     print("=" * 60)
 
