@@ -2,55 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ClaraVerse Design System - Dark Theme */
+/* ClaraCore Design System - Unified Dark Theme */
 :root {
-  /* Sakura Brand Colors */
-  --sakura-50: #fdf2f8;
-  --sakura-100: #fce7f3;
-  --sakura-200: #fbcfe8;
-  --sakura-300: #f9a8d4;
-  --sakura-400: #f472b6;
-  --sakura-500: #ec4899;
-  --sakura-600: #db2777;
-  --sakura-700: #be185d;
-  --sakura-800: #9d174d;
-  --sakura-900: #831843;
+  /* Brand Colors - Sakura Theme */
+  --brand-50: #fdf2f8;
+  --brand-100: #fce7f3;
+  --brand-200: #fbcfe8;
+  --brand-300: #f9a8d4;
+  --brand-400: #f472b6;
+  --brand-500: #ec4899;
+  --brand-600: #db2777;
+  --brand-700: #be185d;
+  --brand-800: #9d174d;
+  --brand-900: #831843;
 
-  /* Semantic Colors */
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
-  --info: #3b82f6;
+  /* Semantic Status Colors */
+  --success-500: #10b981;
+  --success-400: #34d399;
+  --success-600: #059669;
+  --warning-500: #f59e0b;
+  --warning-400: #fbbf24;
+  --warning-600: #d97706;
+  --error-500: #ef4444;
+  --error-400: #f87171;
+  --error-600: #dc2626;
+  --info-500: #3b82f6;
+  --info-400: #60a5fa;
+  --info-600: #2563eb;
 
-  /* Dark Theme Colors */
-  --background: #0a0a0a;
-  --surface: #111111;
-  --surface-elevated: #1a1a1a;
-  --surface-hover: #222222;
-  --border: #333333;
-  --border-light: #444444;
-  
-  /* Text Colors */
+  /* Dark Theme Surface Colors */
+  --background: #0f0f0f;
+  --surface-primary: #1a1a1a;
+  --surface-secondary: #262626;
+  --surface-tertiary: #333333;
+  --surface-hover: #404040;
+  --surface-active: #525252;
+
+  /* Border Colors */
+  --border-primary: #404040;
+  --border-secondary: #525252;
+  --border-tertiary: #737373;
+
+  /* Text Colors - High Contrast for Accessibility */
   --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-accent: var(--sakura-400);
+  --text-secondary: #d4d4d8;
+  --text-tertiary: #a1a1aa;
+  --text-quaternary: #71717a;
+  --text-accent: var(--brand-400);
 
-  /* Primary Brand */
-  --primary: var(--sakura-500);
-  --primary-hover: var(--sakura-400);
-  --primary-active: var(--sakura-600);
+  /* Interactive Colors */
+  --primary: var(--brand-500);
+  --primary-hover: var(--brand-400);
+  --primary-active: var(--brand-600);
+  --primary-subtle: rgba(236, 72, 153, 0.1);
 }
 
-/* Base Styles */
+/* Base Styles - Dark Theme Only */
 * {
-  border-color: var(--border);
+  border-color: var(--border-primary);
 }
 
 body {
   background-color: var(--background);
   color: var(--text-primary);
-  font-family: 'Quicksand', ui-sans-serif, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Inter', sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 /* Glassmorphism Effects */
@@ -449,6 +474,58 @@ pre {
 
 .surface-hover {
   background-color: var(--surface-hover) !important;
+}
+
+/* Select dropdowns - Dark theme fix */
+select {
+  background-color: var(--surface-secondary) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-secondary) !important;
+}
+
+select option {
+  background-color: var(--surface-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Input elements - Dark theme fix */
+input[type="number"], input[type="text"] {
+  background-color: var(--surface-secondary) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-secondary) !important;
+}
+
+input[type="number"]::placeholder, input[type="text"]::placeholder {
+  color: var(--text-tertiary) !important;
+}
+
+/* Radio buttons - Dark theme fix */
+input[type="radio"] {
+  accent-color: var(--brand-500) !important;
+  background-color: var(--surface-secondary) !important;
+  border: 1px solid var(--border-secondary) !important;
+}
+
+/* Button fixes for dark theme */
+button {
+  color: var(--text-primary) !important;
+}
+
+button:hover {
+  color: var(--text-primary) !important;
+}
+
+/* Outline button specific fixes */
+.btn-outline, button[class*="outline"] {
+  background-color: transparent !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+.btn-outline:hover, button[class*="outline"]:hover {
+  background-color: var(--surface-secondary) !important;
+  border-color: var(--brand-500) !important;
+  color: var(--text-primary) !important;
 }
 
 body {

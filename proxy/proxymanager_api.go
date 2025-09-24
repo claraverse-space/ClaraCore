@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -40,6 +41,7 @@ func addApiHandlers(pm *ProxyManager) {
 
 		// Model downloader endpoints
 		apiGroup.GET("/system/specs", pm.apiGetSystemSpecs)
+		apiGroup.GET("/system/detection", pm.apiGetSystemDetection) // NEW: Comprehensive system detection for setup
 		apiGroup.GET("/settings/hf-api-key", pm.apiGetHFApiKey)
 		apiGroup.POST("/settings/hf-api-key", pm.apiSetHFApiKey)
 		apiGroup.POST("/models/download", pm.apiDownloadModel)
@@ -306,6 +308,194 @@ func (pm *ProxyManager) apiGetSystemSpecs(c *gin.Context) {
 		"diskSpace":     diskSpace,
 	}
 	c.JSON(http.StatusOK, specs)
+}
+
+// apiGetSystemDetection provides comprehensive system detection for setup UI auto-population
+func (pm *ProxyManager) apiGetSystemDetection(c *gin.Context) {
+	// Perform comprehensive system detection
+	system := autosetup.DetectSystem()
+
+	// Enhance with detailed system information
+	err := autosetup.EnhanceSystemInfo(&system)
+	if err != nil {
+		pm.proxyLogger.Errorf("Failed to enhance system info: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to detect system information"})
+		return
+	}
+
+	// Get realtime hardware info for accurate memory readings
+	realtimeInfo, err := autosetup.GetRealtimeHardwareInfo()
+	if err != nil {
+		pm.proxyLogger.Warnf("Failed to get realtime hardware info: %v", err)
+	}
+
+	// Determine optimal backend priority
+	backends := []string{}
+	primaryBackend := "cpu"
+
+	if system.HasCUDA {
+		backends = append(backends, "cuda")
+		primaryBackend = "cuda"
+	}
+	if system.HasROCm {
+		backends = append(backends, "rocm")
+		if primaryBackend == "cpu" {
+			primaryBackend = "rocm"
+		}
+	}
+	if system.HasVulkan {
+		backends = append(backends, "vulkan")
+		if primaryBackend == "cpu" {
+			primaryBackend = "vulkan"
+		}
+	}
+	if system.HasMLX {
+		backends = append(backends, "mlx")
+		if primaryBackend == "cpu" {
+			primaryBackend = "mlx"
+		}
+	}
+	if system.HasMetal {
+		backends = append(backends, "metal")
+		if primaryBackend == "cpu" {
+			primaryBackend = "metal"
+		}
+	}
+	if system.HasIntel {
+		backends = append(backends, "intel")
+	}
+	backends = append(backends, "cpu") // Always available
+
+	// Determine GPU type for UI dropdown
+	gpuType := "CPU Only"
+	gpuTypes := []string{"CPU Only"}
+
+	if system.HasCUDA {
+		gpuType = "NVIDIA (RTX, GTX)"
+		gpuTypes = append(gpuTypes, "NVIDIA (RTX, GTX)")
+	}
+	if system.HasROCm {
+		if gpuType == "CPU Only" {
+			gpuType = "AMD (RX Series)"
+		}
+		gpuTypes = append(gpuTypes, "AMD (RX Series)")
+	}
+	if system.HasMLX || system.HasMetal {
+		if gpuType == "CPU Only" {
+			gpuType = "Apple Silicon"
+		}
+		gpuTypes = append(gpuTypes, "Apple Silicon")
+	}
+	if system.HasIntel {
+		gpuTypes = append(gpuTypes, "Intel GPU")
+	}
+
+	// Calculate memory values
+	totalRAMGB := system.TotalRAMGB
+	totalVRAMGB := system.TotalVRAMGB
+	availableRAMGB := totalRAMGB * 0.75 // Conservative estimate
+
+	// Use realtime info if available
+	if realtimeInfo != nil {
+		availableRAMGB = realtimeInfo.AvailableRAMGB
+		if realtimeInfo.TotalRAMGB > 0 {
+			totalRAMGB = realtimeInfo.TotalRAMGB
+		}
+		if realtimeInfo.TotalVRAMGB > 0 {
+			totalVRAMGB = realtimeInfo.TotalVRAMGB
+		}
+	}
+
+	// Skip building detailed GPU information - we only need primary GPU for the response
+
+	// Determine recommended context size based on available memory
+	suggestedContextSize := 32768
+	maxRecommendedContextSize := 131072
+	if totalVRAMGB >= 24 {
+		suggestedContextSize = 131072 // 128K
+		maxRecommendedContextSize = 131072
+	} else if totalVRAMGB >= 16 {
+		suggestedContextSize = 65536 // 64K
+		maxRecommendedContextSize = 131072
+	} else if totalVRAMGB >= 8 {
+		suggestedContextSize = 32768 // 32K
+		maxRecommendedContextSize = 65536
+	} else {
+		suggestedContextSize = 16384 // 16K
+		maxRecommendedContextSize = 32768
+	}
+
+	// Performance priority recommendation
+	throughputFirst := totalVRAMGB >= 8
+
+	// Build primary GPU info
+	var primaryGPU interface{} = nil
+	gpuBrand := "unknown"
+	if len(system.VRAMDetails) > 0 {
+		gpu := system.VRAMDetails[0]
+		if system.HasCUDA {
+			gpuBrand = "nvidia"
+		} else if system.HasROCm {
+			gpuBrand = "amd"
+		} else if system.HasIntel {
+			gpuBrand = "intel"
+		} else if system.HasMetal || system.HasMLX {
+			gpuBrand = "apple"
+		}
+
+		primaryGPU = gin.H{
+			"name":   gpu.Name,
+			"brand":  gpuBrand,
+			"vramGB": math.Round(gpu.VRAMGB*10) / 10, // Round to 1 decimal place
+		}
+	}
+
+	// Build recommendations
+	recommendations := gin.H{
+		"primaryBackend":          primaryBackend,
+		"fallbackBackend":         "cpu",
+		"suggestedContextSize":    suggestedContextSize,
+		"suggestedVRAMAllocation": int(totalVRAMGB * 0.8),
+		"suggestedRAMAllocation":  int(totalRAMGB * 0.5),
+		"throughputFirst":         throughputFirst,
+		"notes": []string{
+			fmt.Sprintf("Detected %s with %.1fGB VRAM", primaryBackend, math.Round(totalVRAMGB*10)/10),
+			fmt.Sprintf("Recommended context size: %d tokens", suggestedContextSize),
+			fmt.Sprintf("Performance priority: %s", func() string {
+				if throughputFirst {
+					return "Speed (Higher throughput)"
+				}
+				return "Quality (Larger context)"
+			}()),
+		},
+	}
+
+	detection := gin.H{
+		"detectionQuality": func() string {
+			if realtimeInfo != nil {
+				return "excellent" // Real-time detection available
+			} else if len(system.VRAMDetails) > 0 {
+				return "good" // GPU detection successful
+			} else {
+				return "basic" // Basic system detection only
+			}
+		}(),
+		"platform":                  system.OS,
+		"arch":                      system.Architecture,
+		"gpuDetected":               len(system.VRAMDetails) > 0,
+		"gpuTypes":                  gpuTypes,
+		"primaryGPU":                primaryGPU,
+		"totalRAMGB":                math.Round(totalRAMGB*10) / 10,     // Round to 1 decimal place
+		"availableRAMGB":            math.Round(availableRAMGB*10) / 10, // Round to 1 decimal place
+		"recommendedBackends":       backends,
+		"supportedBackends":         backends,
+		"recommendedContextSizes":   []int{8192, 16384, 32768, 65536, suggestedContextSize},
+		"maxRecommendedContextSize": maxRecommendedContextSize,
+		"recommendations":           recommendations,
+		"detectionTimestamp":        time.Now().Format(time.RFC3339),
+	}
+
+	c.JSON(http.StatusOK, detection)
 }
 
 func (pm *ProxyManager) apiGetHFApiKey(c *gin.Context) {

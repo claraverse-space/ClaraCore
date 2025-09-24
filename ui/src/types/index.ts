@@ -19,6 +19,49 @@ export interface GPUInfo {
   brand: 'nvidia' | 'amd' | 'intel' | 'apple' | 'unknown';
 }
 
+export interface SystemDetection {
+  detectionQuality: 'excellent' | 'good' | 'basic' | 'minimal';
+  platform: string;
+  arch: string;
+  gpuDetected: boolean;
+  gpuTypes: string[];
+  primaryGPU: {
+    name: string;
+    brand: 'nvidia' | 'amd' | 'intel' | 'apple' | 'unknown';
+    vramGB: number;
+    computeCapability?: string;
+  } | null;
+  totalRAMGB: number;
+  availableRAMGB: number;
+  recommendedBackends: string[];
+  supportedBackends: string[];
+  backendCapabilities: Record<string, {
+    available: boolean;
+    priority: number;
+    requirements?: string[];
+    limitations?: string[];
+  }>;
+  recommendedContextSizes: number[];
+  maxRecommendedContextSize: number;
+  memoryEstimates: {
+    backend: string;
+    contextSize: number;
+    estimatedVRAM: number;
+    estimatedRAM: number;
+    feasible: boolean;
+  }[];
+  recommendations: {
+    primaryBackend: string;
+    fallbackBackend: string;
+    suggestedContextSize: number;
+    suggestedVRAMAllocation: number;
+    suggestedRAMAllocation: number;
+    throughputFirst: boolean;
+    notes: string[];
+  };
+  detectionTimestamp: string;
+}
+
 export type BackendType = 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'cpu';
 
 // ===== MODEL TYPES =====

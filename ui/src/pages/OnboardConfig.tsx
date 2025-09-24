@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   RefreshCwIcon, 
@@ -11,11 +11,14 @@ import {
   ArrowRightIcon,
   ArrowLeftIcon,
   MonitorIcon,
-  MemoryStickIcon
+  MemoryStickIcon,
+  SearchIcon,
+  InfoIcon
 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import type { SystemDetection } from '../types';
 
 interface ModelScanResult {
   modelId: string;
@@ -57,13 +60,67 @@ const OnboardConfig: React.FC = () => {
     preferredContext: 32768,
     throughputFirst: true,
   });
+  const [systemDetection, setSystemDetection] = useState<SystemDetection | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [autoDetected, setAutoDetected] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Auto-detect system on component mount
+  useEffect(() => {
+    detectSystem();
+  }, []);
+
+  const detectSystem = async () => {
+    setIsDetecting(true);
+    try {
+      const response = await fetch('/api/system/detection');
+      if (response.ok) {
+        const detection = await response.json();
+        setSystemDetection(detection);
+        
+        // Auto-populate system config based on detection
+        if (detection.primaryGPU) {
+          setSystemConfig(prev => ({
+            ...prev,
+            hasGPU: detection.gpuDetected || false,
+            gpuType: detection.primaryGPU.brand === 'nvidia' ? 'nvidia' : 
+                     detection.primaryGPU.brand === 'amd' ? 'amd' : 'intel',
+            vramGB: Math.floor(detection.primaryGPU.vramGB || 0),
+            backend: detection.recommendations?.primaryBackend || 'cuda',
+          }));
+        } else {
+          setSystemConfig(prev => ({
+            ...prev,
+            hasGPU: false,
+            backend: 'cpu',
+          }));
+        }
+        
+        setSystemConfig(prev => ({
+          ...prev,
+          ramGB: Math.floor(detection.totalRAMGB || 0),
+          preferredContext: detection.recommendations?.suggestedContextSize || 32768,
+          throughputFirst: detection.recommendations?.throughputFirst || true,
+        }));
+        
+        setAutoDetected(true);
+        showNotification('success', `Hardware detected: ${detection.primaryGPU ? detection.primaryGPU.name : 'CPU-only configuration'}`);
+      } else {
+        showNotification('error', 'Failed to detect system. Please fill in manually.');
+      }
+    } catch (error) {
+      console.error('System detection error:', error);
+      showNotification('error', 'System detection unavailable. Please fill in manually.');
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
 
@@ -184,7 +241,7 @@ const OnboardConfig: React.FC = () => {
               placeholder="C:\models\llama-models"
               className="text-lg"
             />
-            <p className="text-sm text-text-tertiary mt-2">
+            <p className="text-sm text-text-secondary mt-2">
               💡 This folder will be scanned recursively for .gguf files
             </p>
           </div>
@@ -241,7 +298,7 @@ const OnboardConfig: React.FC = () => {
                 </motion.div>
               ))}
               {scanResults.length > 8 && (
-                <p className="text-sm text-text-tertiary text-center py-2">
+                <p className="text-sm text-text-secondary text-center py-2">
                   ... and {scanResults.length - 8} more models
                 </p>
               )}
@@ -267,161 +324,411 @@ const OnboardConfig: React.FC = () => {
       )
     },
     {
-      title: "Step 2: Tell us about your system 🖥️",
-      description: "We'll optimize the configuration based on your hardware",
+      title: "Step 2: System Configuration",
+      description: "Configure your hardware settings for optimal AI model performance.",
       component: (
-        <div className="py-6 space-y-6">
-          {/* GPU Section */}
-          <div>
-            <h3 className="font-semibold text-text-primary mb-4 flex items-center">
-              <MonitorIcon className="w-5 h-5 mr-2 text-brand-500" />
-              Graphics Card (GPU)
-            </h3>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  Do you have a dedicated GPU?
-                </label>
-                <div className="flex space-x-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      checked={systemConfig.hasGPU}
-                      onChange={() => setSystemConfig(prev => ({ ...prev, hasGPU: true, backend: 'cuda' }))}
-                      className="mr-2"
-                    />
-                    Yes
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      checked={!systemConfig.hasGPU}
-                      onChange={() => setSystemConfig(prev => ({ ...prev, hasGPU: false, backend: 'cpu' }))}
-                      className="mr-2"
-                    />
-                    No (CPU only)
-                  </label>
-                </div>
-              </div>
-              
-              {systemConfig.hasGPU && (
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">
-                    GPU Type
-                  </label>
-                  <select
-                    value={systemConfig.gpuType}
-                    onChange={(e) => {
-                      const gpuType = e.target.value as 'nvidia' | 'amd' | 'intel';
-                      const backend = gpuType === 'nvidia' ? 'cuda' : gpuType === 'amd' ? 'rocm' : 'vulkan';
-                      setSystemConfig(prev => ({ ...prev, gpuType, backend }));
-                    }}
-                    className="w-full p-2 border border-border-secondary rounded-lg bg-background"
-                  >
-                    <option value="nvidia">NVIDIA (RTX, GTX)</option>
-                    <option value="amd">AMD (RX, Radeon)</option>
-                    <option value="intel">Intel (Arc, Iris)</option>
-                  </select>
-                </div>
+        <div className="py-6 space-y-8">
+          {/* Detection Status Header */}
+          <div className="flex items-center justify-between p-4 bg-surface-secondary rounded-xl border border-border-secondary">
+            <div className="flex items-center space-x-3">
+              {autoDetected && systemDetection ? (
+                <>
+                  <div className="w-10 h-10 bg-success-500 rounded-full flex items-center justify-center">
+                    <CheckCircleIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">Hardware Detected</h3>
+                    <p className="text-sm text-text-secondary">
+                      {systemDetection.primaryGPU ? systemDetection.primaryGPU.name : 'CPU-only system'}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-10 h-10 bg-warning-500 rounded-full flex items-center justify-center">
+                    <SearchIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">Manual Configuration</h3>
+                    <p className="text-sm text-text-secondary">
+                      Please configure your hardware settings
+                    </p>
+                  </div>
+                </>
               )}
             </div>
-            
-            {systemConfig.hasGPU && (
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  GPU VRAM (GB)
-                </label>
-                <Input
-                  type="number"
-                  value={systemConfig.vramGB}
-                  onChange={(e) => setSystemConfig(prev => ({ ...prev, vramGB: parseInt(e.target.value) || 0 }))}
-                  placeholder="12"
-                  min="4"
-                  max="128"
-                />
-                <p className="text-xs text-text-tertiary mt-1">
-                  💡 Check GPU-Z or Task Manager for your VRAM amount
-                </p>
-              </div>
-            )}
+            <Button
+              variant="outline"
+              onClick={detectSystem}
+              loading={isDetecting}
+              disabled={isDetecting}
+              className="bg-background hover:bg-surface text-text-primary border-border-secondary hover:border-brand-500"
+            >
+              {isDetecting ? (
+                <>
+                  <motion.div
+                    className="w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-2"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  />
+                  Detecting...
+                </>
+              ) : (
+                <>
+                  <SearchIcon className="w-4 h-4 mr-2" />
+                  {autoDetected ? 'Re-detect' : 'Auto-detect'}
+                </>
+              )}
+            </Button>
           </div>
 
-          {/* RAM Section */}
-          <div>
-            <h3 className="font-semibold text-text-primary mb-4 flex items-center">
-              <MemoryStickIcon className="w-5 h-5 mr-2 text-brand-500" />
-              System Memory (RAM)
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
+          {/* GPU Configuration */}
+          <Card className="p-6 bg-surface border-border-secondary">
+            <div className="flex items-center mb-6">
+              <div className="w-8 h-8 0 rounded-lg flex items-center justify-center mr-3">
+                <MonitorIcon className="w-5 h-5 text-white" />
+              </div>
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
+                <h3 className="font-semibold text-text-primary">Graphics Processing</h3>
+                <p className="text-sm text-text-secondary">Configure your GPU for acceleration</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* GPU Type Selection */}
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-3">
+                  Hardware Type
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                      systemConfig.hasGPU 
+                        ? 'border-brand-500  dark:bg-brand-900/20' 
+                        : 'border-border-secondary bg-background hover:border-border-accent'
+                    }`}
+                    onClick={() => setSystemConfig(prev => ({ ...prev, hasGPU: true, backend: 'cuda' }))}
+                  >
+                    <div className="flex items-center">
+                      <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                        systemConfig.hasGPU ? 'border-brand-500 0' : 'border-border-secondary'
+                      }`}>
+                        {systemConfig.hasGPU && <div className="w-2 h-2 bg-white rounded-full mx-auto mt-0.5" />}
+                      </div>
+                      <div>
+                        <div className="font-medium text-text-primary">Dedicated GPU</div>
+                        <div className="text-xs text-text-secondary">NVIDIA, AMD, or Intel graphics card</div>
+                      </div>
+                    </div>
+                  </motion.div>
+                  
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                      !systemConfig.hasGPU 
+                        ? 'border-brand-500  dark:bg-brand-900/20' 
+                        : 'border-border-secondary bg-background hover:border-border-accent'
+                    }`}
+                    onClick={() => setSystemConfig(prev => ({ ...prev, hasGPU: false, backend: 'cpu' }))}
+                  >
+                    <div className="flex items-center">
+                      <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                        !systemConfig.hasGPU ? 'border-brand-500 0' : 'border-border-secondary'
+                      }`}>
+                        {!systemConfig.hasGPU && <div className="w-2 h-2 bg-white rounded-full mx-auto mt-0.5" />}
+                      </div>
+                      <div>
+                        <div className="font-medium text-text-primary">CPU Only</div>
+                        <div className="text-xs text-text-secondary">Use processor for all computations</div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              </div>
+
+              {/* GPU Specific Settings */}
+              {systemConfig.hasGPU && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-4"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">
+                        GPU Brand
+                      </label>
+                      <select
+                        value={systemConfig.gpuType}
+                        onChange={(e) => {
+                          const gpuType = e.target.value as 'nvidia' | 'amd' | 'intel';
+                          const backend = gpuType === 'nvidia' ? 'cuda' : gpuType === 'amd' ? 'rocm' : 'vulkan';
+                          setSystemConfig(prev => ({ ...prev, gpuType, backend }));
+                        }}
+                        className="w-full p-3 border border-border-secondary rounded-lg bg-background text-text-primary focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                      >
+                        <option value="nvidia">NVIDIA (RTX, GTX)</option>
+                        <option value="amd">AMD (RX, Radeon)</option>
+                        <option value="intel">Intel (Arc, Iris)</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">
+                        VRAM (GB)
+                      </label>
+                      <Input
+                        type="number"
+                        value={systemConfig.vramGB}
+                        onChange={(e) => setSystemConfig(prev => ({ ...prev, vramGB: parseInt(e.target.value) || 0 }))}
+                        placeholder="24"
+                        min="4"
+                        max="128"
+                        className="bg-background border-border-secondary focus:border-brand-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {autoDetected && systemDetection?.primaryGPU && (
+                    <div className="p-3 bg-info-50 dark:bg-info-900/20 rounded-lg border border-info-200 dark:border-info-800">
+                      <div className="flex items-center text-info-700 dark:text-info-300">
+                        <CheckCircleIcon className="w-4 h-4 mr-2" />
+                        <span className="text-sm">
+                          Detected: {systemDetection.primaryGPU.name} ({systemDetection.primaryGPU.vramGB}GB VRAM)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </div>
+          </Card>
+
+          {/* Memory Configuration */}
+          <Card className="p-6 bg-surface border-border-secondary">
+            <div className="flex items-center mb-6">
+              <div className="w-8 h-8 0 rounded-lg flex items-center justify-center mr-3">
+                <MemoryStickIcon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-text-primary">System Memory</h3>
+                <p className="text-sm text-text-secondary">Configure RAM and performance settings</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">
                   Total RAM (GB)
                 </label>
                 <Input
                   type="number"
                   value={systemConfig.ramGB}
                   onChange={(e) => setSystemConfig(prev => ({ ...prev, ramGB: parseInt(e.target.value) || 0 }))}
-                  placeholder="32"
+                  placeholder="64"
                   min="8"
                   max="256"
+                  className="bg-background border-border-secondary focus:border-brand-500 text-lg font-medium"
                 />
+                {autoDetected && systemDetection && (
+                  <div className="mt-2 p-3 bg-success-50 dark:bg-success-900/20 rounded-lg border border-success-200 dark:border-success-800">
+                    <div className="flex items-center text-success-700 dark:text-success-300">
+                      <CheckCircleIcon className="w-4 h-4 mr-2" />
+                      <span className="text-sm">
+                        Detected: {systemDetection.totalRAMGB}GB total ({systemDetection.availableRAMGB}GB available)
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
-                  Performance Priority
+                <label className="block text-sm font-medium text-text-primary mb-2">
+                  Performance Mode
                 </label>
-                <select
-                  value={systemConfig.throughputFirst ? 'speed' : 'quality'}
-                  onChange={(e) => setSystemConfig(prev => ({ ...prev, throughputFirst: e.target.value === 'speed' }))}
-                  className="w-full p-2 border border-border-secondary rounded-lg bg-background"
-                >
-                  <option value="speed">Speed (Higher throughput)</option>
-                  <option value="quality">Quality (Larger context)</option>
-                </select>
+                <div className="space-y-3">
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      systemConfig.throughputFirst 
+                        ? 'border-brand-500  dark:bg-brand-900/20' 
+                        : 'border-border-secondary bg-background hover:border-border-accent'
+                    }`}
+                    onClick={() => setSystemConfig(prev => ({ ...prev, throughputFirst: true }))}
+                  >
+                    <div className="flex items-center">
+                      <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                        systemConfig.throughputFirst ? 'border-brand-500 0' : 'border-border-secondary'
+                      }`}>
+                        {systemConfig.throughputFirst && <div className="w-2 h-2 bg-white rounded-full mx-auto mt-0.5" />}
+                      </div>
+                      <div>
+                        <div className="font-medium text-text-primary">Speed Priority</div>
+                        <div className="text-xs text-text-secondary">Higher throughput, faster responses</div>
+                      </div>
+                    </div>
+                  </motion.div>
+                  
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      !systemConfig.throughputFirst 
+                        ? 'border-brand-500  dark:bg-brand-900/20' 
+                        : 'border-border-secondary bg-background hover:border-border-accent'
+                    }`}
+                    onClick={() => setSystemConfig(prev => ({ ...prev, throughputFirst: false }))}
+                  >
+                    <div className="flex items-center">
+                      <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                        !systemConfig.throughputFirst ? 'border-brand-500 0' : 'border-border-secondary'
+                      }`}>
+                        {!systemConfig.throughputFirst && <div className="w-2 h-2 bg-white rounded-full mx-auto mt-0.5" />}
+                      </div>
+                      <div>
+                        <div className="font-medium text-text-primary">Quality Priority</div>
+                        <div className="text-xs text-text-secondary">Larger context, better understanding</div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+                
+                {autoDetected && systemDetection?.recommendations && (
+                  <div className="mt-3 p-3 bg-info-50 dark:bg-info-900/20 rounded-lg border border-info-200 dark:border-info-800">
+                    <div className="flex items-center text-info-700 dark:text-info-300">
+                      <CheckCircleIcon className="w-4 h-4 mr-2" />
+                      <span className="text-sm">
+                        Recommended: {systemDetection.recommendations.throughputFirst ? 'Speed' : 'Quality'} priority
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          </Card>
 
-          {/* Advanced Options */}
-          <div>
-            <h3 className="font-semibold text-text-primary mb-4 flex items-center">
-              <SettingsIcon className="w-5 h-5 mr-2 text-brand-500" />
-              Advanced Options
-            </h3>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
-                Preferred Context Size
-              </label>
-              <select
-                value={systemConfig.preferredContext}
-                onChange={(e) => setSystemConfig(prev => ({ ...prev, preferredContext: parseInt(e.target.value) }))}
-                className="w-full p-2 border border-border-secondary rounded-lg bg-background"
-              >
-                <option value={8192}>8K (Fast, basic tasks)</option>
-                <option value={16384}>16K (Balanced)</option>
-                <option value={32768}>32K (Recommended)</option>
-                <option value={65536}>64K (Large documents)</option>
-                <option value={131072}>128K (Maximum, requires lots of VRAM)</option>
-              </select>
+          {/* Context Configuration */}
+          <Card className="p-6 bg-surface border-border-secondary">
+            <div className="flex items-center mb-6">
+              <div className="w-8 h-8 0 rounded-lg flex items-center justify-center mr-3">
+                <SettingsIcon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-text-primary">Context Settings</h3>
+                <p className="text-sm text-text-secondary">Configure model context window size</p>
+              </div>
             </div>
-          </div>
+
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-3">
+                Context Window Size
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {[
+                  { value: 8192, label: '8K', desc: 'Fast & efficient' },
+                  { value: 16384, label: '16K', desc: 'Balanced' },
+                  { value: 32768, label: '32K', desc: 'Recommended' },
+                  { value: 65536, label: '64K', desc: 'Large documents' },
+                  { value: 131072, label: '128K', desc: 'Maximum' }
+                ].map((option) => (
+                  <motion.div
+                    key={option.value}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all text-center ${
+                      systemConfig.preferredContext === option.value
+                        ? 'border-brand-500  dark:bg-brand-900/20' 
+                        : 'border-border-secondary bg-background hover:border-border-accent'
+                    }`}
+                    onClick={() => setSystemConfig(prev => ({ ...prev, preferredContext: option.value }))}
+                  >
+                    <div className="font-semibold text-text-primary text-lg">{option.label}</div>
+                    <div className="text-xs text-text-secondary mt-1">{option.desc}</div>
+                    {systemConfig.preferredContext === option.value && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="w-2 h-2 0 rounded-full mx-auto mt-2"
+                      />
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+              
+              {autoDetected && systemDetection?.recommendations?.suggestedContextSize && (
+                <div className="mt-4 p-3 bg-info-50 dark:bg-info-900/20 rounded-lg border border-info-200 dark:border-info-800">
+                  <div className="flex items-center text-info-700 dark:text-info-300">
+                    <CheckCircleIcon className="w-4 h-4 mr-2" />
+                    <span className="text-sm">
+                      Recommended: {systemDetection.recommendations.suggestedContextSize.toLocaleString()} tokens for your system
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
           
-          <div className="flex space-x-4">
+          {/* System Recommendations */}
+          {autoDetected && systemDetection && systemDetection.recommendations?.notes && systemDetection.recommendations.notes.length > 0 && (
+            <Card className="p-6 bg-surface border-border-secondary border-l-4 border-l-info-500">
+              <div className="flex items-center mb-4">
+                <div className="w-8 h-8 bg-info-500 rounded-lg flex items-center justify-center mr-3">
+                  <InfoIcon className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-text-primary">System Recommendations</h3>
+                  <p className="text-sm text-text-secondary">Optimizations based on your hardware</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {systemDetection.recommendations.notes.map((note, index) => (
+                  <div key={index} className="flex items-start p-3 bg-info-50 dark:bg-info-900/20 rounded-lg">
+                    <CheckCircleIcon className="w-4 h-4 text-info-500 mr-3 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-info-700 dark:text-info-200">{note}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+          
+          {/* Navigation */}
+          <div className="flex items-center justify-between pt-6 border-t border-border-secondary">
+            <Button
+              variant="outline"
+              onClick={() => setCurrentStep(1)}
+              className="bg-background hover:bg-surface text-text-primary border-border-secondary hover:border-brand-500"
+            >
+              <ArrowLeftIcon className="w-4 h-4 mr-2" />
+              Back to Model Selection
+            </Button>
+            
             <Button
               onClick={generateSmartConfig}
               loading={isGenerating}
-              icon={<WandIcon size={16} />}
               disabled={isGenerating}
+              size="lg"
+              className="bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-400 hover:to-brand-500 text-white shadow-lg"
             >
-              {isGenerating ? 'Generating Configuration...' : 'Generate Smart Configuration ✨'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setCurrentStep(2)}
-              icon={<ArrowLeftIcon size={16} />}
-            >
-              Back
+              {isGenerating ? (
+                <>
+                  <motion.div
+                    className="w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-2"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  />
+                  Generating Configuration...
+                </>
+              ) : (
+                <>
+                  <WandIcon className="w-4 h-4 mr-2" />
+                  Generate Smart Configuration
+                </>
+              )}
             </Button>
           </div>
         </div>
@@ -474,7 +781,7 @@ const OnboardConfig: React.FC = () => {
             <h1 className="text-lg font-medium text-text-secondary">
               Setup Progress
             </h1>
-            <span className="text-sm text-text-tertiary">
+            <span className="text-sm text-text-secondary">
               Step {currentStep + 1} of {steps.length}
             </span>
           </div>
