@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="header2.png" alt="ClaraCore Banner" width="100%">
+</div>
+
 # ClaraCore 🚀
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

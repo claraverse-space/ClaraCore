@@ -1,9 +1,10 @@
 # Auto-generated llama-swap configuration (SMART GPU ALLOCATION)
 # Generated from models in: C:\BackUP\llama-modelsss
-# Binary: binaries\llama-server\llama-server.exe (cuda)
+# Binary: binaries\llama-server\llama-server.exe (cpu)
 # System: windows/amd64
+# Hardware monitoring: STATIC (total memory)
 # Total GPU VRAM: 24.0 GB
-# Algorithm: If model < total VRAM: -ngl 999, else fit max layers in total VRAM
+# Algorithm: Hybrid VRAM+RAM allocation with intelligent layer distribution
 
 healthCheckTimeout: 300
 logLevel: info
@@ -34,17 +35,17 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\ByteDance-Seed_Seed-OSS-36B-Instruct-Q4_K_M.gguf
-      --ctx-size 16384
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
+      --ctx-size 24576
+      -ngl 0
+      --cache-type-k f16
+      --cache-type-v f16
       --jinja
       --cont-batching
       --defrag-thold 0.1
       --batch-size 1024
       --ubatch-size 256
       --keep 2048
-      --parallel 2
+      --parallel 3
       --temp 0.7
       --repeat-penalty 1.05
       --repeat-last-n 256
@@ -61,8 +62,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\GLM-4.5-Air-IQ4_XS\GLM-4.5-Air-IQ4_XS-00001-of-00002.gguf
-      --ctx-size 32768
-      -ngl 18
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k q4_0
       --cache-type-v q4_0
       --jinja
@@ -83,8 +84,8 @@ models:
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Gemma\gemma-3-27b-tools.Q4_K_M.gguf
       --mmproj C:\BackUP\llama-modelsss\Gemma\gemma-3-27b-tools.mmproj-f16.gguf
-      --ctx-size 16384
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -107,8 +108,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Gemma\gemma-3-4b-it-Q4_K_S.gguf
-      --ctx-size 32768
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -131,8 +132,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Gemma\gemma-3n-e4b-it-q4_k_m.gguf
-      --ctx-size 32768
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -155,10 +156,10 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Jan\Jan-nano-128k-Q8_0.gguf
-      --ctx-size 131072
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
+      --ctx-size 24576
+      -ngl 0
+      --cache-type-k f16
+      --cache-type-v f16
       --jinja
       --temp 0.7
       --repeat-penalty 1.05
@@ -176,8 +177,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Jan\WEBGENOSS-20B.gguf
-      --ctx-size 32768
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -186,7 +187,7 @@ models:
       --batch-size 1024
       --ubatch-size 256
       --keep 2048
-      --parallel 4
+      --parallel 3
       --temp 0.7
       --repeat-penalty 1.05
       --repeat-last-n 256
@@ -203,8 +204,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\OpenAI\gpt-oss-20b-Q5_K_M.gguf
-      --ctx-size 65536
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -213,7 +214,7 @@ models:
       --batch-size 1024
       --ubatch-size 256
       --keep 2048
-      --parallel 4
+      --parallel 3
       --temp 0.7
       --repeat-penalty 1.05
       --repeat-last-n 256
@@ -230,10 +231,10 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Qwen\Josiefied-Qwen3-30B-A3B-abliterated-v2.Q4_K_M.gguf
-      --ctx-size 16384
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
+      --ctx-size 24576
+      -ngl 0
+      --cache-type-k f16
+      --cache-type-v f16
       --jinja
       --batch-size 2048
       --ubatch-size 512
@@ -254,8 +255,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Qwen\Qwen3-0.6B-Q8_0.gguf
-      --ctx-size 32768
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -278,10 +279,10 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Qwen\Qwen3-4B-Thinking-2507-Q8_0.gguf
-      --ctx-size 131072
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
+      --ctx-size 24576
+      -ngl 0
+      --cache-type-k f16
+      --cache-type-v f16
       --jinja
       --batch-size 2048
       --ubatch-size 512
@@ -302,8 +303,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Qwen\Qwen3-4B.Q4_K_M.gguf
-      --ctx-size 32768
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -326,10 +327,10 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Qwen\Qwen_Qwen3-30B-A3B-Instruct-2507-Q5_K_M.gguf
-      --ctx-size 16384
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
+      --ctx-size 24576
+      -ngl 0
+      --cache-type-k f16
+      --cache-type-v f16
       --jinja
       --batch-size 2048
       --ubatch-size 512
@@ -351,10 +352,10 @@ models:
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Qwen\huihui-internvl3-14b-abliterated-q6_k.gguf
       --mmproj C:\BackUP\llama-modelsss\Qwen\mmproj-Huihui-InternVL3-14B-abliterated-F32.gguf
-      --ctx-size 32768
-      -ngl 999
-      --cache-type-k q4_0
-      --cache-type-v q4_0
+      --ctx-size 24576
+      -ngl 0
+      --cache-type-k f16
+      --cache-type-v f16
       --jinja
       --batch-size 2048
       --ubatch-size 512
@@ -375,8 +376,8 @@ models:
     cmd: |
       ${llama-server-base}
       --model C:\BackUP\llama-modelsss\Qwen3-0.6B-Q8_0.gguf
-      --ctx-size 32768
-      -ngl 999
+      --ctx-size 24576
+      -ngl 0
       --cache-type-k f16
       --cache-type-v f16
       --jinja
@@ -402,7 +403,7 @@ models:
       --pooling mean
       --batch-size 1024
       --ubatch-size 512
-      -ngl 999
+      -ngl 0
       --threads 8
       --keep 1024
       --defrag-thold 0.1
@@ -424,7 +425,7 @@ models:
       --pooling mean
       --batch-size 1024
       --ubatch-size 512
-      -ngl 999
+      -ngl 0
       --threads 8
       --keep 1024
       --defrag-thold 0.1
@@ -446,7 +447,7 @@ models:
       --pooling mean
       --batch-size 1024
       --ubatch-size 512
-      -ngl 999
+      -ngl 0
       --threads 8
       --keep 1024
       --defrag-thold 0.1

@@ -35,6 +35,12 @@ func main() {
 	autoDraft := flag.Bool("auto-draft", false, "enable automatic draft model pairing for speculative decoding")
 	enableJinja := flag.Bool("jinja", true, "enable Jinja templating support for models (default: true)")
 	parallel := flag.Bool("parallel", true, "enable parallel processing for faster setup (default: true)")
+	realtime := flag.Bool("realtime", false, "enable real-time hardware monitoring for dynamic memory allocation (recommended for home PCs)")
+
+	// Hardware override flags for initialization
+	forceBackend := flag.String("backend", "", "force specific backend (cuda, rocm, cpu, vulkan) - overrides auto-detection")
+	forceRAM := flag.Float64("ram", 0, "force total RAM in GB - overrides auto-detection (e.g. --ram 64)")
+	forceVRAM := flag.Float64("vram", 0, "force total VRAM in GB - overrides auto-detection (e.g. --vram 24)")
 
 	flag.Parse() // Parse the command-line flags
 
@@ -50,6 +56,10 @@ func main() {
 			EnableDraftModels: *autoDraft,
 			EnableJinja:       *enableJinja,
 			EnableParallel:    *parallel,
+			EnableRealtime:    *realtime,
+			ForceBackend:      *forceBackend,
+			ForceRAM:          *forceRAM,
+			ForceVRAM:         *forceVRAM,
 		})
 		if err != nil {
 			fmt.Printf("Auto-setup failed: %v\n", err)

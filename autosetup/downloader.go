@@ -3,6 +3,7 @@ package autosetup
 import (
 	"archive/zip"
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,10 +50,57 @@ type BinaryInfo struct {
 	Type    string // "cpu", "cuda", "rocm", "vulkan", "metal"
 }
 
+// BinaryMetadata stores information about the currently installed binary
+type BinaryMetadata struct {
+	Type    string `json:"type"`
+	Version string `json:"version"`
+	Path    string `json:"path"`
+}
+
 const (
 	LLAMA_CPP_RELEASE_URL   = "https://github.com/ggml-org/llama.cpp/releases/tag/b6527"
 	LLAMA_CPP_DOWNLOAD_BASE = "https://github.com/ggml-org/llama.cpp/releases/download/b6527"
+	BINARY_METADATA_FILE    = "binary_metadata.json"
 )
+
+// saveBinaryMetadata saves information about the installed binary
+func saveBinaryMetadata(extractDir string, binaryInfo *BinaryInfo) error {
+	metadata := BinaryMetadata{
+		Type:    binaryInfo.Type,
+		Version: binaryInfo.Version,
+		Path:    binaryInfo.Path,
+	}
+
+	metadataPath := filepath.Join(extractDir, BINARY_METADATA_FILE)
+	file, err := os.Create(metadataPath)
+	if err != nil {
+		return fmt.Errorf("failed to create metadata file: %v", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(metadata)
+}
+
+// loadBinaryMetadata loads information about the currently installed binary
+func loadBinaryMetadata(extractDir string) (*BinaryMetadata, error) {
+	metadataPath := filepath.Join(extractDir, BINARY_METADATA_FILE)
+	file, err := os.Open(metadataPath)
+	if err != nil {
+		return nil, err // File doesn't exist or can't be read
+	}
+	defer file.Close()
+
+	var metadata BinaryMetadata
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode metadata: %v", err)
+	}
+
+	return &metadata, nil
+}
 
 // DetectSystem detects the current system capabilities
 func DetectSystem() SystemInfo {
@@ -134,27 +182,46 @@ func DownloadBinary(downloadDir string, system SystemInfo) (*BinaryInfo, error) 
 		// Binary exists, check if it's the right type for our system
 		fmt.Printf("✅ Found existing llama-server binary: %s\n", existingServerPath)
 
-		// Check if we have all required CUDA files for CUDA systems
-		if system.HasCUDA && system.OS == "windows" {
-			cudartPath := filepath.Join(extractDir, "cudart64_12.dll")
-			if _, err := os.Stat(cudartPath); err == nil {
-				fmt.Printf("✅ CUDA runtime already present, skipping download\n")
+		// Check metadata to see if the existing binary matches the required type
+		metadata, metaErr := loadBinaryMetadata(extractDir)
+		if metaErr == nil && metadata.Type == binaryType {
+			// Binary type matches, check for additional requirements
+			if system.HasCUDA && system.OS == "windows" {
+				cudartPath := filepath.Join(extractDir, "cudart64_12.dll")
+				if _, err := os.Stat(cudartPath); err == nil {
+					fmt.Printf("✅ Existing %s binary is compatible, skipping download\n", binaryType)
+					return &BinaryInfo{
+						Path:    existingServerPath,
+						Version: "b6527",
+						Type:    binaryType,
+					}, nil
+				} else {
+					fmt.Printf("⚠️  CUDA runtime missing, will download both runtime and binary\n")
+				}
+			} else {
+				// Non-CUDA system or metadata matches, existing binary is sufficient
+				fmt.Printf("✅ Existing %s binary is compatible, skipping download\n", binaryType)
 				return &BinaryInfo{
 					Path:    existingServerPath,
 					Version: "b6527",
 					Type:    binaryType,
 				}, nil
-			} else {
-				fmt.Printf("⚠️  CUDA runtime missing, will download both runtime and binary\n")
 			}
 		} else {
-			// Non-CUDA system, existing binary is sufficient
-			fmt.Printf("✅ Using existing binary, skipping download\n")
-			return &BinaryInfo{
-				Path:    existingServerPath,
-				Version: "b6527",
-				Type:    binaryType,
-			}, nil
+			// Binary type doesn't match or no metadata - need to re-download
+			if metaErr == nil {
+				fmt.Printf("🔄 Binary type mismatch: existing=%s, required=%s. Re-downloading...\n", metadata.Type, binaryType)
+			} else {
+				fmt.Printf("🔄 No binary metadata found. Re-downloading %s binary...\n", binaryType)
+			}
+
+			// Remove existing binary directory to ensure clean installation
+			err = os.RemoveAll(extractDir)
+			if err != nil {
+				fmt.Printf("⚠️  Failed to remove existing binary directory: %v\n", err)
+			} else {
+				fmt.Printf("🗑️  Removed existing binary directory\n")
+			}
 		}
 	}
 
@@ -228,11 +295,22 @@ func DownloadBinary(downloadDir string, system SystemInfo) (*BinaryInfo, error) 
 		}
 	}
 
-	return &BinaryInfo{
+	binaryInfo := &BinaryInfo{
 		Path:    serverPath,
 		Version: "b6527",
 		Type:    binaryType,
-	}, nil
+	}
+
+	// Save metadata about the downloaded binary
+	err = saveBinaryMetadata(extractDir, binaryInfo)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Failed to save binary metadata: %v\n", err)
+		// Don't fail the entire process for metadata saving failure
+	} else {
+		fmt.Printf("📝 Saved binary metadata: %s type\n", binaryType)
+	}
+
+	return binaryInfo, nil
 }
 
 // downloadFile downloads a file from URL to local path
@@ -530,25 +608,22 @@ func detectTotalRAM() float64 {
 	}
 }
 
-// detectWindowsRAM detects RAM on Windows
+// detectWindowsRAM detects RAM on Windows using modern PowerShell commands
 func detectWindowsRAM() float64 {
-	cmd := exec.Command("wmic", "computersystem", "get", "TotalPhysicalMemory", "/value")
+	// Use PowerShell to get total physical memory capacity
+	cmd := exec.Command("powershell", "-Command",
+		"Get-CimInstance -ClassName Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum | Select-Object -ExpandProperty Sum")
 	output, err := cmd.Output()
 	if err != nil {
 		return 16.0
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "TotalPhysicalMemory=") {
-			memStr := strings.TrimPrefix(line, "TotalPhysicalMemory=")
-			memStr = strings.TrimSpace(memStr)
-			if memBytes, err := strconv.ParseInt(memStr, 10, 64); err == nil {
-				return float64(memBytes) / (1024 * 1024 * 1024)
-			}
-		}
+	totalBytes, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
+	if err != nil {
+		return 16.0
 	}
-	return 16.0
+
+	return totalBytes / (1024 * 1024 * 1024) // Convert bytes to GB
 }
 
 // detectLinuxRAM detects RAM on Linux

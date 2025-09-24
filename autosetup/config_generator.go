@@ -3,1414 +3,961 @@ package autosetup
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 )
 
-// ConfigGenerator generates YAML configuration from detected models and binary
+// ConfigGenerator generates optimized configurations with intelligent GPU allocation
 type ConfigGenerator struct {
-	Models          []ModelInfo
-	Binary          *BinaryInfo
-	System          SystemInfo
-	StartPort       int
-	ModelsDir       string
-	MemoryEstimator *MemoryEstimator
-	AvailableVRAMGB float64
-	Options         SetupOptions
-	throughputCache map[string]ThroughputConfig // Cache for throughput optimization results
+	ModelsPath    string
+	BinaryPath    string
+	BinaryType    string
+	OutputPath    string
+	Options       SetupOptions
+	TotalVRAMGB   float64
+	SystemInfo    *SystemInfo    // Add system info for optimal parameters
+	usedModelIDs  map[string]int // Track used model IDs and their counts
+	mmprojMatches []MMProjMatch  // Store mmproj matches for automatic --mmproj parameter addition
 }
 
-// GenerateConfig creates a complete YAML configuration
-func (cg *ConfigGenerator) GenerateConfig() (string, error) {
-	// Initialize memory estimator if not set
-	if cg.MemoryEstimator == nil {
-		cg.MemoryEstimator = NewMemoryEstimator()
+// NewConfigGenerator creates a new config generator
+func NewConfigGenerator(modelsPath, binaryPath, outputPath string, options SetupOptions) *ConfigGenerator {
+	return &ConfigGenerator{
+		ModelsPath:   modelsPath,
+		BinaryPath:   binaryPath,
+		OutputPath:   outputPath,
+		Options:      options,
+		usedModelIDs: make(map[string]int),
 	}
+}
 
-	// Detect available VRAM if not set
-	if cg.AvailableVRAMGB == 0 {
-		vram, err := cg.MemoryEstimator.GetAvailableVRAM()
+// SetAvailableVRAM sets the total VRAM in GB
+func (scg *ConfigGenerator) SetAvailableVRAM(vramGB float64) {
+	scg.TotalVRAMGB = vramGB
+}
+
+// SetBinaryType sets the binary type (cuda, rocm, cpu)
+func (scg *ConfigGenerator) SetBinaryType(binaryType string) {
+	scg.BinaryType = binaryType
+}
+
+// SetMMProjMatches sets the mmproj matches for automatic --mmproj parameter addition
+func (scg *ConfigGenerator) SetMMProjMatches(matches []MMProjMatch) {
+	scg.mmprojMatches = matches
+}
+
+// SetSystemInfo sets the system information for optimal parameter calculation
+func (scg *ConfigGenerator) SetSystemInfo(systemInfo *SystemInfo) {
+	scg.SystemInfo = systemInfo
+}
+
+// GenerateConfig generates a simple configuration file
+func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
+	// Use real-time hardware monitoring if enabled
+	if scg.Options.EnableRealtime {
+		fmt.Println("🔄 Real-time hardware monitoring enabled...")
+		realtimeInfo, err := GetRealtimeHardwareInfo()
 		if err != nil {
-			// Fallback to default if VRAM detection fails
-			cg.AvailableVRAMGB = 12.0 // Assume 12GB if detection fails
+			fmt.Printf("⚠️  Real-time monitoring failed, using static values: %v\n", err)
 		} else {
-			cg.AvailableVRAMGB = vram
+			PrintRealtimeInfo(realtimeInfo)
+			// Update hardware values with real-time data
+			scg.TotalVRAMGB = realtimeInfo.AvailableVRAMGB
+			if scg.SystemInfo != nil {
+				scg.SystemInfo.TotalRAMGB = realtimeInfo.AvailableRAMGB
+			} else {
+				scg.SystemInfo = &SystemInfo{
+					TotalRAMGB: realtimeInfo.AvailableRAMGB,
+				}
+			}
+			fmt.Printf("✅ Using real-time values: %.2f GB VRAM, %.2f GB RAM available\n",
+				realtimeInfo.AvailableVRAMGB, realtimeInfo.AvailableRAMGB)
 		}
 	}
 
 	config := strings.Builder{}
 
-	// Header
-	config.WriteString("# Auto-generated llama-swap configuration\n")
-	config.WriteString("# Generated from models in: " + cg.ModelsDir + "\n")
-	config.WriteString("# Binary: " + cg.Binary.Path + " (" + cg.Binary.Type + ")\n")
-	config.WriteString("# System: " + cg.System.OS + "/" + cg.System.Architecture + "\n")
-	config.WriteString(fmt.Sprintf("# Available VRAM: %.1f GB\n\n", cg.AvailableVRAMGB))
+	// Write header
+	scg.writeHeader(&config)
 
-	// Global settings
+	// Write macros
+	scg.writeMacros(&config)
+
+	// Generate model IDs consistently (first pass)
+	modelIDMap := make(map[string]string)
+	for _, model := range models {
+		if model.IsDraft {
+			continue
+		}
+		modelIDMap[model.Path] = scg.generateModelID(model)
+	}
+
+	// Write models
+	config.WriteString("\nmodels:\n")
+	for _, model := range models {
+		if model.IsDraft {
+			continue // Skip draft models
+		}
+		scg.writeModel(&config, model, modelIDMap)
+	}
+
+	// Write groups
+	scg.writeGroups(&config, models, modelIDMap)
+
+	// Save to file
+	return os.WriteFile(scg.OutputPath, []byte(config.String()), 0644)
+}
+
+// writeHeader writes the configuration header
+func (scg *ConfigGenerator) writeHeader(config *strings.Builder) {
+	config.WriteString("# Auto-generated llama-swap configuration (SMART GPU ALLOCATION)\n")
+	config.WriteString(fmt.Sprintf("# Generated from models in: %s\n", scg.ModelsPath))
+	config.WriteString(fmt.Sprintf("# Binary: %s (%s)\n", scg.BinaryPath, scg.BinaryType))
+	config.WriteString(fmt.Sprintf("# System: %s/%s\n", runtime.GOOS, runtime.GOARCH))
+
+	if scg.Options.EnableRealtime {
+		config.WriteString("# Hardware monitoring: REAL-TIME (current available memory)\n")
+		if scg.TotalVRAMGB > 0 {
+			config.WriteString(fmt.Sprintf("# Available VRAM: %.1f GB (real-time)\n", scg.TotalVRAMGB))
+		}
+		if scg.SystemInfo != nil && scg.SystemInfo.TotalRAMGB > 0 {
+			config.WriteString(fmt.Sprintf("# Available RAM: %.1f GB (real-time)\n", scg.SystemInfo.TotalRAMGB))
+		}
+	} else {
+		config.WriteString("# Hardware monitoring: STATIC (total memory)\n")
+		if scg.TotalVRAMGB > 0 {
+			config.WriteString(fmt.Sprintf("# Total GPU VRAM: %.1f GB\n", scg.TotalVRAMGB))
+		}
+	}
+
+	config.WriteString("# Algorithm: Hybrid VRAM+RAM allocation with intelligent layer distribution\n")
+	config.WriteString("\n")
 	config.WriteString("healthCheckTimeout: 300\n")
 	config.WriteString("logLevel: info\n")
-	config.WriteString("startPort: " + strconv.Itoa(cg.StartPort) + "\n\n")
+	config.WriteString("startPort: 5800\n")
+}
 
-	// Add macros
-	config.WriteString("macros:\n")
+// writeMacros writes the base macros
+func (scg *ConfigGenerator) writeMacros(config *strings.Builder) {
+	config.WriteString("\nmacros:\n")
 	config.WriteString("  \"llama-server-base\": >\n")
-	config.WriteString("    " + cg.Binary.Path + "\n")
+	config.WriteString(fmt.Sprintf("    %s\n", scg.BinaryPath))
 	config.WriteString("    --host 127.0.0.1\n")
 	config.WriteString("    --port ${PORT}\n")
 	config.WriteString("    --metrics\n")
 	config.WriteString("    --flash-attn auto\n")
-	config.WriteString("    --no-warmup\n")            // Skip warmup for faster first token
-	config.WriteString("    --dry-penalty-last-n 0\n") // Disable DRY penalty to avoid slow startup
-	config.WriteString("    --batch-size 2048\n")      // Optimal batch size for throughput
-	config.WriteString("    --ubatch-size 512\n")      // Micro-batch size for GPU efficiency
-	config.WriteString("    --cache-type-k f16\n")     // Use f16 for KV cache (faster than f32)
-	config.WriteString("    --cache-type-v f16\n")     // Use f16 for KV cache (faster than f32)
-
-	// Add GPU-specific flags (but not -ngl, that's model-specific)
-	// if cg.Binary.Type == "cuda" || cg.Binary.Type == "rocm" {
-	//     config.WriteString("    -ngl 99\n")
-	// }
-
+	config.WriteString("    --no-warmup\n")
+	config.WriteString("    --dry-penalty-last-n 0\n")
+	config.WriteString("    --batch-size 2048\n")
+	config.WriteString("    --ubatch-size 512\n")
 	config.WriteString("\n")
-
-	// Sort models by size (largest first)
-	sortedModels := SortModelsBySize(cg.Models)
-
-	// Generate models section
-	config.WriteString("models:\n")
-
-	currentPort := cg.StartPort
-	usedIDs := make(map[string]int) // Track used IDs to handle duplicates
-
-	// Count non-draft models for progress tracking
-	nonDraftModels := 0
-	for _, model := range sortedModels {
-		if !model.IsDraft {
-			nonDraftModels++
-		}
-	}
-
-	if nonDraftModels > 0 {
-		fmt.Printf("🔧 Generating configuration for %d models...\n", nonDraftModels)
-	}
-
-	processedModels := 0
-
-	for i, model := range sortedModels {
-		// Skip draft models from main models list
-		if model.IsDraft {
-			continue
-		}
-
-		processedModels++
-		if processedModels%3 == 0 || processedModels == nonDraftModels {
-			percentage := float64(processedModels) / float64(nonDraftModels) * 100
-			fmt.Printf("   📝 Progress: %d/%d (%.1f%%) models configured\n", processedModels, nonDraftModels, percentage)
-		}
-
-		baseID := cg.generateModelID(model)
-		modelID := baseID
-
-		// Handle duplicates by adding suffix
-		if count, exists := usedIDs[baseID]; exists {
-			usedIDs[baseID] = count + 1
-			modelID = fmt.Sprintf("%s-%d", baseID, count+1)
-		} else {
-			usedIDs[baseID] = 1
-		}
-
-		config.WriteString("  \"" + modelID + "\":\n") // Add model metadata
-		if model.Size != "" {
-			config.WriteString("    name: \"" + cg.generateModelName(model) + "\"\n")
-			config.WriteString("    description: \"" + cg.generateModelDescription(model) + "\"\n")
-		}
-
-		// Find a draft model if available and enabled
-		var draftModel *ModelInfo
-		if cg.Options.EnableDraftModels {
-			draftModel = FindDraftModel(cg.Models, model, cg.MemoryEstimator)
-		}
-
-		// Generate command
-		config.WriteString("    cmd: |\n")
-		config.WriteString("      ${llama-server-base}\n")
-		config.WriteString("      --model " + model.Path + "\n")
-
-		// Add context size based on optimal memory calculation
-		ctxSize := cg.getOptimalContextSize(model)
-		config.WriteString("      --ctx-size " + strconv.Itoa(ctxSize) + "\n")
-
-		// Add KV cache quantization for memory optimization (CRITICAL FEATURE)
-		kvCacheType := cg.getOptimalKVCacheType(model)
-		if kvCacheType != "" && kvCacheType != "f16" {
-			config.WriteString("      --cache-type-k " + kvCacheType + "\n")
-			config.WriteString("      --cache-type-v " + kvCacheType + "\n")
-		}
-
-		// Add Jinja templating support if enabled (uses model's built-in template)
-		if cg.Options.EnableJinja {
-			config.WriteString("      --jinja\n")
-		}
-
-		// Add GPU layer configuration for CUDA/ROCm/Vulkan/Metal
-		if cg.Binary.Type == "cuda" || cg.Binary.Type == "rocm" || cg.Binary.Type == "vulkan" || cg.Binary.Type == "metal" {
-			nglLayers := cg.getOptimalGPULayers(model)
-			config.WriteString("      -ngl " + strconv.Itoa(nglLayers) + "\n")
-		}
-
-		// Add backend-specific optimizations
-		cg.addBackendOptimizations(&config, model)
-
-		// Add draft model for speculative decoding if available
-		if draftModel != nil {
-			config.WriteString("      --model-draft " + draftModel.Path + "\n")
-			config.WriteString("      -ngld 99\n")
-			config.WriteString("      --draft-max 16\n")
-			config.WriteString("      --draft-min 4\n")
-			config.WriteString("      --draft-p-min 0.4\n")
-
-			// Add GPU assignment for multi-GPU setups
-			if cg.System.HasCUDA && cg.hasMultipleGPUs() {
-				config.WriteString("      --device CUDA0\n")
-				config.WriteString("      --device-draft CUDA1\n")
-			}
-		}
-
-		// Add sampling parameters based on model type and intended use case
-		modelType := cg.detectModelType(model)
-		switch modelType {
-		case "embedding":
-			// Embedding models don't need sampling parameters
-			config.WriteString("      --embedding\n")
-		case "multimodal":
-			// Multimodal models need special handling
-			if model.IsInstruct {
-				config.WriteString("      --temp 0.7\n")
-				config.WriteString("      --repeat-penalty 1.05\n")
-				config.WriteString("      --repeat-last-n 256\n")
-				config.WriteString("      --top-p 0.9\n")
-				config.WriteString("      --top-k 40\n")
-				config.WriteString("      --min-p 0.1\n")
-			}
-		case "instruct":
-			// For chat/instruct models - optimized for speculative decoding
-			config.WriteString("      --temp 0.7\n") // Lower temp = more predictable = better speculation
-			config.WriteString("      --repeat-penalty 1.05\n")
-			config.WriteString("      --repeat-last-n 256\n")
-			config.WriteString("      --top-p 0.9\n") // More focused sampling helps speculation
-			config.WriteString("      --top-k 40\n")
-			config.WriteString("      --min-p 0.1\n")
-		case "code":
-			// Code models benefit most from speculation due to structured syntax
-			config.WriteString("      --temp 0.3\n")            // Very low temp for predictable code
-			config.WriteString("      --repeat-penalty 1.02\n") // Light penalty for code
-			config.WriteString("      --repeat-last-n 128\n")
-			config.WriteString("      --top-p 0.95\n")
-			config.WriteString("      --min-p 0.05\n")
-		case "base":
-			// For base/completion models, use moderate sampling
-			config.WriteString("      --temp 0.8\n")
-			config.WriteString("      --repeat-penalty 1.02\n")
-			config.WriteString("      --repeat-last-n 128\n")
-			config.WriteString("      --top-p 0.95\n")
-			config.WriteString("      --min-p 0.05\n")
-		}
-
-		// Add performance optimizations for large models
-		if cg.shouldOptimizeForPerformance(model) {
-			config.WriteString("      --cont-batching\n") // Continuous batching for throughput
-			config.WriteString("      --parallel 4\n")    // Allow multiple parallel requests
-		}
-
-		// Set proxy URL
-		config.WriteString("    proxy: \"http://127.0.0.1:${PORT}\"\n")
-
-		// Add common aliases for popular models
-		aliases := cg.generateAliases(model)
-		if len(aliases) > 0 {
-			config.WriteString("    aliases:\n")
-			for _, alias := range aliases {
-				config.WriteString("      - \"" + alias + "\"\n")
-			}
-		}
-
-		// Add TTL for larger models to save memory
-		if cg.shouldAddTTL(model) {
-			config.WriteString("    ttl: 300  # Auto-unload after 5 minutes of inactivity\n")
-		}
-
-		// Add environment variables for GPU selection
-		if cg.System.HasCUDA && len(sortedModels) > 1 {
-			gpuIndex := i % cg.getGPUCount()
-			config.WriteString("    env:\n")
-			config.WriteString("      - \"CUDA_VISIBLE_DEVICES=" + strconv.Itoa(gpuIndex) + "\"\n")
-		}
-
-		config.WriteString("\n")
-		currentPort++
-	}
-
-	// Add groups configuration for advanced setups
-	if len(sortedModels) > 2 {
-		config.WriteString(cg.generateGroupsConfig(sortedModels))
-	}
-
-	return config.String(), nil
+	config.WriteString("  \"llama-embed-base\": >\n")
+	config.WriteString(fmt.Sprintf("    %s\n", scg.BinaryPath))
+	config.WriteString("    --host 127.0.0.1\n")
+	config.WriteString("    --port ${PORT}\n")
+	config.WriteString("    --embedding\n")
+	// Pooling type will be set per model based on model family
+	// KV cache types are now set per model based on optimal calculation
 }
 
-// generateModelID creates a clean model ID from the filename
-func (cg *ConfigGenerator) generateModelID(model ModelInfo) string {
+// writeModel writes a single model configuration
+func (scg *ConfigGenerator) writeModel(config *strings.Builder, model ModelInfo, modelIDMap map[string]string) {
+	modelID := modelIDMap[model.Path] // Use pre-generated ID from map
+
+	config.WriteString(fmt.Sprintf("  \"%s\":\n", modelID))
+
+	// Add name and description if available
+	if model.Name != "" {
+		config.WriteString(fmt.Sprintf("    name: \"%s\"\n", model.Name))
+	}
+
+	description := scg.generateDescription(model)
+	if description != "" {
+		config.WriteString(fmt.Sprintf("    description: \"%s\"\n", description))
+	}
+
+	// Write command
+	config.WriteString("    cmd: |\n")
+	if scg.isEmbeddingModel(model) {
+		config.WriteString("      ${llama-embed-base}\n")
+	} else {
+		config.WriteString("      ${llama-server-base}\n")
+	}
+	config.WriteString(fmt.Sprintf("      --model %s\n", model.Path))
+
+	// Add --mmproj parameter if a matching mmproj file is found
+	mmprojPath := scg.findMatchingMMProj(model.Path)
+	if mmprojPath != "" {
+		config.WriteString(fmt.Sprintf("      --mmproj %s\n", mmprojPath))
+	}
+
+	// Smart GPU layer allocation algorithm (applies to all models including embeddings)
+	nglValue := scg.calculateOptimalNGL(model)
+
+	// Get model file info for context calculation
+	modelInfo, err := GetModelFileInfo(model.Path)
+	modelSizeGB := 20.0 // Default fallback
+	if err == nil {
+		modelSizeGB = modelInfo.ActualSizeGB
+	}
+
+	// Calculate optimal context size and KV cache type for use in optimizations
+	optimalContext, kvCacheType := scg.calculateOptimalContext(model, nglValue, modelSizeGB)
+
+	// For embedding models, skip base context and ngl as they'll be handled in writeOptimizations
+	if !scg.isEmbeddingModel(model) {
+		config.WriteString(fmt.Sprintf("      --ctx-size %d\n", optimalContext))
+		config.WriteString(fmt.Sprintf("      -ngl %d\n", nglValue))
+
+		// Set KV cache type
+		config.WriteString(fmt.Sprintf("      --cache-type-k %s\n", kvCacheType))
+		config.WriteString(fmt.Sprintf("      --cache-type-v %s\n", kvCacheType))
+	}
+
+	// Add optimizations
+	scg.writeOptimizations(config, model, optimalContext)
+
+	// Add proxy
+	config.WriteString("    proxy: \"http://127.0.0.1:${PORT}\"\n")
+
+	// Add environment
+	config.WriteString("    env:\n")
+	config.WriteString("      - \"CUDA_VISIBLE_DEVICES=0\"\n")
+	config.WriteString("\n")
+}
+
+// calculateOptimalNGL calculates the optimal number of GPU layers based on model size vs VRAM and system RAM
+func (scg *ConfigGenerator) calculateOptimalNGL(model ModelInfo) int {
+	// For CPU-only configurations (only return 0 for actual CPU backend)
+	if scg.BinaryType == "cpu" {
+		return 0
+	}
+
+	// Get model file info to get actual size and layer count
+	modelInfo, err := GetModelFileInfo(model.Path)
+	if err != nil {
+		// Fallback to -ngl 999 if we can't read model info
+		return 999
+	}
+
+	modelSizeGB := modelInfo.ActualSizeGB
+	totalLayers := modelInfo.LayerCount
+
+	// If no layer count available, fallback to -ngl 999
+	if totalLayers == 0 {
+		return 999
+	}
+
+	// Reserve VRAM for context and other overhead (2GB)
+	reservedVRAM := 2.0
+	usableVRAM := scg.TotalVRAMGB - reservedVRAM
+
+	// Get available system RAM (leave 25% buffer for system)
+	availableRAM := 0.0
+	if scg.SystemInfo != nil && scg.SystemInfo.TotalRAMGB > 0 {
+		availableRAM = scg.SystemInfo.TotalRAMGB * 0.75
+	}
+
+	fmt.Printf("🧮 Model: %s\n", model.Name)
+	fmt.Printf("   Size: %.2f GB, Layers: %d\n", modelSizeGB, totalLayers)
+	fmt.Printf("   VRAM: Total %.2f GB, Usable %.2f GB\n", scg.TotalVRAMGB, usableVRAM)
+	fmt.Printf("   RAM: Available %.2f GB\n", availableRAM)
+
+	// Check if entire model fits in VRAM
+	if modelSizeGB <= usableVRAM {
+		fmt.Printf("   ✅ Model fits entirely in VRAM: using -ngl 999 (all layers)\n")
+		return 999
+	}
+
+	// Check if model fits in VRAM + RAM combined
+	if availableRAM > 0 && modelSizeGB <= (usableVRAM+availableRAM) {
+		// Hybrid allocation: maximize GPU layers, rest goes to CPU/RAM
+		layerSizeGB := modelSizeGB / float64(totalLayers)
+		maxGPULayers := int(usableVRAM / layerSizeGB)
+
+		// **CRITICAL OPTIMIZATION**: If only 1-2 layers would be on CPU, force full GPU
+		// This avoids the massive performance penalty of hybrid allocation
+		cpuLayers := totalLayers - maxGPULayers
+		if cpuLayers <= 2 {
+			fmt.Printf("   🚀 PERFORMANCE OPTIMIZATION: Only %d CPU layers - forcing full GPU allocation for speed\n", cpuLayers)
+			fmt.Printf("   💡 Trading some VRAM overhead for 8x better performance (based on QA testing)\n")
+			return 999 // Force all layers to GPU
+		}
+
+		// Ensure at least 1 layer on GPU for performance
+		if maxGPULayers < 1 {
+			maxGPULayers = 1
+		}
+
+		// Ensure we don't exceed total layers
+		if maxGPULayers > totalLayers {
+			maxGPULayers = totalLayers
+		}
+
+		cpuMemoryGB := float64(cpuLayers) * layerSizeGB
+
+		fmt.Printf("   🔄 Hybrid allocation: %d GPU layers (%.2f GB), %d CPU layers (%.2f GB)\n",
+			maxGPULayers, usableVRAM, cpuLayers, cpuMemoryGB)
+		fmt.Printf("   ⚠️  Warning: Hybrid allocation may reduce performance significantly\n")
+
+		return maxGPULayers
+	}
+
+	// Model doesn't fit in available memory - warn user but try best effort
+	fmt.Printf("   ⚠️  Model (%.2f GB) exceeds available memory (VRAM: %.2f GB + RAM: %.2f GB)\n",
+		modelSizeGB, usableVRAM, availableRAM)
+
+	// Best effort: fit as many layers as possible in VRAM
+	layerSizeGB := modelSizeGB / float64(totalLayers)
+	layersThatFitInVRAM := int(usableVRAM / layerSizeGB)
+
+	// Ensure we don't exceed total layers
+	if layersThatFitInVRAM > totalLayers {
+		layersThatFitInVRAM = totalLayers
+	}
+
+	// Ensure at least 1 layer on GPU if we have any VRAM
+	if layersThatFitInVRAM < 1 && usableVRAM > 1.0 {
+		layersThatFitInVRAM = 1
+	}
+
+	fmt.Printf("   📊 Layer size: %.3f GB each, Fitting %d/%d layers in usable VRAM\n",
+		layerSizeGB, layersThatFitInVRAM, totalLayers)
+	fmt.Printf("   🎯 Using -ngl %d\n", layersThatFitInVRAM)
+
+	return layersThatFitInVRAM
+}
+
+// calculateKVCacheSize calculates VRAM usage for KV cache in GB
+func calculateKVCacheSize(contextSize int, layers int, kvCacheType string) float64 {
+	// KV cache size calculation: 2 * layers * hiddenSize * contextSize * bytesPerElement
+	// Estimate hidden size based on layer count - more accurate approach
+
+	var hiddenSize int
+	if layers <= 28 {
+		hiddenSize = 2048 // Small models (0.6B-1B)
+	} else if layers <= 36 {
+		hiddenSize = 3072 // Medium models (3B-7B)
+	} else if layers <= 48 {
+		hiddenSize = 4096 // Large models (13B-30B)
+	} else {
+		hiddenSize = 5120 // Very large models (70B+)
+	}
+
+	var bytesPerElement float64
+	switch kvCacheType {
+	case "f16":
+		bytesPerElement = 2.0
+	case "q8_0":
+		bytesPerElement = 1.0
+	case "q4_0":
+		bytesPerElement = 0.5
+	default:
+		bytesPerElement = 2.0 // Default to f16
+	}
+
+	// Formula: 2 (K + V) * layers * hiddenSize * contextSize * bytesPerElement
+	// Only count GPU layers for KV cache calculation
+	kvCacheSizeBytes := 2.0 * float64(layers) * float64(hiddenSize) * float64(contextSize) * bytesPerElement
+	kvCacheSizeGB := kvCacheSizeBytes / (1024 * 1024 * 1024)
+
+	return kvCacheSizeGB
+}
+
+// calculateOptimalContext calculates optimal context size based on remaining VRAM and available system RAM
+func (scg *ConfigGenerator) calculateOptimalContext(model ModelInfo, nglLayers int, modelSizeGB float64) (int, string) {
+	// Get model info for layer count and SWA support
+	modelInfo, err := GetModelFileInfo(model.Path)
+	totalModelLayers := 64 // Default fallback
+	hasSWA := false
+	if err == nil && modelInfo.LayerCount > 0 {
+		totalModelLayers = modelInfo.LayerCount
+		hasSWA = modelInfo.SlidingWindow > 0
+	}
+
+	// Calculate how much VRAM is used by model layers
+	var layersOnGPU int
+	var layersOnCPU int
+	var modelVRAMUsage float64
+
+	if nglLayers == 999 {
+		// All layers on GPU
+		layersOnGPU = totalModelLayers
+		layersOnCPU = 0
+		modelVRAMUsage = modelSizeGB
+	} else {
+		// Partial layers on GPU, rest on CPU
+		layersOnGPU = nglLayers
+		layersOnCPU = totalModelLayers - nglLayers
+		layerSizeGB := modelSizeGB / float64(totalModelLayers)
+		modelVRAMUsage = layerSizeGB * float64(nglLayers)
+	}
+
+	// Calculate remaining VRAM for KV cache
+	remainingVRAM := scg.TotalVRAMGB - modelVRAMUsage - 1.0 // 1GB overhead for operations
+
+	// Calculate available system RAM for hybrid KV cache
+	availableRAM := 0.0
+	if scg.SystemInfo != nil && scg.SystemInfo.TotalRAMGB > 0 {
+		// Reserve RAM for CPU layers and system operations
+		cpuLayerRAM := 0.0
+		if layersOnCPU > 0 {
+			layerSizeGB := modelSizeGB / float64(totalModelLayers)
+			cpuLayerRAM = layerSizeGB * float64(layersOnCPU)
+		}
+
+		systemRAMBuffer := scg.SystemInfo.TotalRAMGB * 0.25 // 25% buffer for system
+		usedRAM := cpuLayerRAM + systemRAMBuffer
+		availableRAM = scg.SystemInfo.TotalRAMGB - usedRAM
+
+		if availableRAM < 0 {
+			availableRAM = 0
+		}
+	}
+
+	fmt.Printf("   💾 Model allocation: GPU %.2f GB (%d layers), CPU %.2f GB (%d layers)\n",
+		modelVRAMUsage, layersOnGPU, modelSizeGB-modelVRAMUsage, layersOnCPU)
+	fmt.Printf("   🎯 Available for KV cache: VRAM %.2f GB, RAM %.2f GB\n",
+		remainingVRAM, availableRAM)
+
+	// For SWA models, force f16 KV cache (no quantization)
+	// For large hybrid models (>50GB), prioritize q4_0 for performance
+	var kvCacheTypes []string
+	if hasSWA {
+		kvCacheTypes = []string{"f16"} // Only f16 for SWA models
+		fmt.Printf("   🪟 SWA detected: using f16 KV cache (no quantization)\n")
+	} else if modelSizeGB > 50.0 && layersOnCPU > 0 {
+		kvCacheTypes = []string{"q4_0", "q8_0"} // Large hybrid models: prioritize q4_0
+		fmt.Printf("   🔧 Large hybrid model: prioritizing q4_0 KV cache for performance\n")
+	} else {
+		kvCacheTypes = []string{"f16", "q8_0", "q4_0"} // Try all types for other models
+	}
+
+	bestContextSize := 4096 // Minimum fallback
+	bestKVCacheType := "f16"
+
+	// Get model's maximum context if available
+	maxModelContext := 131072 // Default max
+	if err == nil && modelInfo.ContextLength > 0 {
+		maxModelContext = modelInfo.ContextLength
+	}
+
+	// **CRITICAL CHANGE**: Only use hybrid if model doesn't fit entirely in GPU
+	useGPUOnly := (nglLayers == 999) // Model fits entirely in GPU
+
+	if useGPUOnly {
+		fmt.Printf("   🎯 GPU-only optimization: Model fits entirely in VRAM, maximizing GPU context\n")
+
+		// GPU-ONLY MODE: Maximize context using available VRAM
+		for _, kvType := range kvCacheTypes {
+			// Test with maximum granularity for GPU-only context
+			contextSizes := []int{4096, 8192, 12288, 16384, 20480, 24576, 28672, 32768, 40960, 49152, 57344, 65536, 81920, 98304, 114688, 131072, 163840, 196608, 229376, 262144, 327680, 393216, 458752, 524288, 655360, 786432, 917504, 1048576}
+
+			for _, contextSize := range contextSizes {
+				if contextSize > maxModelContext {
+					break // Don't exceed model's max context
+				}
+
+				kvCacheSize := calculateKVCacheSize(contextSize, layersOnGPU, kvType)
+
+				// Only use VRAM - no hybrid for GPU-only models
+				if kvCacheSize <= remainingVRAM {
+					if contextSize > bestContextSize {
+						bestContextSize = contextSize
+						bestKVCacheType = kvType
+					}
+				} else {
+					// This context size won't fit in VRAM - stop trying larger sizes for this KV type
+					break
+				}
+			}
+		}
+
+		if bestContextSize >= 16384 {
+			kvCacheUsage := calculateKVCacheSize(bestContextSize, layersOnGPU, bestKVCacheType)
+			fmt.Printf("   🎯 GPU-only optimal: %d tokens (%s KV cache, %.2f GB VRAM)\n",
+				bestContextSize, bestKVCacheType, kvCacheUsage)
+		} else {
+			// Force minimum 16K for GPU-only models (16384 tokens = 16K)
+			bestContextSize = 16384
+			bestKVCacheType = "q4_0" // Use most efficient quantization
+			fmt.Printf("   ⚠️ GPU VRAM tight: forced minimum 16K context with q4_0 KV cache\n")
+		}
+
+	} else {
+		fmt.Printf("   🔄 Hybrid mode: Model requires CPU+GPU allocation\n")
+
+		// HYBRID MODE: Only for models that don't fit entirely in GPU
+		// **PERFORMANCE LIMIT**: Cap hybrid context at 24K for usable performance
+		for _, kvType := range kvCacheTypes {
+			// Limited context sizes for hybrid allocation (based on QA testing)
+			contextSizes := []int{16384, 20480, 24576} // Max 24K for hybrid performance
+
+			for _, contextSize := range contextSizes {
+				if contextSize > maxModelContext {
+					break
+				}
+
+				kvCacheSize := calculateKVCacheSize(contextSize, layersOnGPU, kvType)
+
+				// Try VRAM first, then hybrid
+				if kvCacheSize <= remainingVRAM {
+					// Fits in VRAM only
+					if contextSize > bestContextSize {
+						bestContextSize = contextSize
+						bestKVCacheType = kvType
+					}
+				} else if availableRAM > 0 {
+					// Use hybrid VRAM+RAM (but limit context for performance)
+					totalKVMemoryNeeded := kvCacheSize
+					if totalKVMemoryNeeded <= (remainingVRAM + availableRAM) {
+						if contextSize > bestContextSize {
+							bestContextSize = contextSize
+							bestKVCacheType = kvType
+							fmt.Printf("   🔄 Hybrid KV cache: VRAM %.2f GB + RAM %.2f GB for context %dK (performance-limited)\n",
+								remainingVRAM, totalKVMemoryNeeded-remainingVRAM, contextSize/1024)
+						}
+					}
+				}
+			}
+		}
+
+		if bestContextSize > 16384 {
+			fmt.Printf("   ⚠️  Hybrid context limited to %dK tokens for usable performance (QA validated)\n", bestContextSize/1024)
+		}
+	}
+
+	// Ensure minimum 16K context (16384 tokens)
+	if bestContextSize < 16384 {
+		bestContextSize = 16384
+		if hasSWA {
+			bestKVCacheType = "f16" // Force f16 for SWA models
+		} else {
+			bestKVCacheType = "q4_0" // Use most efficient quantization for non-SWA
+		}
+	}
+
+	kvCacheUsage := calculateKVCacheSize(bestContextSize, layersOnGPU, bestKVCacheType)
+	fmt.Printf("   🧠 Optimal context: %d tokens (%s KV cache, %.2f GB)\n",
+		bestContextSize, bestKVCacheType, kvCacheUsage)
+
+	return bestContextSize, bestKVCacheType
+}
+
+// getMaxContextForModel returns the maximum context size for a model
+func (scg *ConfigGenerator) getMaxContextForModel(model ModelInfo) int {
+	// Use model's maximum context if available
+	if model.ContextLength > 0 {
+		return model.ContextLength
+	}
+
+	// Default maximum contexts based on model size
+	sizeStr := strings.TrimSuffix(model.Size, "B")
+	if size, err := strconv.ParseFloat(sizeStr, 64); err == nil {
+		switch {
+		case size >= 30: // 30B+ models
+			return 1048576 // 1M tokens
+		case size >= 20: // 20B+ models
+			return 524288 // 512K tokens
+		case size >= 7: // 7B+ models
+			return 262144 // 256K tokens
+		case size >= 3: // 3B+ models
+			return 131072 // 128K tokens
+		default: // Small models
+			return 65536 // 64K tokens
+		}
+	}
+
+	// Default fallback
+	return 32768 // 32K tokens
+}
+
+// writeOptimizations writes model-specific optimizations
+func (scg *ConfigGenerator) writeOptimizations(config *strings.Builder, model ModelInfo, contextSize int) {
+	// Embedding models - use metadata-based detection with optimal parameters
+	if scg.isEmbeddingModel(model) {
+		// Add pooling parameter based on model family
+		poolingType := scg.detectPoolingType(model)
+		config.WriteString(fmt.Sprintf("      --pooling %s\n", poolingType))
+
+		// NO ctx-size for embedding models as per specifications
+
+		// Optimal batch settings for embedding models
+		config.WriteString("      --batch-size 1024\n")
+		config.WriteString("      --ubatch-size 512\n")
+
+		// Use the same NGL calculation as other models (respects CPU backend)
+		nglValue := scg.calculateOptimalNGL(model)
+		config.WriteString(fmt.Sprintf("      -ngl %d\n", nglValue))
+		if scg.SystemInfo != nil && scg.SystemInfo.PhysicalCores > 0 {
+			threads := scg.SystemInfo.PhysicalCores / 2
+			if threads < 1 {
+				threads = 1 // Minimum 1 thread
+			}
+			config.WriteString(fmt.Sprintf("      --threads %d\n", threads))
+		}
+
+		// Memory management parameters with RAM awareness
+		config.WriteString("      --keep 1024\n")        // Cache management
+		config.WriteString("      --defrag-thold 0.1\n") // Memory defragmentation
+
+		// Only use --mlock if sufficient RAM is available
+		if scg.shouldUseMlock(model) {
+			config.WriteString("      --mlock\n") // Lock model in RAM (if sufficient)
+		}
+
+		config.WriteString("      --flash-attn on\n") // Flash attention
+		config.WriteString("      --cont-batching\n") // Continuous batching
+		config.WriteString("      --jinja\n")         // Template processing
+		config.WriteString("      --no-warmup\n")     // Skip warmup
+
+		// Don't add chat-specific parameters for embedding models
+		return
+	}
+
+	// Add jinja templating for all non-embedding models
+	// Modern llama.cpp can handle chat templates for virtually all language models
+	if scg.Options.EnableJinja {
+		config.WriteString("      --jinja\n")
+	}
+
+	// Model size based optimizations
+	sizeStr := strings.TrimSuffix(model.Size, "B")
+	if size, err := strconv.ParseFloat(sizeStr, 64); err == nil {
+		switch {
+		case size >= 20: // Large models (20B+)
+			config.WriteString("      --cont-batching\n")
+			config.WriteString("      --defrag-thold 0.1\n")
+			config.WriteString("      --batch-size 1024\n")
+			config.WriteString("      --ubatch-size 256\n")
+			config.WriteString("      --keep 2048\n")
+
+			// Add parallel processing with context size validation
+			scg.addParallelProcessing(config, contextSize)
+		case size >= 7: // Medium models (7B+)
+			config.WriteString("      --batch-size 1024\n")
+			config.WriteString("      --ubatch-size 256\n")
+			config.WriteString("      --keep 2048\n")
+		default: // Small models
+			config.WriteString("      --batch-size 2048\n")
+			config.WriteString("      --ubatch-size 512\n")
+			config.WriteString("      --keep 4096\n")
+		}
+	}
+
+	// Chat template parameters
+	config.WriteString("      --temp 0.7\n")
+	config.WriteString("      --repeat-penalty 1.05\n")
+	config.WriteString("      --repeat-last-n 256\n")
+	config.WriteString("      --top-p 0.9\n")
+	config.WriteString("      --top-k 40\n")
+	config.WriteString("      --min-p 0.1\n")
+}
+
+// generateModelID generates a unique model ID
+func (scg *ConfigGenerator) generateModelID(model ModelInfo) string {
 	name := strings.ToLower(model.Name)
 
-	// Remove common suffixes
-	suffixes := []string{"-instruct", "-chat", "-gguf"}
-	for _, suffix := range suffixes {
-		name = strings.TrimSuffix(name, suffix)
-	}
-
-	// Remove quantization and replace with size if available
-	if model.Quantization != "" {
-		name = strings.ReplaceAll(name, strings.ToLower(model.Quantization), "")
-	}
-
 	// Clean up the name
+	name = strings.ReplaceAll(name, " ", "-")
 	name = strings.ReplaceAll(name, "_", "-")
 	name = strings.ReplaceAll(name, ".", "")
-	name = strings.Trim(name, "-")
+	name = strings.ReplaceAll(name, "(", "")
+	name = strings.ReplaceAll(name, ")", "")
+
+	// Remove common suffixes
+	name = strings.TrimSuffix(name, "-q4-k-m")
+	name = strings.TrimSuffix(name, "-q4-k-s")
+	name = strings.TrimSuffix(name, "-q5-k-m")
+	name = strings.TrimSuffix(name, "-q8-0")
+	name = strings.TrimSuffix(name, "-gguf")
 
 	// Add size if available
 	if model.Size != "" {
-		name = name + "-" + strings.ToLower(model.Size)
+		name = fmt.Sprintf("%s-%s", name, strings.ToLower(model.Size))
 	}
 
-	return name
+	// Check if this ID has been used before and handle duplicates
+	baseID := name
+	if count, exists := scg.usedModelIDs[baseID]; exists {
+		// Increment the count and append version number
+		scg.usedModelIDs[baseID] = count + 1
+		return fmt.Sprintf("%s-v%d", baseID, count+1)
+	} else {
+		// First occurrence, just track it
+		scg.usedModelIDs[baseID] = 1
+		return baseID
+	}
 }
 
-// generateModelName creates a display name
-func (cg *ConfigGenerator) generateModelName(model ModelInfo) string {
-	name := model.Name
-	if model.Size != "" {
-		return fmt.Sprintf("%s %s", extractModelFamily(name), model.Size)
-	}
-	return name
-}
+// generateDescription generates a model description
+func (scg *ConfigGenerator) generateDescription(model ModelInfo) string {
+	parts := []string{}
 
-// generateModelDescription creates a description
-func (cg *ConfigGenerator) generateModelDescription(model ModelInfo) string {
-	desc := "Auto-detected model"
 	if model.Size != "" {
-		desc += " (" + model.Size + ")"
+		parts = append(parts, fmt.Sprintf("Model size: %s", model.Size))
 	}
+
 	if model.Quantization != "" {
-		desc += " with " + model.Quantization + " quantization"
+		parts = append(parts, fmt.Sprintf("Quantization: %s", model.Quantization))
 	}
+
 	if model.IsInstruct {
-		desc += " - Instruction-tuned"
+		parts = append(parts, "Instruction-tuned")
 	}
-	return desc
-}
-
-// generateAliases creates common aliases for models
-func (cg *ConfigGenerator) generateAliases(model ModelInfo) []string {
-	var aliases []string
-	family := strings.ToLower(extractModelFamily(model.Name))
-
-	// Add family-based aliases
-	switch {
-	case strings.Contains(family, "qwen"):
-		if model.Size == "32B" {
-			aliases = append(aliases, "qwen-large", "coder")
-		} else if model.Size == "7B" || model.Size == "8B" {
-			aliases = append(aliases, "qwen-medium")
-		}
-	case strings.Contains(family, "llama"):
-		if model.Size == "70B" {
-			aliases = append(aliases, "llama-large")
-		} else if model.Size == "8B" {
-			aliases = append(aliases, "llama-medium")
-		}
-		if model.IsInstruct {
-			aliases = append(aliases, "gpt-4o-mini", "gpt-3.5-turbo")
-		}
-	case strings.Contains(family, "mistral"):
-		aliases = append(aliases, "mistral")
-	}
-
-	return aliases
-}
-
-// getOptimalContextSize returns optimal context size focused on maximizing context length
-func (cg *ConfigGenerator) getOptimalContextSize(model ModelInfo) int {
-	// Check if throughput-first mode is enabled
-	if cg.Options.ThroughputFirst {
-		config := cg.optimizeForThroughput(model)
-		return config.ContextSize
-	}
-
-	// Original maximum context optimization logic for backward compatibility
-	modelSizeGB := cg.calculateModelSize(model)
-	availableVRAMGB := cg.AvailableVRAMGB
-
-	if availableVRAMGB <= 0 {
-		if cg.Options.EnableParallel {
-			fmt.Printf("   ⚠️ No VRAM info, using default large context\n")
-		}
-		return 65536 // Default to 64K when no VRAM info (generous default)
-	}
-
-	// Calculate how much memory is left after loading the model
-	overheadGB := 0.5 // Minimal overhead for operations
-	if model.IsMoE {
-		overheadGB = 0.8 // MoE needs more overhead
-	}
-
-	remainingGB := availableVRAMGB - modelSizeGB - overheadGB
-
-	if remainingGB <= 0 {
-		if cg.Options.EnableParallel {
-			fmt.Printf("   ⚠️ Model uses all VRAM, using minimum context\n")
-		}
-		return 8192 // Minimum viable context
-	}
-
-	// Use memory estimator for precise calculation if available
-	if cg.MemoryEstimator != nil {
-		if cg.Options.EnableParallel {
-			fmt.Printf("   🧠 Calculating maximum context for: %s\n", filepath.Base(model.Path))
-		}
-
-		// Find the maximum context that fits in VRAM
-		optimalContext, err := cg.MemoryEstimator.FindOptimalContextSize(model.Path, cg.AvailableVRAMGB)
-		if err == nil && optimalContext > 0 {
-			maxContext := optimalContext
-
-			// Cap at model's native context if known
-			if model.ContextLength > 0 && maxContext > model.ContextLength {
-				maxContext = model.ContextLength
-			}
-
-			// Ensure minimum viable context
-			if maxContext < 8192 {
-				maxContext = 8192
-			}
-
-			// Round to standard context sizes, preferring larger contexts
-			standardSizes := []int{8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576}
-			for i := len(standardSizes) - 1; i >= 0; i-- {
-				if maxContext >= standardSizes[i] {
-					if cg.Options.EnableParallel {
-						fmt.Printf("   ✅ Maximum context: %dK tokens (%.1f GB remaining)\n",
-							standardSizes[i]/1024, remainingGB)
-					}
-					return standardSizes[i]
-				}
-			}
-			return maxContext
-		}
-	}
-
-	// Enhanced fallback: Calculate maximum context from available memory
-	// Use aggressive KV cache quantization (q8_0) to maximize context
-	embeddingSize := 4096 // Default assumption
-	if model.EmbeddingSize > 0 {
-		embeddingSize = model.EmbeddingSize
-	}
-
-	// KV cache with q8_0 quantization: context * embedding * 2 (K+V) * 1 byte
-	maxTokensFromMemory := int(remainingGB * 1024 * 1024 * 1024 / float64(embeddingSize*2))
-
-	// Apply reasonable limits but prefer larger contexts
-	maxContext := maxTokensFromMemory
-	if model.ContextLength > 0 {
-		maxContext = min(maxContext, model.ContextLength)
-	}
-
-	// Cap at 1M tokens (very generous)
-	maxContext = min(maxContext, 1048576)
-
-	// Ensure minimum viable context
-	maxContext = max(maxContext, 8192)
-
-	// Round to standard sizes, preferring larger contexts
-	standardSizes := []int{8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576}
-	for i := len(standardSizes) - 1; i >= 0; i-- {
-		if maxContext >= standardSizes[i] {
-			if cg.Options.EnableParallel {
-				fmt.Printf("   💡 Max context: %dK tokens (%.1f GB available, using q8_0 KV cache)\n",
-					standardSizes[i]/1024, remainingGB)
-			}
-			return standardSizes[i]
-		}
-	}
-
-	// Ultimate fallback - generous default
-	return 65536
-}
-
-// getOptimalKVCacheType determines the best KV cache quantization for maximum context
-func (cg *ConfigGenerator) getOptimalKVCacheType(model ModelInfo) string {
-	// Check if throughput-first mode is enabled
-	if cg.Options.ThroughputFirst {
-		config := cg.optimizeForThroughput(model)
-		return config.KVCacheType
-	}
-
-	// ALWAYS use q8_0 quantization to maximize context length
-	// q8_0 provides the best balance of quality and memory savings
-	// This allows much larger context sizes while maintaining good performance
-	return "q8_0"
-}
-
-// calculateModelSize estimates model size in GB
-func (cg *ConfigGenerator) calculateModelSize(model ModelInfo) float64 {
-	// Try to get actual file size first
-	if actualSize := cg.getActualModelSize(model.Path); actualSize > 0 {
-		return actualSize
-	}
-
-	// Fallback to estimation
-	return cg.estimateModelSizeFromMetadata(model)
-}
-
-// getActualModelSize gets the actual file size, handling multi-part models
-func (cg *ConfigGenerator) getActualModelSize(modelPath string) float64 {
-	if modelPath == "" {
-		return 0
-	}
-
-	// Check for multi-part model pattern
-	if strings.Contains(modelPath, "-of-") {
-		return cg.getMultiPartModelSize(modelPath)
-	}
-
-	// Single file
-	if fileInfo, err := os.Stat(modelPath); err == nil {
-		return float64(fileInfo.Size()) / (1024 * 1024 * 1024)
-	}
-
-	return 0
-}
-
-// getMultiPartModelSize calculates total size of multi-part models
-func (cg *ConfigGenerator) getMultiPartModelSize(modelPath string) float64 {
-	// Extract base path and part info
-	re := regexp.MustCompile(`(.*)-(\d+)-of-(\d+)\.gguf$`)
-	matches := re.FindStringSubmatch(modelPath)
-	if len(matches) < 4 {
-		return 0
-	}
-
-	basePath := matches[1]
-	totalPartsStr := matches[3]
-	totalParts, err := strconv.Atoi(totalPartsStr)
-	if err != nil {
-		return 0
-	}
-
-	var totalSize float64
-	for i := 1; i <= totalParts; i++ {
-		partPath := fmt.Sprintf("%s-%05d-of-%s.gguf", basePath, i, totalPartsStr)
-		if fileInfo, err := os.Stat(partPath); err == nil {
-			totalSize += float64(fileInfo.Size()) / (1024 * 1024 * 1024)
-		}
-	}
-
-	return totalSize
-}
-
-// estimateModelSizeFromMetadata estimates size from model metadata
-func (cg *ConfigGenerator) estimateModelSizeFromMetadata(model ModelInfo) float64 {
-	// Use quantization info if available
-	quantMultiplier := 0.5 // Default for Q4 quantization
-
-	if model.Quantization != "" {
-		quantMap := map[string]float64{
-			"F32": 4.0, "F16": 2.0, "Q8_0": 1.0, "Q6_K": 0.75,
-			"Q5_K_M": 0.625, "Q5_K_S": 0.625, "Q4_K_M": 0.5, "Q4_K_S": 0.5,
-			"Q4_0": 0.5, "Q3_K_M": 0.375, "Q3_K_S": 0.375, "Q2_K": 0.25,
-		}
-		if mult, exists := quantMap[model.Quantization]; exists {
-			quantMultiplier = mult
-		}
-	}
-
-	// Estimate based on size if available
-	switch model.Size {
-	case "0.5B", "1B":
-		return 1.0 * quantMultiplier
-	case "1.5B", "3B":
-		return 3.0 * quantMultiplier
-	case "7B", "8B":
-		return 7.0 * quantMultiplier
-	case "13B":
-		return 13.0 * quantMultiplier
-	case "32B":
-		return 32.0 * quantMultiplier
-	case "70B":
-		return 70.0 * quantMultiplier
-	case "405B":
-		return 405.0 * quantMultiplier
-	default:
-		return 7.0 * quantMultiplier // Default to 7B equivalent
-	}
-}
-
-// getOptimalGPULayers calculates optimal GPU layers to use all available VRAM efficiently
-func (cg *ConfigGenerator) getOptimalGPULayers(model ModelInfo) int {
-	// Check if throughput-first mode is enabled
-	if cg.Options.ThroughputFirst {
-		config := cg.optimizeForThroughput(model)
-		return config.GPULayers
-	}
-
-	// Original maximum layers optimization logic for backward compatibility
-	modelSizeGB := cg.calculateModelSize(model)
-	availableVRAMGB := cg.AvailableVRAMGB
-
-	if availableVRAMGB <= 0 || modelSizeGB <= 0 {
-		// Fallback to conservative approach
-		return cg.getFallbackGPULayers(model)
-	}
-
-	// Calculate memory requirements
-	overheadGB := 0.3 // Minimal overhead for operations
-	if model.IsMoE {
-		overheadGB = 0.5 // MoE models need slightly more overhead
-	}
-
-	// Estimate KV cache memory using q8_0 quantization (our standard)
-	ctxSize := cg.getOptimalContextSize(model)
-	kvCacheGB := cg.estimateKVCacheMemory(ctxSize, model.EmbeddingSize, "q8_0")
-
-	// Calculate usable VRAM for model layers - use 95% of total VRAM aggressively
-	usableVRAMForModel := availableVRAMGB*0.95 - kvCacheGB - overheadGB
-
-	if usableVRAMForModel <= 0 {
-		if cg.Options.EnableParallel {
-			fmt.Printf("   ⚠️ Not enough VRAM for GPU layers after KV cache\n")
-		}
-		return 0 // CPU only
-	}
-
-	// Try to use memory estimator for precise calculation
-	if cg.MemoryEstimator != nil {
-		layerResult, err := cg.MemoryEstimator.CalculateOptimalLayers(model.Path, cg.AvailableVRAMGB, ctxSize)
-		if err == nil && layerResult != nil {
-			if cg.Options.EnableParallel {
-				fmt.Printf("   🎯 Memory estimator: %d GPU layers (using %.1f%% VRAM)\n",
-					layerResult.GPULayers, 95.0)
-			}
-			return layerResult.GPULayers
-		}
-	}
-
-	// Advanced calculation: determine how many layers can fit
-	totalLayers := model.NumLayers
-	if totalLayers == 0 {
-		totalLayers = cg.estimateLayerCount(model)
-	}
-
-	// Calculate layer ratio based on usable VRAM
-	layerRatio := usableVRAMForModel / modelSizeGB
-
-	// For MoE models, we can fit more layers due to sparse activation
-	if model.IsMoE {
-		layerRatio *= 1.15 // 15% bonus for MoE efficiency
-	}
-
-	// Calculate GPU layers with aggressive approach
-	gpuLayers := int(float64(totalLayers) * layerRatio)
-
-	// Apply constraints
-	if gpuLayers > totalLayers {
-		gpuLayers = totalLayers // Can't exceed total layers
-	}
-
-	// For very small models that fit entirely in GPU, use -ngl 99
-	if modelSizeGB <= availableVRAMGB*0.6 { // Model uses less than 60% of VRAM
-		gpuLayers = 99
-	}
-
-	// Use ALL layers if we're close (within 2 layers) or if model fits completely
-	if gpuLayers >= totalLayers-2 && totalLayers > 10 {
-		gpuLayers = 99 // Use -ngl 99 for complete GPU offloading
-	} else if gpuLayers >= totalLayers {
-		gpuLayers = 99 // Model fits completely, use -ngl 99
-	}
-
-	// Additional check for models smaller than 8GB that can fit entirely
-	if modelSizeGB <= 8.0 && (gpuLayers >= int(float64(totalLayers)*0.9)) {
-		gpuLayers = 99 // Use -ngl 99 for models that fit almost entirely
-	}
-
-	// Ensure we use at least some GPU if we have decent VRAM
-	if gpuLayers < 1 && gpuLayers != 99 && availableVRAMGB > 6 {
-		gpuLayers = max(1, totalLayers/4) // Use at least 25% of layers
-	}
-
-	if cg.Options.EnableParallel {
-		vramUsage := (float64(gpuLayers)/float64(totalLayers))*modelSizeGB + kvCacheGB + overheadGB
-		if gpuLayers == 99 {
-			fmt.Printf("   🚀 GPU layers: -ngl 99 (complete GPU offloading, %.1f%% VRAM usage)\n",
-				vramUsage/availableVRAMGB*100)
-		} else {
-			fmt.Printf("   🎯 GPU layers: %d/%d (%.1f%% of model, %.1f%% VRAM usage)\n",
-				gpuLayers, totalLayers,
-				float64(gpuLayers)/float64(totalLayers)*100,
-				vramUsage/availableVRAMGB*100)
-		}
-	}
-
-	return gpuLayers
-} // estimateKVCacheMemory estimates KV cache memory usage in GB
-func (cg *ConfigGenerator) estimateKVCacheMemory(contextSize int, embeddingSize int, kvCacheType string) float64 {
-	if embeddingSize == 0 {
-		embeddingSize = 4096 // Default fallback
-	}
-
-	// Bytes per element based on quantization
-	var bytesPerElement float64 = 2.0 // f16 default
-	switch kvCacheType {
-	case "q8_0":
-		bytesPerElement = 1.0
-	case "q4_0", "q4_1":
-		bytesPerElement = 0.5
-	case "f16":
-		bytesPerElement = 2.0
-	case "f32":
-		bytesPerElement = 4.0
-	}
-
-	// KV cache size: context * embedding * 2 (K+V) * bytes_per_element
-	kvCacheBytes := float64(contextSize*embeddingSize*2) * bytesPerElement
-
-	// Add some overhead for cache management
-	return (kvCacheBytes * 1.1) / (1024 * 1024 * 1024) // Convert to GB
-}
-
-// estimateLayerCount estimates the number of layers based on model metadata
-func (cg *ConfigGenerator) estimateLayerCount(model ModelInfo) int {
-	// Try to estimate from model size
-	switch model.Size {
-	case "0.5B", "1B", "1.5B":
-		return 22
-	case "3B":
-		return 26
-	case "7B", "8B":
-		return 32
-	case "13B":
-		return 40
-	case "32B":
-		return 60
-	case "70B":
-		return 80
-	case "405B":
-		return 126
-	default:
-		return 32 // Default fallback
-	}
-}
-
-// getFallbackGPULayers provides size-based heuristics when memory estimation fails
-func (cg *ConfigGenerator) getFallbackGPULayers(model ModelInfo) int {
-	// Try to use memory estimator for optimal layer calculation
-	if cg.MemoryEstimator != nil && cg.AvailableVRAMGB > 0 {
-		// Get optimal context size first
-		ctxSize := cg.getOptimalContextSize(model)
-
-		// Try layer offloading analysis
-		offloadResult, err := cg.MemoryEstimator.FindOptimalContextSizeWithOffload(model.Path, cg.AvailableVRAMGB)
-		if err == nil && offloadResult != nil {
-			return offloadResult.GPULayers
-		}
-
-		// Fallback: try calculating layers for the context size
-		layerResult, err := cg.MemoryEstimator.CalculateOptimalLayers(model.Path, cg.AvailableVRAMGB, ctxSize)
-		if err == nil && layerResult != nil {
-			return layerResult.GPULayers
-		}
-	}
-
-	// Final fallback to size-based heuristics
-	switch model.Size {
-	case "0.5B", "1B", "1.5B", "3B", "7B", "8B":
-		return 99 // All layers for small models
-	case "13B":
-		if cg.AvailableVRAMGB >= 16 {
-			return 99 // All layers if enough VRAM
-		}
-		return 32 // Partial offloading
-	case "32B":
-		if cg.AvailableVRAMGB >= 32 {
-			return 99
-		}
-		return 24
-	case "70B", "405B":
-		if cg.AvailableVRAMGB >= 64 {
-			return 99
-		}
-		return 16 // Heavy offloading for very large models
-	default:
-		// For unknown sizes, be conservative
-		if cg.AvailableVRAMGB >= 24 {
-			return 99
-		}
-		return 24
-	}
-}
-
-// shouldAddTTL determines if a model should have TTL
-func (cg *ConfigGenerator) shouldAddTTL(model ModelInfo) bool {
-	switch model.Size {
-	case "32B", "70B", "405B":
-		return true
-	}
-	return false
-}
-
-// addBackendOptimizations adds backend-specific performance and compatibility optimizations
-func (cg *ConfigGenerator) addBackendOptimizations(config *strings.Builder, model ModelInfo) {
-	switch cg.Binary.Type {
-	case "vulkan":
-		// Vulkan-specific optimizations - CRITICAL for avoiding OOM and crashes
-		config.WriteString("      --no-mmap\n")         // Vulkan may have issues with mmap
-		config.WriteString("      --batch-size 512\n")  // Conservative batch size for Vulkan
-		config.WriteString("      --ubatch-size 256\n") // Conservative micro-batch
-
-		// Vulkan doesn't support flash attention
-		// Note: flash attention is handled by base macro, but we can't disable it per model easily
-
-		// Reduce parallelism for Vulkan stability
-		config.WriteString("      --parallel 2\n")
-
-	case "metal":
-		// Metal (Apple Silicon) optimizations
-		config.WriteString("      --no-mmap\n")         // Metal unified memory works better without mmap
-		config.WriteString("      --batch-size 1024\n") // Metal can handle larger batches
-		config.WriteString("      --ubatch-size 512\n")
-
-		// Metal supports flash attention and benefits from it
-		config.WriteString("      --flash-attn\n")
-
-	case "rocm":
-		// ROCm (AMD GPU) optimizations
-		config.WriteString("      --batch-size 1024\n") // ROCm can handle good batch sizes
-		config.WriteString("      --ubatch-size 512\n")
-
-		// ROCm supports flash attention on newer cards
-		if cg.System.HasROCm {
-			config.WriteString("      --flash-attn\n")
-		}
-
-	case "cuda":
-		// CUDA optimizations
-		modelSizeGB := cg.calculateModelSize(model)
-
-		// Enable flash attention for modern GPUs (compute capability 8.0+)
-		// This is already in the base macro, but we can add model-specific overrides
-
-		// For large models on CUDA, enable advanced features
-		if modelSizeGB > 20 {
-			config.WriteString("      --cont-batching\n")    // Continuous batching for large models
-			config.WriteString("      --defrag-thold 0.1\n") // Aggressive defragmentation
-		}
-
-		// CUDA can handle larger batch sizes efficiently
-		if modelSizeGB < 10 {
-			config.WriteString("      --batch-size 2048\n")
-			config.WriteString("      --ubatch-size 512\n")
-		} else {
-			config.WriteString("      --batch-size 1024\n")
-			config.WriteString("      --ubatch-size 256\n")
-		}
-
-	case "cpu":
-		// CPU-only optimizations
-		config.WriteString("      -ngl 0\n")           // Force CPU mode
-		config.WriteString("      --batch-size 512\n") // Reasonable batch for CPU
-		config.WriteString("      --ubatch-size 128\n")
-		config.WriteString("      --threads " + strconv.Itoa(runtime.NumCPU()*2/3) + "\n")
-
-		// CPU benefits from mlock for better performance
-		config.WriteString("      --mlock\n")
-	}
-
-	// Model-specific optimizations
-	if model.IsMoE {
-		// MoE models benefit from specific settings
-		config.WriteString("      --split-mode row\n") // Better for expert distribution
-
-		// More conservative batching for MoE due to expert routing complexity
-		if cg.Binary.Type == "cuda" || cg.Binary.Type == "rocm" {
-			config.WriteString("      --batch-size 512\n")
-			config.WriteString("      --ubatch-size 128\n")
-		}
-	}
-
-	// Large model optimizations
-	modelSizeGB := cg.calculateModelSize(model)
-	if modelSizeGB > 30 {
-		config.WriteString("      --keep 1024\n") // Conservative keep for large models
-	} else if modelSizeGB > 10 {
-		config.WriteString("      --keep 2048\n") // Moderate keep for medium models
-	} else {
-		config.WriteString("      --keep 4096\n") // Generous keep for small models
-	}
-}
-
-// shouldOptimizeForPerformance determines if a model needs performance optimizations
-func (cg *ConfigGenerator) shouldOptimizeForPerformance(model ModelInfo) bool {
-	// Enable performance optimizations for larger models or when VRAM is limited
-	switch model.Size {
-	case "13B", "32B", "70B", "405B":
-		return true
-	}
-
-	// Also enable for models that require offloading
-	if cg.MemoryEstimator != nil && cg.AvailableVRAMGB > 0 {
-		// Check if model requires layer offloading
-		memInfo, err := cg.MemoryEstimator.GetModelMemoryInfo(model.Path)
-		if err == nil {
-			minMemory := memInfo.ModelSizeGB + cg.MemoryEstimator.OverheadGB
-			if minMemory > cg.AvailableVRAMGB {
-				return true // Needs offloading, so enable performance opts
-			}
-		}
-	}
-
-	return false
-}
-
-// hasMultipleGPUs checks if system has multiple GPUs
-func (cg *ConfigGenerator) hasMultipleGPUs() bool {
-	// This is a simple heuristic - in a real implementation,
-	// you'd check nvidia-smi or similar
-	return cg.System.HasCUDA
-}
-
-// getGPUCount returns estimated GPU count
-func (cg *ConfigGenerator) getGPUCount() int {
-	if !cg.System.HasCUDA {
-		return 1
-	}
-
-	// Try to get actual GPU count using nvidia-smi
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		// Check Windows paths for nvidia-smi
-		paths := []string{
-			"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe",
-			"C:\\Windows\\System32\\nvidia-smi.exe",
-		}
-		for _, path := range paths {
-			if _, err := os.Stat(path); err == nil {
-				cmd = exec.Command(path, "--list-gpus")
-				output, err := cmd.Output()
-				if err == nil {
-					// Count GPU lines
-					lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-					gpuCount := 0
-					for _, line := range lines {
-						if strings.Contains(line, "GPU") {
-							gpuCount++
-						}
-					}
-					if gpuCount > 0 {
-						return gpuCount
-					}
-				}
-				break
-			}
-		}
-	} else {
-		// Unix systems
-		if _, err := os.Stat("/usr/bin/nvidia-smi"); err == nil {
-			cmd = exec.Command("nvidia-smi", "--list-gpus")
-			output, err := cmd.Output()
-			if err == nil {
-				lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-				gpuCount := 0
-				for _, line := range lines {
-					if strings.Contains(line, "GPU") {
-						gpuCount++
-					}
-				}
-				if gpuCount > 0 {
-					return gpuCount
-				}
-			}
-		}
-	}
-
-	// Fallback - assume 1 GPU if detection fails
-	return 1
-}
-
-// generateGroupsConfig creates groups configuration for multiple models
-func (cg *ConfigGenerator) generateGroupsConfig(models []ModelInfo) string {
-	config := strings.Builder{}
-	config.WriteString("groups:\n")
-
-	// Track added model IDs to prevent duplicates
-	largeModels := make(map[string]bool)
-	smallModels := make(map[string]bool)
-
-	// Large models group - all non-embedding models need swap: true
-	config.WriteString("  \"large-models\":\n")
-	config.WriteString("    swap: true\n")
-	config.WriteString("    exclusive: true\n")
-	config.WriteString("    members:\n")
-
-	for _, model := range models {
-		if model.IsDraft {
-			continue
-		}
-		// All models except embeddings go to large-models
-		modelType := cg.detectModelType(model)
-		if modelType != "embedding" {
-			modelID := cg.generateModelID(model)
-			if !largeModels[modelID] {
-				config.WriteString("      - \"" + modelID + "\"\n")
-				largeModels[modelID] = true
-			}
-		}
-	}
-
-	// Small models group - only embedding models that can run together
-	config.WriteString("\n  \"small-models\":\n")
-	config.WriteString("    swap: false\n")
-	config.WriteString("    exclusive: false\n")
-	config.WriteString("    members:\n")
-
-	for _, model := range models {
-		if model.IsDraft {
-			continue
-		}
-		// Only embedding models go to small-models
-		modelType := cg.detectModelType(model)
-		if modelType == "embedding" {
-			modelID := cg.generateModelID(model)
-			if !smallModels[modelID] {
-				config.WriteString("      - \"" + modelID + "\"\n")
-				smallModels[modelID] = true
-			}
-		}
-	}
-
-	config.WriteString("\n")
-	return config.String()
-}
-
-// detectModelType determines the type of model for appropriate configuration
-func (cg *ConfigGenerator) detectModelType(model ModelInfo) string {
-	// Check GGUF metadata first
-	if model.IsEmbedding {
-		return "embedding"
-	}
-
-	// Fallback to filename/path detection
-	lower := strings.ToLower(model.Name)
-	lowerPath := strings.ToLower(model.Path)
-
-	// Check for embedding models by name and path
-	if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") ||
-		strings.Contains(lowerPath, "embed") || strings.Contains(lowerPath, "embedding") ||
-		strings.Contains(lower, "mxbai") || // mxbai models are embeddings
-		strings.Contains(lower, "bge-") || // BGE embedding models
-		strings.Contains(lower, "e5-") { // E5 embedding models
-		return "embedding"
-	}
-
-	// Check for code models
-	if strings.Contains(lower, "code") || strings.Contains(lower, "coder") ||
-		strings.Contains(lower, "programming") || strings.Contains(lower, "codellama") ||
-		strings.Contains(lower, "starcoder") || strings.Contains(lower, "deepseek-coder") {
-		return "code"
-	}
-
-	// Check for multimodal models (vision capabilities)
-	if strings.Contains(lower, "vision") || strings.Contains(lower, "mmproj") ||
-		strings.Contains(lower, "internvl") || strings.Contains(lower, "llava") ||
-		strings.Contains(lower, "minicpm") {
-		return "multimodal"
-	}
-
-	// Check for instruct/chat models
-	if model.IsInstruct || strings.Contains(lower, "chat") || strings.Contains(lower, "instruct") ||
-		strings.Contains(lower, "tools") || strings.Contains(lower, "-it") ||
-		strings.Contains(lower, "assistant") {
-		return "instruct"
-	}
-
-	// Default to base model
-	return "base"
-}
-
-// extractModelFamily extracts the model family name from filename
-func extractModelFamily(filename string) string {
-	lower := strings.ToLower(filename)
-
-	families := []string{
-		"qwen", "llama", "codellama", "mistral", "phi", "gemma", "deepseek", "yi",
-	}
-
-	for _, family := range families {
-		if strings.Contains(lower, family) {
-			// Capitalize first letter manually since strings.Title is deprecated
-			if len(family) > 0 {
-				return strings.ToUpper(string(family[0])) + family[1:]
-			}
-		}
-	}
-
-	// Fallback: return first part before number or dash
-	parts := strings.FieldsFunc(filename, func(r rune) bool {
-		return r == '-' || r == '_' || r == '.'
-	})
 
 	if len(parts) > 0 {
-		return parts[0]
+		return strings.Join(parts, " - ")
 	}
 
-	return "Unknown"
+	return "Auto-detected model"
 }
 
-// ThroughputConfig represents a throughput-optimized configuration attempt
-type ThroughputConfig struct {
-	ContextSize   int
-	KVCacheType   string
-	GPULayers     int
-	EstimatedVRAM float64
-	Priority      int // Lower is higher priority
-}
-
-// optimizeForThroughput implements size-first allocation strategy for maximum performance
-func (cg *ConfigGenerator) optimizeForThroughput(model ModelInfo) ThroughputConfig {
-	// Initialize cache if needed
-	if cg.throughputCache == nil {
-		cg.throughputCache = make(map[string]ThroughputConfig)
+// addParallelProcessing adds parallel processing with context size validation
+func (scg *ConfigGenerator) addParallelProcessing(config *strings.Builder, contextSize int) {
+	// Only add parallel processing if deployment mode is enabled
+	if !scg.Options.EnableParallel {
+		return // Skip parallel processing - will default to 1
 	}
 
-	// Check cache first
-	if cached, exists := cg.throughputCache[model.Path]; exists {
-		return cached
-	}
+	const baseParallel = 4
 
-	if cg.Options.EnableParallel {
-		fmt.Printf("   🚀 THROUGHPUT MODE: Optimizing %s\n", model.Name)
-	}
-
-	availableVRAM := cg.AvailableVRAMGB * 0.95 // Use 95% for aggressive optimization
-	modelSizeGB := cg.calculateModelSize(model)
-
-	if cg.Options.EnableParallel {
-		fmt.Printf("   📊 Model size: %.1f GB, Available VRAM: %.1f GB\n", modelSizeGB, availableVRAM)
-	}
-
-	var result ThroughputConfig
-
-	// PHASE 1: Check if model fits entirely in VRAM
-	if modelSizeGB <= availableVRAM {
-		result = cg.optimizeModelThatFitsInVRAM(model, modelSizeGB, availableVRAM)
+	// Ensure context size / parallel is at least 8000 to prevent context shift issues
+	if contextSize/baseParallel >= 8000 {
+		config.WriteString(fmt.Sprintf("      --parallel %d\n", baseParallel))
 	} else {
-		// PHASE 2: Model doesn't fit - use hybrid CPU/GPU strategy
-		result = cg.optimizeOversizedModel(model, modelSizeGB, availableVRAM)
+		// Calculate appropriate parallel value
+		maxParallel := contextSize / 8000
+		if maxParallel >= 2 {
+			config.WriteString(fmt.Sprintf("      --parallel %d\n", maxParallel))
+		}
+		// If maxParallel < 2, don't add parallel processing (defaults to 1)
 	}
-
-	// Cache the result
-	cg.throughputCache[model.Path] = result
-	return result
 }
 
-// estimateVRAMUsage calculates approximate VRAM usage for a configuration
-func (cg *ConfigGenerator) estimateVRAMUsage(model ModelInfo, config ThroughputConfig) float64 {
-	// Get model size estimation
-	modelSizeGB := cg.calculateModelSize(model)
+// writeGroups writes model groups
+func (scg *ConfigGenerator) writeGroups(config *strings.Builder, models []ModelInfo, modelIDMap map[string]string) {
+	largeModels := []string{}
+	smallModels := []string{}
 
-	// Calculate KV cache size based on context and quantization
-	kvMultiplier := 1.0
-	switch config.KVCacheType {
-	case "q8_0":
-		kvMultiplier = 0.5 // 50% savings vs f16
-	case "q4_0":
-		kvMultiplier = 0.25 // 75% savings vs f16
-	default:
-		kvMultiplier = 1.0 // f16 baseline
-	}
+	// Use pre-generated model IDs from map
+	for _, model := range models {
+		if model.IsDraft {
+			continue
+		}
 
-	// Rough KV cache calculation (simplified)
-	// Real calculation would consider heads, dimensions, layers, etc.
-	contextSizeMB := float64(config.ContextSize) * 0.002 // ~2KB per token baseline
-	kvCacheGB := (contextSizeMB / 1024) * kvMultiplier
+		modelID := modelIDMap[model.Path]
 
-	// Overhead for CUDA kernels, fragmentation, etc.
-	overheadGB := 1.0
-
-	return modelSizeGB + kvCacheGB + overheadGB
-}
-
-// optimizeModelThatFitsInVRAM optimizes models that fit entirely in VRAM
-func (cg *ConfigGenerator) optimizeModelThatFitsInVRAM(model ModelInfo, modelSizeGB, availableVRAM float64) ThroughputConfig {
-	// Model fits completely - use -ngl 999 (all layers on GPU)
-	remainingVRAM := availableVRAM - modelSizeGB - 0.5 // 0.5GB overhead
-
-	if cg.Options.EnableParallel {
-		fmt.Printf("   🚀 Model fits entirely in VRAM! Using -ngl 999, %.1f GB left for context\n", remainingVRAM)
-	}
-
-	// Now maximize context with the remaining VRAM
-	// Try different KV cache quantizations: f16 → q8_0 → q4_0
-	kvStrategies := []struct {
-		name       string
-		multiplier float64 // Memory multiplier vs f16 baseline
-	}{
-		{"f16", 1.0},   // Baseline
-		{"q8_0", 0.5},  // 50% savings
-		{"q4_0", 0.25}, // 75% savings
-	}
-
-	for _, kv := range kvStrategies {
-		maxContext := cg.calculateMaxContextForKVCache(remainingVRAM, kv.multiplier)
-
-		// Check if we can achieve minimum 16K context
-		if maxContext >= cg.Options.MinContext {
-			// Try for preferred 32K if possible
-			targetContext := cg.Options.PreferredContext
-			if maxContext < cg.Options.PreferredContext {
-				targetContext = maxContext
-			}
-
-			// Validate parallel processing requirements
-			finalContext := cg.validateParallelContext(targetContext)
-
-			if cg.Options.EnableParallel {
-				fmt.Printf("   ✅ Optimized: %dK context, %s KV cache, -ngl 999\n",
-					finalContext/1024, kv.name)
-			}
-
-			return ThroughputConfig{
-				ContextSize:   finalContext,
-				KVCacheType:   kv.name,
-				GPULayers:     999, // All layers on GPU
-				EstimatedVRAM: modelSizeGB + cg.estimateKVCacheSize(finalContext, kv.multiplier) + 0.5,
-				Priority:      1, // Highest priority
-			}
+		// Categorize by model type - use metadata-based embedding detection
+		if scg.isEmbeddingModel(model) {
+			smallModels = append(smallModels, modelID)
+		} else {
+			largeModels = append(largeModels, modelID)
 		}
 	}
 
-	// Fallback: even q4_0 can't reach minimum - use tightest packing possible
-	maxContext := cg.calculateMaxContextForKVCache(remainingVRAM, 0.25) // q4_0
-	finalContext := cg.validateParallelContext(max(8192, maxContext))   // Minimum 8K
+	config.WriteString("\ngroups:\n")
 
-	if cg.Options.EnableParallel {
-		fmt.Printf("   ⚠️ Tight packing: %dK context, q4_0 KV cache, -ngl 999 (below minimum)\n",
-			finalContext/1024)
+	if len(largeModels) > 0 {
+		config.WriteString("  \"large-models\":\n")
+		config.WriteString("    swap: true\n")
+		config.WriteString("    exclusive: true\n")
+		config.WriteString("    startPort: 5800\n")
+		config.WriteString("    members:\n")
+		for _, model := range largeModels {
+			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))
+		}
+		config.WriteString("\n")
 	}
 
-	return ThroughputConfig{
-		ContextSize:   finalContext,
-		KVCacheType:   "q4_0",
-		GPULayers:     999,
-		EstimatedVRAM: availableVRAM * 0.98, // Use almost all VRAM
-		Priority:      2,
-	}
-}
-
-// optimizeOversizedModel handles models that exceed VRAM capacity
-func (cg *ConfigGenerator) optimizeOversizedModel(model ModelInfo, modelSizeGB, availableVRAM float64) ThroughputConfig {
-	if cg.Options.EnableParallel {
-		fmt.Printf("   ⚡ Model exceeds VRAM, using hybrid CPU/GPU strategy\n")
-	}
-
-	// Reserve space for KV cache (use q8_0 as default for hybrid)
-	kvCacheSize := cg.estimateKVCacheSize(cg.Options.PreferredContext, 0.5) // q8_0
-	overheadGB := 0.5
-
-	availableForModel := availableVRAM - kvCacheSize - overheadGB
-
-	if availableForModel <= 0 {
-		// Not enough VRAM even for KV cache - reduce context
-		kvCacheSize = cg.estimateKVCacheSize(cg.Options.MinContext, 0.5)
-		availableForModel = availableVRAM - kvCacheSize - overheadGB
-	}
-
-	// Calculate how many layers can fit on GPU
-	layerCount := 32 // Default assumption
-	if model.NumLayers > 0 {
-		layerCount = model.NumLayers
-	}
-
-	layersPerGB := float64(layerCount) / modelSizeGB
-	maxGPULayers := int(availableForModel * layersPerGB)
-
-	// Ensure we use at least some GPU layers
-	maxGPULayers = max(8, maxGPULayers)
-	maxGPULayers = min(maxGPULayers, layerCount)
-
-	contextSize := cg.Options.PreferredContext
-	if kvCacheSize > availableVRAM*0.3 {
-		contextSize = cg.Options.MinContext
-	}
-
-	finalContext := cg.validateParallelContext(contextSize)
-
-	if cg.Options.EnableParallel {
-		fmt.Printf("   🔄 Hybrid: %dK context, q8_0 KV, %d/%d layers on GPU\n",
-			finalContext/1024, maxGPULayers, layerCount)
-	}
-
-	return ThroughputConfig{
-		ContextSize:   finalContext,
-		KVCacheType:   "q8_0",
-		GPULayers:     maxGPULayers,
-		EstimatedVRAM: availableVRAM * 0.9,
-		Priority:      3, // Lower priority (hybrid)
-	}
-}
-
-// calculateMaxContextForKVCache calculates maximum context size for given VRAM and KV quantization
-func (cg *ConfigGenerator) calculateMaxContextForKVCache(availableVRAM, kvMultiplier float64) int {
-	// Rough estimation: each token uses ~2 bytes for K+V caches in f16
-	// With quantization, multiply by kvMultiplier
-	bytesPerToken := 2.0 * kvMultiplier
-
-	// Convert available VRAM to bytes and calculate tokens
-	availableBytes := availableVRAM * 1024 * 1024 * 1024
-	maxTokens := int(availableBytes / bytesPerToken)
-
-	// Round down to standard context sizes
-	standardSizes := []int{8192, 16384, 32768, 65536, 131072, 262144, 524288}
-	for i := len(standardSizes) - 1; i >= 0; i-- {
-		if maxTokens >= standardSizes[i] {
-			return standardSizes[i]
+	if len(smallModels) > 0 {
+		config.WriteString("  \"small-models\":\n")
+		config.WriteString("    swap: false\n")
+		config.WriteString("    exclusive: false\n")
+		config.WriteString("    persistent: true\n")
+		config.WriteString("    startPort: 6000\n")
+		config.WriteString("    members:\n")
+		for _, model := range smallModels {
+			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))
 		}
 	}
-
-	return 8192 // Minimum fallback
 }
 
-// estimateKVCacheSize estimates KV cache memory usage
-func (cg *ConfigGenerator) estimateKVCacheSize(contextSize int, kvMultiplier float64) float64 {
-	bytesPerToken := 2.0 * kvMultiplier // K+V caches
-	totalBytes := float64(contextSize) * bytesPerToken
-	return totalBytes / (1024 * 1024 * 1024) // Convert to GB
-}
-
-// validateParallelContext ensures parallel processing requirements are met
-func (cg *ConfigGenerator) validateParallelContext(contextSize int) int {
-	// When using --parallel 4, ensure ctx_size/parallel >= 5000
-	// to prevent preempt taking more tokens than available
-	if cg.hasParallelProcessing() {
-		parallelSlots := 4 // Default parallel value
-		minRequiredContext := parallelSlots * 5000
-
-		if contextSize < minRequiredContext {
-			// Adjust context upward to meet parallel requirements
-			adjustedContext := minRequiredContext
-
-			// Round up to nearest standard size
-			standardSizes := []int{8192, 16384, 32768, 65536, 131072, 262144}
-			for _, size := range standardSizes {
-				if size >= adjustedContext {
-					if cg.Options.EnableParallel {
-						fmt.Printf("   ⚡ Parallel processing: adjusted context %dK → %dK (min %d per slot)\n",
-							contextSize/1024, size/1024, 5000)
-					}
-					return size
-				}
-			}
+// findMatchingMMProj finds the matching mmproj file for a given model path
+func (scg *ConfigGenerator) findMatchingMMProj(modelPath string) string {
+	// Look through all mmproj matches to find one for this model
+	for _, match := range scg.mmprojMatches {
+		if match.ModelPath == modelPath {
+			// Return the mmproj path with the highest confidence for this model
+			return match.MMProjPath
 		}
 	}
-
-	return contextSize
+	return "" // No matching mmproj found
 }
 
-// hasParallelProcessing checks if parallel processing is being used
-func (cg *ConfigGenerator) hasParallelProcessing() bool {
-	// Check if model should use parallel processing (large models)
-	return cg.Options.EnableParallel && cg.shouldOptimizeForPerformance(ModelInfo{})
-}
-
-// fallbackHybridConfig creates a hybrid CPU/GPU configuration when full GPU doesn't fit
-func (cg *ConfigGenerator) fallbackHybridConfig(model ModelInfo, availableVRAM float64) ThroughputConfig {
-	// Try to fit the preferred context with partial GPU layers
-	contextSize := cg.Options.PreferredContext
-	kvCacheType := "q8_0"
-
-	// Calculate how many layers can fit
-	modelSizeGB := cg.calculateModelSize(model)
-	kvCacheGB := (float64(contextSize) * 0.002 / 1024) * 0.5 // q8_0 KV cache
-	overheadGB := 1.0
-
-	availableForModel := availableVRAM - kvCacheGB - overheadGB
-	layerCount := 32 // Default assumption, would be better to get from GGUF metadata
-
-	// Estimate how many layers can fit
-	layersPerGB := float64(layerCount) / modelSizeGB
-	maxLayers := int(availableForModel * layersPerGB)
-
-	// Ensure we use at least some GPU layers
-	if maxLayers < 8 {
-		// If too few layers, reduce context and try again
-		contextSize = cg.Options.MinContext
-		kvCacheGB = (float64(contextSize) * 0.002 / 1024) * 0.5
-		availableForModel = availableVRAM - kvCacheGB - overheadGB
-		maxLayers = int(availableForModel * layersPerGB)
-	}
-
-	if cg.Options.EnableParallel {
-		fmt.Printf("   ⚡ Hybrid config: %dK context, %s KV cache, -ngl %d (partial GPU)\n",
-			contextSize/1024, kvCacheType, maxLayers)
-	}
-
-	return ThroughputConfig{
-		ContextSize:   contextSize,
-		KVCacheType:   kvCacheType,
-		GPULayers:     maxLayers,
-		EstimatedVRAM: availableVRAM * 0.9, // Use most of available VRAM
-		Priority:      99,                  // Lowest priority (fallback)
-	}
-}
-
-// estimateModelSize provides a rough estimation of model size in GB
-func (cg *ConfigGenerator) estimateModelSize(model ModelInfo) float64 {
-	// Parse size from model.Size field (e.g., "3B", "7B", "13B")
-	sizeStr := strings.TrimSuffix(model.Size, "B")
-	if size, err := strconv.ParseFloat(sizeStr, 64); err == nil {
-		// Rough estimation based on quantization
-		switch {
-		case strings.Contains(model.Quantization, "Q4"):
-			return size * 0.6 // Q4 is ~60% of original size
-		case strings.Contains(model.Quantization, "Q5"):
-			return size * 0.7 // Q5 is ~70% of original size
-		case strings.Contains(model.Quantization, "Q8"):
-			return size * 0.8 // Q8 is ~80% of original size
-		default:
-			return size * 0.6 // Default to Q4 estimation
-		}
-	}
-
-	// Fallback: try to get actual file size
-	if cg.MemoryEstimator != nil {
-		if memInfo, err := cg.MemoryEstimator.GetModelMemoryInfo(model.Path); err == nil {
-			return memInfo.ModelSizeGB
-		}
-	}
-
-	return 4.0 // Default fallback
-}
-
-// SaveConfig saves the generated config to a file
-func (cg *ConfigGenerator) SaveConfig(configPath string) error {
-	config, err := cg.GenerateConfig()
+// isEmbeddingModel determines if a model is an embedding model using GGUF metadata
+func (scg *ConfigGenerator) isEmbeddingModel(model ModelInfo) bool {
+	// Read GGUF metadata to make intelligent decision
+	metadata, err := ReadAllGGUFKeys(model.Path)
 	if err != nil {
-		return err
+		// Fallback to name-based detection if metadata read fails
+		return strings.Contains(strings.ToLower(model.Name), "embed")
 	}
 
-	return os.WriteFile(configPath, []byte(config), 0644)
+	// Use the same detection logic as in the debug function
+	architecture := ""
+	if val, exists := metadata["general.architecture"]; exists {
+		if str, ok := val.(string); ok {
+			architecture = str
+		}
+	}
+
+	return detectEmbeddingFromMetadata(metadata, architecture)
+}
+
+// detectPoolingTypeByName detects the pooling type based on model family
+func (scg *ConfigGenerator) detectPoolingTypeByName(model ModelInfo) string {
+	modelName := strings.ToLower(model.Name)
+	modelPath := strings.ToLower(model.Path)
+
+	// Combine name and path for better detection
+	fullName := modelName + " " + modelPath
+
+	// BGE models
+	if strings.Contains(fullName, "bge") {
+		return "cls"
+	}
+
+	// E5 models
+	if strings.Contains(fullName, "e5") {
+		return "mean"
+	}
+
+	// GTE models
+	if strings.Contains(fullName, "gte") {
+		return "mean"
+	}
+
+	// MXBAI models
+	if strings.Contains(fullName, "mxbai") {
+		return "mean"
+	}
+
+	// Nomic Embed models
+	if strings.Contains(fullName, "nomic") {
+		return "mean"
+	}
+
+	// Jina models - need to detect version
+	if strings.Contains(fullName, "jina") {
+		// Jina v2/v3 use 'last', v1 uses 'cls'
+		if strings.Contains(fullName, "v2") || strings.Contains(fullName, "v3") {
+			return "last"
+		}
+		return "cls" // v1 or unknown version
+	}
+
+	// Stella models
+	if strings.Contains(fullName, "stella") {
+		return "mean"
+	}
+
+	// Arctic models
+	if strings.Contains(fullName, "arctic") {
+		return "mean"
+	}
+
+	// SFR models
+	if strings.Contains(fullName, "sfr") {
+		return "mean"
+	}
+
+	// Default fallback
+	return "mean"
+}
+
+// detectPoolingType detects the pooling type from model metadata
+func (scg *ConfigGenerator) detectPoolingType(model ModelInfo) string {
+	// Read GGUF metadata to find pooling type
+	metadata, err := ReadAllGGUFKeys(model.Path)
+	if err != nil {
+		return scg.detectPoolingTypeByName(model) // Fallback to name-based detection
+	}
+
+	// Get architecture to construct the pooling key
+	architecture := ""
+	if val, exists := metadata["general.architecture"]; exists {
+		if str, ok := val.(string); ok {
+			architecture = str
+		}
+	}
+
+	// Look for pooling type in metadata
+	poolingKey := fmt.Sprintf("%s.pooling_type", architecture)
+	if val, exists := metadata[poolingKey]; exists {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+
+	// Check alternative keys
+	alternativeKeys := []string{
+		"pooling_type",
+		fmt.Sprintf("%s.pooling", architecture),
+		"pooling",
+	}
+
+	for _, key := range alternativeKeys {
+		if val, exists := metadata[key]; exists {
+			if str, ok := val.(string); ok {
+				return str
+			}
+		}
+	}
+
+	// Fallback to name-based detection
+	return scg.detectPoolingTypeByName(model)
+}
+
+// shouldUseMlock determines if --mlock should be used based on available system RAM
+func (scg *ConfigGenerator) shouldUseMlock(model ModelInfo) bool {
+	// If no system info available, default to conservative approach (no mlock)
+	if scg.SystemInfo == nil || scg.SystemInfo.TotalRAMGB <= 0 {
+		return false
+	}
+
+	// Get model size
+	modelSizeGB := 0.0
+	if sizeStr := strings.TrimSuffix(model.Size, "B"); sizeStr != "" {
+		if size, err := strconv.ParseFloat(sizeStr, 64); err == nil {
+			modelSizeGB = size
+		}
+	}
+
+	// If model size is unknown, use file size as fallback
+	if modelSizeGB == 0.0 {
+		if info, err := os.Stat(model.Path); err == nil {
+			modelSizeGB = float64(info.Size()) / (1024 * 1024 * 1024) // Convert bytes to GB
+		}
+	}
+
+	// Calculate available RAM (leave 25% buffer for system operations)
+	availableRAM := scg.SystemInfo.TotalRAMGB * 0.75
+
+	// For embedding models, use mlock if model + 2GB buffer fits in available RAM
+	if scg.isEmbeddingModel(model) {
+		requiredRAM := modelSizeGB + 2.0 // Model + 2GB buffer
+		return requiredRAM <= availableRAM
+	}
+
+	// For large language models, be more conservative (need more RAM for context processing)
+	// Only use mlock for small models (< 8GB) if sufficient RAM is available
+	if modelSizeGB < 8.0 {
+		requiredRAM := modelSizeGB + 4.0 // Model + 4GB buffer for LLMs
+		return requiredRAM <= availableRAM
+	}
+
+	// Don't use mlock for large models to avoid system instability
+	return false
 }

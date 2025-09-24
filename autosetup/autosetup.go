@@ -10,11 +10,15 @@ import (
 type SetupOptions struct {
 	EnableDraftModels bool
 	EnableJinja       bool
-	EnableParallel    bool // Enable parallel processing (should be renamed to EnableDeployment)
-	ThroughputFirst   bool // Prioritize speed over maximum context
-	MaxSpeed          bool // Maximum GPU utilization, minimum context
-	MinContext        int  // Minimum context size (default: 16384)
-	PreferredContext  int  // Preferred context size (default: 32768)
+	EnableParallel    bool    // Enable parallel processing (should be renamed to EnableDeployment)
+	EnableRealtime    bool    // Enable real-time hardware monitoring for dynamic allocation
+	ThroughputFirst   bool    // Prioritize speed over maximum context
+	MaxSpeed          bool    // Maximum GPU utilization, minimum context
+	MinContext        int     // Minimum context size (default: 16384)
+	PreferredContext  int     // Preferred context size (default: 32768)
+	ForceBackend      string  // Force specific backend (cuda, rocm, cpu, vulkan) - overrides auto-detection
+	ForceRAM          float64 // Force total RAM in GB - overrides auto-detection
+	ForceVRAM         float64 // Force total VRAM in GB - overrides auto-detection
 }
 
 // AutoSetup performs automatic model detection and configuration with default options
@@ -80,6 +84,45 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 	// Enhance system information with detailed detection
 	if err := EnhanceSystemInfo(&system); err != nil {
 		fmt.Printf("Warning: Failed to enhance system detection: %v\n", err)
+	}
+
+	// Apply hardware overrides if specified
+	if options.ForceBackend != "" || options.ForceRAM > 0 || options.ForceVRAM > 0 {
+		fmt.Println("\n🎛️  Applying hardware overrides...")
+
+		if options.ForceBackend != "" {
+			// Determine current backend preference
+			currentBackend := "cpu"
+			if system.HasCUDA {
+				currentBackend = "cuda"
+			} else if system.HasVulkan {
+				currentBackend = "vulkan"
+			} else if system.HasMetal {
+				currentBackend = "metal"
+			} else if system.HasROCm {
+				currentBackend = "rocm"
+			}
+
+			// Override system capabilities based on forced backend
+			system.HasCUDA = (options.ForceBackend == "cuda")
+			system.HasVulkan = (options.ForceBackend == "vulkan")
+			system.HasMetal = (options.ForceBackend == "metal")
+			system.HasROCm = (options.ForceBackend == "rocm")
+
+			fmt.Printf("   🔧 Backend: %s → %s (forced)\n", currentBackend, options.ForceBackend)
+		}
+
+		if options.ForceRAM > 0 {
+			originalRAM := system.TotalRAMGB
+			system.TotalRAMGB = options.ForceRAM
+			fmt.Printf("   🧠 RAM: %.1f GB → %.1f GB (forced)\n", originalRAM, system.TotalRAMGB)
+		}
+
+		if options.ForceVRAM > 0 {
+			originalVRAM := system.TotalVRAMGB
+			system.TotalVRAMGB = options.ForceVRAM
+			fmt.Printf("   🎮 VRAM: %.1f GB → %.1f GB (forced)\n", originalVRAM, system.TotalVRAMGB)
+		}
 	}
 
 	// Print comprehensive system information
@@ -156,9 +199,9 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 		fmt.Printf("🎯 Using total GPU VRAM: %.1f GB for allocation\n", totalVRAM)
 	}
 
-	// Use simple config generator with smart GPU allocation
+	// Use config generator with smart GPU allocation
 	configPath := "config.yaml"
-	generator := NewSimpleConfigGenerator(modelsFolder, binary.Path, configPath, options)
+	generator := NewConfigGenerator(modelsFolder, binary.Path, configPath, options)
 	generator.SetAvailableVRAM(totalVRAM)
 	generator.SetBinaryType(binary.Type)
 	generator.SetSystemInfo(&system)          // Pass system info for optimal parameters
@@ -189,7 +232,6 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 	fmt.Println("\n📚 Available models:")
 	for _, model := range models {
 		if !model.IsDraft {
-			generator := &ConfigGenerator{Models: models}
 			modelID := generator.generateModelID(model)
 			fmt.Printf("   - %s\n", modelID)
 		}
