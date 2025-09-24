@@ -383,7 +383,7 @@ const ModelDownloaderPage: React.FC = () => {
                       onClick={() => setSelectedFilter(filter.key)}
                       className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-colors ${
                         selectedFilter === filter.key
-                          ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-900/20 dark:text-brand-300'
+                          ? 'text-brand-700 border border-brand-200 dark:bg-brand-900/20 dark:text-brand-300'
                           : 'text-text-secondary hover:text-text-primary hover:bg-surface-secondary'
                       }`}
                     >

@@ -66,15 +66,35 @@ const OnboardConfig: React.FC = () => {
   const [isDetecting, setIsDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
+  const [hasExistingModels, setHasExistingModels] = useState(false);
+  const [showSetup, setShowSetup] = useState(true);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
   };
 
-  // Auto-detect system on component mount
+  const checkExistingModels = async () => {
+    try {
+      const response = await fetch('/api/events');
+      if (response.ok) {
+        const text = await response.text();
+        // Check if there are any models in the events stream
+        const hasModels = text.includes('"type":"modelStatus"') && text.includes('"id":');
+        setHasExistingModels(hasModels);
+        if (hasModels) {
+          setShowSetup(false); // Hide setup if models already exist
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check existing models:', error);
+    }
+  };
+
+  // Auto-detect system on component mount and check for existing models
   useEffect(() => {
     detectSystem();
+    checkExistingModels();
   }, []);
 
   const detectSystem = async () => {
@@ -362,7 +382,7 @@ const OnboardConfig: React.FC = () => {
               onClick={detectSystem}
               loading={isDetecting}
               disabled={isDetecting}
-              className="bg-background hover:bg-surface text-text-primary border-border-secondary hover:border-brand-500"
+              className="!bg-surface-secondary !text-text-primary !border-border-secondary hover:!bg-surface-tertiary hover:!border-brand-500 hover:!text-text-primary"
             >
               {isDetecting ? (
                 <>
@@ -753,7 +773,10 @@ const OnboardConfig: React.FC = () => {
           </p>
           <div className="space-y-4">
             <Button 
-              onClick={() => window.location.href = '/'}
+              onClick={() => {
+                setShowSetup(false);
+                window.location.href = '/';
+              }}
               size="lg"
               icon={<ZapIcon size={20} />}
             >
@@ -766,6 +789,14 @@ const OnboardConfig: React.FC = () => {
             >
               View Configuration Details
             </Button>
+            <br />
+            <Button 
+              variant="ghost"
+              onClick={() => setShowSetup(false)}
+              className="text-text-secondary"
+            >
+              Hide Setup (can be accessed later)
+            </Button>
           </div>
         </div>
       )
@@ -775,8 +806,43 @@ const OnboardConfig: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-6 py-8">
-        {/* Progress Bar */}
-        <div className="mb-8">
+        {/* Setup Toggle (show when models exist) */}
+        {hasExistingModels && !showSetup && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <Card className="p-6 bg-surface border-border-secondary">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-success-500 rounded-full flex items-center justify-center">
+                    <CheckCircleIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">Setup Complete</h3>
+                    <p className="text-sm text-text-secondary">
+                      ClaraCore is configured and ready to use
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowSetup(true)}
+                  icon={<SettingsIcon className="w-4 h-4" />}
+                >
+                  Reconfigure Setup
+                </Button>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Main Setup Interface */}
+        {showSetup && (
+          <>
+            {/* Progress Bar */}
+            <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-lg font-medium text-text-secondary">
               Setup Progress
@@ -849,6 +915,8 @@ const OnboardConfig: React.FC = () => {
             </Card>
           </motion.div>
         </AnimatePresence>
+          </>
+        )}
       </div>
     </div>
   );
