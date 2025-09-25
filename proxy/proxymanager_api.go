@@ -66,6 +66,12 @@ func addApiHandlers(pm *ProxyManager) {
 		apiGroup.DELETE("/config/models/:id", pm.apiDeleteModel)
 		apiGroup.GET("/config/validate", pm.apiValidateConfig)
 		apiGroup.POST("/config/validate-models", pm.apiValidateModelsOnDisk) // NEW: Validate model files exist
+
+		// NEW: Model folder database management
+		apiGroup.GET("/config/folders", pm.apiGetModelFolders)                          // Get all tracked folders
+		apiGroup.POST("/config/folders", pm.apiAddModelFolders)                         // Add folders to database
+		apiGroup.DELETE("/config/folders", pm.apiRemoveModelFolders)                    // Remove folders from database
+		apiGroup.POST("/config/regenerate-from-db", pm.apiRegenerateConfigFromDatabase) // Regenerate YAML from JSON database
 	}
 }
 
@@ -773,10 +779,28 @@ func (pm *ProxyManager) apiUpdateConfig(c *gin.Context) {
 	})
 }
 
+// ModelFolderDatabase represents the persistent JSON database of model folders
+type ModelFolderDatabase struct {
+	Folders  []ModelFolderEntry `json:"folders"`
+	LastScan time.Time          `json:"lastScan"`
+	Version  string             `json:"version"`
+}
+
+type ModelFolderEntry struct {
+	Path        string    `json:"path"`
+	AddedAt     time.Time `json:"addedAt"`
+	LastScanned time.Time `json:"lastScanned"`
+	ModelCount  int       `json:"modelCount"`
+	Recursive   bool      `json:"recursive"`
+	Enabled     bool      `json:"enabled"`
+}
+
 func (pm *ProxyManager) apiScanModelFolder(c *gin.Context) {
 	var req struct {
-		FolderPath string `json:"folderPath"`
-		Recursive  bool   `json:"recursive"`
+		FolderPath    string   `json:"folderPath"`  // Backward compatibility
+		FolderPaths   []string `json:"folderPaths"` // New multi-folder support
+		Recursive     bool     `json:"recursive"`
+		AddToDatabase bool     `json:"addToDatabase"` // Whether to persist to JSON database
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -784,12 +808,21 @@ func (pm *ProxyManager) apiScanModelFolder(c *gin.Context) {
 		return
 	}
 
-	if req.FolderPath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "folderPath is required"})
+	// Backward compatibility: convert single folder to array
+	var foldersToScan []string
+	if req.FolderPath != "" {
+		foldersToScan = append(foldersToScan, req.FolderPath)
+	}
+	if len(req.FolderPaths) > 0 {
+		foldersToScan = append(foldersToScan, req.FolderPaths...)
+	}
+
+	if len(foldersToScan) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folderPath or folderPaths is required"})
 		return
 	}
 
-	// Use the SMART autosetup detection instead of dumb file scanning
+	// Use the SMART autosetup detection for all folders
 	options := autosetup.SetupOptions{
 		EnableJinja:      true,
 		ThroughputFirst:  true,
@@ -797,15 +830,43 @@ func (pm *ProxyManager) apiScanModelFolder(c *gin.Context) {
 		PreferredContext: 32768,
 	}
 
-	models, err := autosetup.DetectModelsWithOptions(req.FolderPath, options)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	var allModels []autosetup.ModelInfo
+	var scanSummary []gin.H
+
+	// Scan each folder
+	for _, folderPath := range foldersToScan {
+		models, err := autosetup.DetectModelsWithOptions(folderPath, options)
+		if err != nil {
+			// Don't fail completely, just record the error for this folder
+			scanSummary = append(scanSummary, gin.H{
+				"folder": folderPath,
+				"status": "error",
+				"error":  err.Error(),
+				"models": 0,
+			})
+			continue
+		}
+
+		allModels = append(allModels, models...)
+		scanSummary = append(scanSummary, gin.H{
+			"folder": folderPath,
+			"status": "success",
+			"models": len(models),
+		})
+	}
+
+	// Update database if requested
+	if req.AddToDatabase {
+		err := pm.updateModelFolderDatabase(foldersToScan, req.Recursive)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update database: %v", err)})
+			return
+		}
 	}
 
 	// Convert autosetup.ModelInfo to API response format
-	apiModels := make([]gin.H, len(models))
-	for i, model := range models {
+	apiModels := make([]gin.H, len(allModels))
+	for i, model := range allModels {
 		// Get file info for size
 		fileInfo, _ := os.Stat(model.Path)
 		fileSize := int64(0)
@@ -841,8 +902,91 @@ func (pm *ProxyManager) apiScanModelFolder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"models": apiModels,
+		"models":         apiModels,
+		"scanSummary":    scanSummary,
+		"totalModels":    len(allModels),
+		"foldersScanned": len(foldersToScan),
 	})
+}
+
+// Database management functions
+func (pm *ProxyManager) getModelFolderDatabasePath() string {
+	return "model_folders.json"
+}
+
+func (pm *ProxyManager) loadModelFolderDatabase() (*ModelFolderDatabase, error) {
+	dbPath := pm.getModelFolderDatabasePath()
+
+	// Create empty database if file doesn't exist
+	if !pm.fileExists(dbPath) {
+		return &ModelFolderDatabase{
+			Folders: []ModelFolderEntry{},
+			Version: "1.0",
+		}, nil
+	}
+
+	data, err := os.ReadFile(dbPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var db ModelFolderDatabase
+	err = json.Unmarshal(data, &db)
+	if err != nil {
+		return nil, err
+	}
+
+	return &db, nil
+}
+
+func (pm *ProxyManager) saveModelFolderDatabase(db *ModelFolderDatabase) error {
+	dbPath := pm.getModelFolderDatabasePath()
+
+	db.LastScan = time.Now()
+	data, err := json.MarshalIndent(db, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(dbPath, data, 0644)
+}
+
+func (pm *ProxyManager) updateModelFolderDatabase(folderPaths []string, recursive bool) error {
+	db, err := pm.loadModelFolderDatabase()
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+
+	// Add or update each folder
+	for _, folderPath := range folderPaths {
+		// Check if folder already exists
+		found := false
+		for i := range db.Folders {
+			if db.Folders[i].Path == folderPath {
+				// Update existing entry
+				db.Folders[i].LastScanned = now
+				db.Folders[i].Recursive = recursive
+				db.Folders[i].Enabled = true
+				found = true
+				break
+			}
+		}
+
+		// Add new entry if not found
+		if !found {
+			db.Folders = append(db.Folders, ModelFolderEntry{
+				Path:        folderPath,
+				AddedAt:     now,
+				LastScanned: now,
+				Recursive:   recursive,
+				Enabled:     true,
+			})
+		}
+	}
+
+	return pm.saveModelFolderDatabase(db)
 }
 
 func (pm *ProxyManager) apiAddModel(c *gin.Context) {
@@ -2169,4 +2313,244 @@ func (pm *ProxyManager) apiHardRestartServer(c *gin.Context) {
 		// Exit current process
 		os.Exit(0)
 	}()
+}
+
+// NEW: Model folder database API endpoints
+
+func (pm *ProxyManager) apiGetModelFolders(c *gin.Context) {
+	db, err := pm.loadModelFolderDatabase()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to load folder database: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"folders":    db.Folders,
+		"lastScan":   db.LastScan,
+		"version":    db.Version,
+		"totalCount": len(db.Folders),
+	})
+}
+
+func (pm *ProxyManager) apiAddModelFolders(c *gin.Context) {
+	var req struct {
+		FolderPaths []string `json:"folderPaths"`
+		Recursive   bool     `json:"recursive"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if len(req.FolderPaths) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folderPaths is required"})
+		return
+	}
+
+	// Validate that folders exist
+	var validFolders []string
+	var errors []string
+
+	for _, folderPath := range req.FolderPaths {
+		if _, err := os.Stat(folderPath); os.IsNotExist(err) {
+			errors = append(errors, fmt.Sprintf("Folder does not exist: %s", folderPath))
+			continue
+		}
+		validFolders = append(validFolders, folderPath)
+	}
+
+	if len(validFolders) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "No valid folders found",
+			"details": errors,
+		})
+		return
+	}
+
+	// Add to database
+	err := pm.updateModelFolderDatabase(validFolders, req.Recursive)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update database: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":       "Folders added to database",
+		"addedFolders": validFolders,
+		"errors":       errors,
+	})
+}
+
+func (pm *ProxyManager) apiRemoveModelFolders(c *gin.Context) {
+	var req struct {
+		FolderPaths []string `json:"folderPaths"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if len(req.FolderPaths) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folderPaths is required"})
+		return
+	}
+
+	db, err := pm.loadModelFolderDatabase()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to load folder database: %v", err)})
+		return
+	}
+
+	// Remove folders from database
+	var removedFolders []string
+	var newFolders []ModelFolderEntry
+
+	for _, entry := range db.Folders {
+		shouldRemove := false
+		for _, pathToRemove := range req.FolderPaths {
+			if entry.Path == pathToRemove {
+				shouldRemove = true
+				removedFolders = append(removedFolders, pathToRemove)
+				break
+			}
+		}
+		if !shouldRemove {
+			newFolders = append(newFolders, entry)
+		}
+	}
+
+	db.Folders = newFolders
+
+	err = pm.saveModelFolderDatabase(db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save database: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":         "Folders removed from database",
+		"removedFolders": removedFolders,
+		"remainingCount": len(newFolders),
+	})
+}
+
+func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
+	var req struct {
+		Options autosetup.SetupOptions `json:"options"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Use default options if no request body
+		req.Options = autosetup.SetupOptions{
+			EnableJinja:      true,
+			ThroughputFirst:  true,
+			MinContext:       16384,
+			PreferredContext: 32768,
+		}
+	}
+
+	// Load folder database
+	db, err := pm.loadModelFolderDatabase()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to load folder database: %v", err)})
+		return
+	}
+
+	if len(db.Folders) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No folders in database. Add folders first using /api/config/folders"})
+		return
+	}
+
+	// Collect all enabled folder paths
+	var folderPaths []string
+	for _, folder := range db.Folders {
+		if folder.Enabled {
+			folderPaths = append(folderPaths, folder.Path)
+		}
+	}
+
+	if len(folderPaths) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No enabled folders in database"})
+		return
+	}
+
+	// Scan all folders and collect models
+	var allModels []autosetup.ModelInfo
+	var scanSummary []gin.H
+
+	for _, folderPath := range folderPaths {
+		models, err := autosetup.DetectModelsWithOptions(folderPath, req.Options)
+		if err != nil {
+			scanSummary = append(scanSummary, gin.H{
+				"folder": folderPath,
+				"status": "error",
+				"error":  err.Error(),
+				"models": 0,
+			})
+			continue
+		}
+
+		allModels = append(allModels, models...)
+		scanSummary = append(scanSummary, gin.H{
+			"folder": folderPath,
+			"status": "success",
+			"models": len(models),
+		})
+	}
+
+	if len(allModels) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":       "No models found in any enabled folders",
+			"scanSummary": scanSummary,
+		})
+		return
+	}
+
+	// Use the SAME function as CLI for consistency
+	// CLI uses: autosetup.AutoSetupWithOptions(modelsFolder, options)
+	// This ensures identical behavior between UI and CLI
+
+	// For multi-folder support, we'll use the first folder as primary
+	// TODO: Enhance autosetup to support multiple folders natively
+	mainFolder := folderPaths[0]
+
+	// Call the exact same function as CLI
+	err = autosetup.AutoSetupWithOptions(mainFolder, req.Options)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("AutoSetup failed (same as CLI): %v", err)})
+		return
+	}
+
+	// Read the generated config (AutoSetupWithOptions always writes to config.yaml)
+	configData, err := os.ReadFile("config.yaml")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read generated config.yaml"})
+		return
+	}
+
+	// Trigger automatic soft restart to reload the new configuration
+	// This ensures the new config takes effect immediately
+	go func() {
+		time.Sleep(500 * time.Millisecond) // Give time for response to be sent
+		pm.proxyLogger.Info("Auto-restarting server after config generation...")
+
+		// Emit config change event to trigger reload (same as file watcher)
+		event.Emit(ConfigFileChangedEvent{
+			ReloadingState: ReloadingStateStart,
+		})
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":         "Configuration regenerated using CLI autosetup function",
+		"totalModels":    len(allModels),
+		"foldersScanned": len(folderPaths),
+		"scanSummary":    scanSummary,
+		"config":         string(configData),
+		"source":         "autosetup.AutoSetupWithOptions() - identical to CLI",
+		"primaryFolder":  mainFolder,
+		"note":           "Using same function as CLI for guaranteed consistency",
+		"autoRestart":    "Soft restart triggered automatically",
+	})
 }

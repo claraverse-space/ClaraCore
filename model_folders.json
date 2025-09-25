@@ -1,0 +1,22 @@
+{
+  "folders": [
+    {
+      "path": "C:\\BackUP\\llama-modelsss",
+      "addedAt": "2025-09-25T11:21:46.1013596+05:30",
+      "lastScanned": "2025-09-25T12:02:03.2890118+05:30",
+      "modelCount": 0,
+      "recursive": true,
+      "enabled": true
+    },
+    {
+      "path": "C:\\Users\\prave\\ClaraCore\\downloadss",
+      "addedAt": "2025-09-25T12:02:03.2890118+05:30",
+      "lastScanned": "2025-09-25T12:02:03.2890118+05:30",
+      "modelCount": 0,
+      "recursive": true,
+      "enabled": true
+    }
+  ],
+  "lastScan": "2025-09-25T12:02:03.2890118+05:30",
+  "version": "1.0"
+}

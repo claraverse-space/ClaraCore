@@ -51,7 +51,12 @@ interface SystemConfig {
 
 const OnboardConfig: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
-  const [folderPath, setFolderPath] = useState('');
+  
+  // Multi-folder support (backward compatible)
+  const [folderPath, setFolderPath] = useState(''); // Single folder input (backward compatibility)
+  const [folderPaths, setFolderPaths] = useState<string[]>([]); // Multiple tracked folders
+  const [currentFolderInput, setCurrentFolderInput] = useState(''); // Current input field
+  
   const [scanResults, setScanResults] = useState<ModelScanResult[]>([]);
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
     hasGPU: true,
@@ -104,10 +109,30 @@ const OnboardConfig: React.FC = () => {
     }
   };
 
+  // Load existing folders from database
+  const loadExistingFolders = async () => {
+    try {
+      const response = await fetch('/api/config/folders');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.folders && data.folders.length > 0) {
+          const enabledFolders = data.folders
+            .filter((f: any) => f.enabled)
+            .map((f: any) => f.path);
+          setFolderPaths(enabledFolders);
+          showNotification('info', `Loaded ${enabledFolders.length} folders from database`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load existing folders:', error);
+    }
+  };
+
   // Auto-detect system on component mount and check for existing models
   useEffect(() => {
     detectSystem();
     checkExistingModels();
+    loadExistingFolders(); // Load existing folder database
   }, []);
 
   const detectSystem = async () => {
@@ -163,9 +188,42 @@ const OnboardConfig: React.FC = () => {
 
 
 
-  const scanModelFolder = async () => {
-    if (!folderPath.trim()) {
+  // Add folder to tracking list
+  const addFolderToTracking = () => {
+    if (!currentFolderInput.trim()) {
       showNotification('error', 'Please enter a folder path');
+      return;
+    }
+
+    if (folderPaths.includes(currentFolderInput.trim())) {
+      showNotification('error', 'Folder already added');
+      return;
+    }
+
+    setFolderPaths(prev => [...prev, currentFolderInput.trim()]);
+    setCurrentFolderInput('');
+    showNotification('success', 'Folder added for scanning');
+  };
+
+  // Remove folder from tracking list
+  const removeFolderFromTracking = (folderToRemove: string) => {
+    setFolderPaths(prev => prev.filter(f => f !== folderToRemove));
+    showNotification('info', 'Folder removed');
+  };
+
+  // Scan all folders (supports both single and multiple folder modes)
+  const scanModelFolder = async () => {
+    // Determine which folders to scan
+    let foldersToScan: string[] = [];
+    
+    if (folderPaths.length > 0) {
+      // Multi-folder mode
+      foldersToScan = folderPaths;
+    } else if (folderPath.trim()) {
+      // Single folder mode (backward compatibility)
+      foldersToScan = [folderPath.trim()];
+    } else {
+      showNotification('error', 'Please enter at least one folder path');
       return;
     }
 
@@ -174,14 +232,26 @@ const OnboardConfig: React.FC = () => {
       const response = await fetch('/api/config/scan-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderPath: folderPath, recursive: true }),
+        body: JSON.stringify({ 
+          folderPaths: foldersToScan, 
+          recursive: true,
+          addToDatabase: true // Persist to JSON database
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
         setScanResults(data.models || []);
+        
         if (data.models && data.models.length > 0) {
-          showNotification('success', `Found ${data.models.length} GGUF models!`);
+          const summary = data.scanSummary || [];
+          const successCount = summary.filter((s: any) => s.status === 'success').length;
+          const errorCount = summary.filter((s: any) => s.status === 'error').length;
+          
+          showNotification('success', 
+            `Found ${data.models.length} GGUF models from ${successCount} folders!` +
+            (errorCount > 0 ? ` (${errorCount} folders had errors)` : '')
+          );
           setCurrentStep(3); // Move to model selection step
         } else {
           showNotification('error', 'No GGUF models found in this folder');
@@ -248,13 +318,13 @@ const OnboardConfig: React.FC = () => {
         });
       }, Math.max(1000, (scanResults.length * 2000) / scanResults.length)); // Adaptive interval
       
-      const response = await fetch('/api/config/generate-all', {
+      // Use the new database-driven config generation
+      const response = await fetch('/api/config/regenerate-from-db', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          folderPath: folderPath,
           options: {
             enableJinja: true,
             throughputFirst: systemConfig.throughputFirst,
@@ -424,18 +494,77 @@ const OnboardConfig: React.FC = () => {
       description: "Point us to the folder containing your GGUF model files",
       component: (
         <div className="py-6">
+          {/* Database info panel */}
+          {folderPaths.length > 0 && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-brand-50 to-blue-50 dark:from-brand-900/20 dark:to-blue-900/20 border border-brand-200 dark:border-brand-800 rounded-lg">
+              <div className="flex items-center space-x-2 mb-2">
+                <InfoIcon className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+                <h3 className="font-semibold text-brand-700 dark:text-brand-300">Smart Folder Database Active</h3>
+              </div>
+              <p className="text-sm text-brand-600 dark:text-brand-400">
+                Your folders are saved to a persistent database. Future model downloads will automatically update your configuration.
+                You can scan all folders again or add new ones below.
+              </p>
+            </div>
+          )}
+
+          {/* Multi-folder management */}
+          {folderPaths.length > 0 && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-text-secondary mb-3">
+                📁 Tracked Model Folders ({folderPaths.length})
+              </label>
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {folderPaths.map((folder, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-surface-secondary border border-border-secondary rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <FolderIcon className="w-4 h-4 text-text-secondary" />
+                      <span className="text-sm text-text-primary font-mono">{folder}</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeFolderFromTracking(folder)}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Folder input section */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-text-secondary mb-3">
-              Model Folder Path
+              {folderPaths.length > 0 ? 'Add Another Model Folder' : 'Model Folder Path'}
             </label>
-            <Input
-              value={folderPath}
-              onChange={(e) => setFolderPath(e.target.value)}
-              placeholder="C:\models\llama-models"
-              className="text-lg"
-            />
+            <div className="flex space-x-2">
+              <Input
+                value={folderPaths.length > 0 ? currentFolderInput : folderPath}
+                onChange={(e) => folderPaths.length > 0 ? setCurrentFolderInput(e.target.value) : setFolderPath(e.target.value)}
+                placeholder="C:\models\llama-models"
+                className="text-lg flex-1"
+              />
+              {folderPaths.length > 0 && (
+                <Button
+                  onClick={addFolderToTracking}
+                  variant="outline"
+                  disabled={!currentFolderInput.trim()}
+                  icon={<ArrowRightIcon size={16} />}
+                >
+                  Add
+                </Button>
+              )}
+            </div>
             <p className="text-sm text-text-secondary mt-2">
-              💡 This folder will be scanned recursively for .gguf files
+              💡 All folders will be scanned recursively for .gguf files
+              {folderPaths.length === 0 && (
+                <span className="block mt-1">
+                  ✨ <strong>Tip:</strong> After scanning your first folder, you can add more folders to the database!
+                </span>
+              )}
             </p>
           </div>
           
@@ -444,10 +573,28 @@ const OnboardConfig: React.FC = () => {
               onClick={scanModelFolder}
               loading={isScanning}
               icon={<RefreshCwIcon size={16} />}
-              disabled={!folderPath.trim()}
+              disabled={folderPaths.length === 0 && !folderPath.trim()}
             >
-              {isScanning ? 'Scanning...' : 'Scan Folder'}
+              {isScanning ? 'Scanning...' : folderPaths.length > 0 ? `Scan ${folderPaths.length} Folders` : 'Scan Folder'}
             </Button>
+            
+            {/* Multi-folder mode switch */}
+            {folderPaths.length === 0 && folderPath.trim() && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setFolderPaths([folderPath.trim()]);
+                  setCurrentFolderInput('');
+                  setFolderPath('');
+                  showNotification('info', 'Switched to multi-folder mode. Add more folders now!');
+                }}
+                icon={<FolderIcon size={16} />}
+                className="text-brand-600 border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-900/20"
+              >
+                + Add More Folders
+              </Button>
+            )}
+            
             <Button
               variant="outline"
               onClick={() => setCurrentStep(1)}
@@ -949,6 +1096,29 @@ const OnboardConfig: React.FC = () => {
             </Card>
           )}
           
+          {/* Database approach information */}
+          {folderPaths.length > 0 && (
+            <Card className="mb-6 border-info-200 dark:border-info-800 bg-gradient-to-r from-info-50 to-blue-50 dark:from-info-900/20 dark:to-blue-900/20">
+              <CardContent className="p-4">
+                <div className="flex items-start space-x-3">
+                  <InfoIcon className="w-5 h-5 text-info-600 dark:text-info-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="font-semibold text-info-700 dark:text-info-300 mb-2">Smart Database Configuration</h3>
+                    <p className="text-sm text-info-600 dark:text-info-400 mb-3">
+                      Your {folderPaths.length} folder{folderPaths.length > 1 ? 's are' : ' is'} saved to a persistent JSON database (<code>model_folders.json</code>). 
+                      This configuration will be regenerated from <strong>all tracked folders</strong>, ensuring your YAML config stays current even if individual models are added or removed.
+                    </p>
+                    <div className="flex items-center space-x-4 text-xs text-info-500 dark:text-info-400">
+                      <span>📁 {folderPaths.length} tracked folder{folderPaths.length > 1 ? 's' : ''}</span>
+                      <span>🔄 Auto-regeneration enabled</span>
+                      <span>💾 Database persisted</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Navigation */}
           <div className="flex items-center justify-between pt-6 border-t border-border-secondary">
             <Button
