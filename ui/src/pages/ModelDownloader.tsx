@@ -140,7 +140,16 @@ const ModelDownloaderPage: React.FC = () => {
 
   // Set up real-time download progress updates
   useEffect(() => {
-    const eventSource = new EventSource('/api/events');
+    // Include API key via query param for SSE
+    let url = '/api/events';
+    try {
+      const k = localStorage.getItem('cc_api_key');
+      if (k && k.trim()) {
+        const qp = new URLSearchParams({ api_key: k.trim() });
+        url = `/api/events?${qp.toString()}`;
+      }
+    } catch {}
+    const eventSource = new EventSource(url);
     
     eventSource.onmessage = (event) => {
       try {

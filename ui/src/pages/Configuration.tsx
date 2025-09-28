@@ -52,9 +52,12 @@ const Configuration: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
+  const [requireApiKey, setRequireApiKey] = useState<boolean>(false);
+  const [apiKey, setApiKey] = useState<string>("");
 
   useEffect(() => {
     loadConfiguration();
+    loadSystemSettings();
   }, []);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
@@ -118,6 +121,39 @@ const Configuration: React.FC = () => {
       navigate('/setup');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadSystemSettings = async () => {
+    try {
+      const res = await fetch('/api/settings/system');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.settings) {
+          setRequireApiKey(!!data.settings.requireApiKey);
+        }
+      }
+    } catch (e) {}
+  };
+
+  const saveSystemSettings = async () => {
+    try {
+      const body: any = { requireApiKey };
+      if (apiKey.trim().length > 0) body.apiKey = apiKey.trim();
+      const res = await fetch('/api/settings/system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setApiKey("");
+        showNotification('success', requireApiKey ? 'API key requirement enabled' : 'API key requirement disabled');
+      } else {
+        const txt = await res.text();
+        showNotification('error', `Failed to save settings: ${txt}`);
+      }
+    } catch (e: any) {
+      showNotification('error', `Failed to save settings: ${e?.message || e}`);
     }
   };
 
@@ -505,6 +541,29 @@ const Configuration: React.FC = () => {
             </Card>
           )}
         </motion.div>
+
+        {/* Security / API key settings */}
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Security</CardTitle>
+            <CardDescription>Control API access for OpenAI-compatible endpoints</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3 mb-3">
+              <input id="require-api-key" type="checkbox" checked={requireApiKey} onChange={(e) => setRequireApiKey(e.target.checked)} className="h-4 w-4" />
+              <label htmlFor="require-api-key" className="text-sm">Require API key for /v1 endpoints</label>
+            </div>
+            {requireApiKey && (
+              <div className="flex items-center gap-2 mb-3">
+                <input type="password" placeholder="Enter new API key (leave blank to keep existing)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="w-full p-2 rounded border border-border-secondary bg-background text-text-primary" />
+                <Button onClick={saveSystemSettings} icon={<SaveIcon className="w-4 h-4" />}>Save</Button>
+              </div>
+            )}
+            {!requireApiKey && (
+              <Button variant="outline" onClick={saveSystemSettings} icon={<SaveIcon className="w-4 h-4" />}>Save</Button>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

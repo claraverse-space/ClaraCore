@@ -206,7 +206,7 @@ function ModelCard({ model, showIdorName, onLoad }: ModelCardProps) {
           {/* Right side: Actions */}
           <div className="flex items-center gap-3 flex-shrink-0 ml-4">
             <a 
-              href={`/upstream/${model.id}/`} 
+              href={model.proxyUrl && model.proxyUrl.trim().length > 0 ? `${model.proxyUrl.replace(/\/$/, '')}/` : `/upstream/${model.id}/`} 
               target="_blank"
               title="View model details"
               className="inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-border-secondary bg-surface hover:bg-surface-secondary transition-colors"

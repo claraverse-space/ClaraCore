@@ -29,6 +29,7 @@ type Model struct {
 	Description string `json:"description"`
 	State       string `json:"state"`
 	Unlisted    bool   `json:"unlisted"`
+    ProxyURL    string `json:"proxyUrl"`
 }
 
 // SystemSettings persist user-chosen settings for autosetup/regeneration
@@ -40,6 +41,8 @@ type SystemSettings struct {
     PreferredContext int     `json:"preferredContext"`
     ThroughputFirst  bool    `json:"throughputFirst"`
     EnableJinja      bool    `json:"enableJinja"`
+    RequireAPIKey    bool    `json:"requireApiKey"`
+    APIKey           string  `json:"apiKey,omitempty"`
 }
 
 func (pm *ProxyManager) getSystemSettingsPath() string {
@@ -72,7 +75,7 @@ func (pm *ProxyManager) saveSystemSettings(s *SystemSettings) error {
 
 func addApiHandlers(pm *ProxyManager) {
 	// Add API endpoints for React to consume
-	apiGroup := pm.ginEngine.Group("/api")
+	apiGroup := pm.ginEngine.Group("/api", pm.requireAPIKey())
 	{
 		apiGroup.POST("/models/unload", pm.apiUnloadAllModels)
 		apiGroup.GET("/events", pm.apiSendEvents)
@@ -160,12 +163,13 @@ func (pm *ProxyManager) getModelStatus() []Model {
 				state = stateStr
 			}
 		}
-		models = append(models, Model{
+        models = append(models, Model{
 			Id:          modelID,
 			Name:        pm.config.Models[modelID].Name,
 			Description: pm.config.Models[modelID].Description,
 			State:       state,
 			Unlisted:    pm.config.Models[modelID].Unlisted,
+            ProxyURL:    pm.config.Models[modelID].Proxy,
 		})
 	}
 
@@ -649,7 +653,10 @@ func (pm *ProxyManager) apiGetSystemSettings(c *gin.Context) {
         c.JSON(http.StatusOK, gin.H{"settings": nil})
         return
     }
-    c.JSON(http.StatusOK, gin.H{"settings": s})
+    // Redact API key from response
+    redacted := *s
+    redacted.APIKey = ""
+    c.JSON(http.StatusOK, gin.H{"settings": redacted})
 }
 
 // apiSetSystemSettings saves system settings with basic validation and platform mapping
@@ -663,6 +670,55 @@ func (pm *ProxyManager) apiSetSystemSettings(c *gin.Context) {
     // Platform-aware mapping: on macOS/arm, map unsupported to metal
     if runtime.GOOS == "darwin" && (req.Backend == "cuda" || req.Backend == "rocm" || req.Backend == "vulkan") {
         req.Backend = "metal"
+    }
+
+    // Basic validation
+    if req.VRAMGB < 0 || req.RAMGB < 0 {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "ramGB and vramGB must be >= 0"})
+        return
+    }
+    if req.PreferredContext < 0 {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "preferredContext must be >= 0"})
+        return
+    }
+
+    // Preserve existing API key if require is true and new key is empty; also auto-populate hardware defaults when zeros
+    if existing, _ := pm.loadSystemSettings(); existing != nil {
+        if req.RequireAPIKey && strings.TrimSpace(req.APIKey) == "" && strings.TrimSpace(existing.APIKey) != "" {
+            req.APIKey = existing.APIKey
+        }
+        // If values are zero, carry forward existing (so we don't wipe)
+        if req.VRAMGB == 0 { req.VRAMGB = existing.VRAMGB }
+        if req.RAMGB == 0 { req.RAMGB = existing.RAMGB }
+        if req.PreferredContext == 0 { req.PreferredContext = existing.PreferredContext }
+        if req.Backend == "" { req.Backend = existing.Backend }
+    }
+    if req.RequireAPIKey && strings.TrimSpace(req.APIKey) == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "requireApiKey=true needs a non-empty apiKey"})
+        return
+    }
+
+    // If still zeros (first-time save), auto-populate from detection
+    if req.VRAMGB == 0 || req.RAMGB == 0 || req.PreferredContext == 0 || req.Backend == "" {
+        system := autosetup.DetectSystem()
+        _ = autosetup.EnhanceSystemInfo(&system)
+        if req.VRAMGB == 0 { req.VRAMGB = system.TotalVRAMGB }
+        if req.RAMGB == 0 { req.RAMGB = system.TotalRAMGB }
+        if req.PreferredContext == 0 { req.PreferredContext = 32768 }
+        if req.Backend == "" {
+            // crude mapping
+            if runtime.GOOS == "darwin" || system.HasMetal {
+                req.Backend = "metal"
+            } else if system.HasCUDA {
+                req.Backend = "cuda"
+            } else if system.HasROCm {
+                req.Backend = "rocm"
+            } else if system.HasVulkan {
+                req.Backend = "vulkan"
+            } else {
+                req.Backend = "cpu"
+            }
+        }
     }
 
     if err := pm.saveSystemSettings(&req); err != nil {
@@ -2790,13 +2846,33 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 	// Trigger automatic soft restart to reload the new configuration
 	// This ensures the new config takes effect immediately
 	go func() {
-		time.Sleep(500 * time.Millisecond) // Give time for response to be sent
+		time.Sleep(300 * time.Millisecond) // allow response to flush first
 		pm.proxyLogger.Info("Auto-restarting server after config generation...")
 
-		// Emit config change event to trigger reload (same as file watcher)
-		event.Emit(ConfigFileChangedEvent{
-			ReloadingState: ReloadingStateStart,
-		})
+		// Emit config change event for file-watchers
+		event.Emit(ConfigFileChangedEvent{ReloadingState: ReloadingStateStart})
+
+		// Also explicitly call soft restart endpoint logic to guarantee reload even without --watch-config
+		// Reuse internal restart handler directly
+		pm.Lock()
+		defer pm.Unlock()
+		// Stop all running process groups
+		for _, group := range pm.processGroups {
+			group.StopProcesses(StopWaitForInflightRequest)
+		}
+		// Reload config
+		if newConfig, err := LoadConfig("config.yaml"); err == nil {
+			pm.config = newConfig
+			// Recreate process groups
+			pm.processGroups = make(map[string]*ProcessGroup)
+			for gid := range newConfig.Groups {
+				pg := NewProcessGroup(gid, newConfig, pm.proxyLogger, pm.upstreamLogger)
+				pm.processGroups[gid] = pg
+			}
+			pm.proxyLogger.Info("Soft restart completed (explicit after regenerate).")
+		} else {
+			pm.proxyLogger.Errorf("Soft restart failed to reload config: %v", err)
+		}
 	}()
 
 	c.JSON(http.StatusOK, gin.H{

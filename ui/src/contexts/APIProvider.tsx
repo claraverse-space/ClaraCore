@@ -1,5 +1,7 @@
-import { createContext, useState, useContext, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { createContext, useState, useContext, useEffect, useCallback, useMemo, type ReactNode, useRef } from "react";
 import type { ConnectionState } from "../lib/types";
+import { Modal } from "../components/ui/Modal";
+import { Button } from "../components/ui/Button";
 
 type ModelStatus = "ready" | "starting" | "stopping" | "stopped" | "shutdown" | "unknown";
 const LOG_LENGTH_LIMIT = 1024 * 100; /* 100KB of log data */
@@ -10,6 +12,7 @@ export interface Model {
   name: string;
   description: string;
   unlisted: boolean;
+  proxyUrl?: string;
 }
 
 interface APIProviderType {
@@ -62,6 +65,36 @@ export function APIProvider({ children, autoStartAPIEvents = true }: APIProvider
 
   const [models, setModels] = useState<Model[]>([]);
 
+  // API key modal state
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [tempKey, setTempKey] = useState("");
+  const keyResolvers = useRef<{ resolve: (k: string) => void; reject: (e?: any) => void }[]>([]);
+
+  const requestApiKey = useCallback((): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      keyResolvers.current.push({ resolve, reject });
+      setShowKeyModal(true);
+    });
+  }, []);
+
+  const submitApiKey = useCallback(() => {
+    const k = tempKey.trim();
+    if (k.length === 0) return;
+    // persist
+    try { localStorage.setItem("cc_api_key", k); } catch {}
+    setShowKeyModal(false);
+    setTempKey("");
+    const pending = keyResolvers.current.splice(0, keyResolvers.current.length);
+    pending.forEach(p => p.resolve(k));
+  }, [tempKey]);
+
+  const cancelApiKey = useCallback(() => {
+    setShowKeyModal(false);
+    setTempKey("");
+    const pending = keyResolvers.current.splice(0, keyResolvers.current.length);
+    pending.forEach(p => p.reject(new Error("API key entry cancelled")));
+  }, []);
+
   const appendLog = useCallback((newData: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
     setter((prev) => {
       const updatedLog = prev + newData;
@@ -82,7 +115,16 @@ export function APIProvider({ children, autoStartAPIEvents = true }: APIProvider
 
     const connect = () => {
       apiEventSource?.close();
-      apiEventSource = new EventSource("/api/events");
+      // Attach API key via query param (headers are not supported by EventSource)
+      let url = "/api/events";
+      try {
+        const stored = localStorage.getItem("cc_api_key");
+        if (stored && stored.trim().length > 0) {
+          const qp = new URLSearchParams({ api_key: stored.trim() });
+          url = `/api/events?${qp.toString()}`;
+        }
+      } catch {}
+      apiEventSource = new EventSource(url);
 
       setConnectionState("connecting");
 
@@ -152,14 +194,61 @@ export function APIProvider({ children, autoStartAPIEvents = true }: APIProvider
   }, []);
 
   useEffect(() => {
+    // Wrap global fetch to attach API key and react to 401s
+    const origFetch = window.fetch.bind(window);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      // Normalize URL
+      let urlStr: string;
+      if (typeof input === "string") urlStr = input;
+      else if (input instanceof URL) urlStr = input.toString();
+      else urlStr = input.url;
+
+      let needAuth = false;
+      try {
+        const u = new URL(urlStr, window.location.origin);
+        const isSameOrigin = u.origin === window.location.origin;
+        const isBackendPath = u.pathname.startsWith("/api") || u.pathname.startsWith("/v1") || u.pathname.startsWith("/upstream");
+        needAuth = isSameOrigin && isBackendPath;
+      } catch {
+        // Relative paths will resolve above; if something goes wrong, default to not attaching auth
+        needAuth = false;
+      }
+
+      let headers = new Headers((init && init.headers) || undefined);
+      if (needAuth && !headers.has("Authorization") && !headers.has("X-API-Key")) {
+        try {
+          const stored = localStorage.getItem("cc_api_key");
+          if (stored && stored.trim().length > 0) {
+            headers.set("Authorization", `Bearer ${stored.trim()}`);
+          }
+        } catch {}
+      }
+
+      const res = await origFetch(input as any, { ...(init || {}), headers });
+      if (res.status !== 401 && res.status !== 403) return res;
+
+      // 401/403 → prompt for key, retry once (only for backend endpoints)
+      if (!needAuth) return res;
+      try {
+        const key = await requestApiKey();
+        const retryHeaders = new Headers((init && init.headers) || undefined);
+        retryHeaders.set("Authorization", `Bearer ${key}`);
+        return await origFetch(input as any, { ...(init || {}), headers: retryHeaders });
+      } catch {
+        return res; // user cancelled; return original response
+      }
+    };
+
     if (autoStartAPIEvents) {
       enableAPIEvents(true);
     }
 
     return () => {
       enableAPIEvents(false);
+      // restore? not strictly necessary in SPA lifecycle, but keep safety
+      window.fetch = origFetch;
     };
-  }, [enableAPIEvents, autoStartAPIEvents]);
+  }, [enableAPIEvents, autoStartAPIEvents, requestApiKey]);
 
   const listModels = useCallback(async (): Promise<Model[]> => {
     try {
@@ -217,9 +306,39 @@ export function APIProvider({ children, autoStartAPIEvents = true }: APIProvider
     }),
     [models, listModels, unloadAllModels, loadModel, enableAPIEvents, proxyLogs, upstreamLogs, metrics]
   );
-
-  return <APIContext.Provider value={value}>{children}</APIContext.Provider>;
+  return (
+    <APIContext.Provider value={value}>
+      {children}
+      {/* API Key Modal */}
+      <Modal open={showKeyModal} onClose={cancelApiKey} title="API Key Required" description="Enter the API key to access ClaraCore endpoints.">
+        <div className="space-y-3">
+          <input
+            type="password"
+            placeholder="Enter API key"
+            value={tempKey}
+            onChange={(e) => setTempKey(e.target.value)}
+            className="w-full p-2 rounded border border-border-secondary bg-background text-text-primary"
+          />
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={cancelApiKey}>Cancel</Button>
+            <Button onClick={submitApiKey}>Submit</Button>
+          </div>
+        </div>
+      </Modal>
+    </APIContext.Provider>
+  );
 }
+
+export function APIProviderWithAuthModal(props: APIProviderProps) {
+  return (
+    <APIProvider {...props}>
+      {props.children}
+    </APIProvider>
+  );
+}
+
+// We render the modal inside APIProvider component tree:
+// Note: Injecting modal here by patching return above is messy; simpler to append alongside children.
 
 export function useAPI() {
   const context = useContext(APIContext);

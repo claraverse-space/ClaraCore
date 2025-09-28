@@ -17,6 +17,10 @@ import (
 
 	"github.com/prave/ClaraCore/autosetup"
 	"github.com/prave/ClaraCore/event"
+    "encoding/json"
+    "os"
+    "path/filepath"
+    "runtime"
 )
 
 type ProcessState string
@@ -243,6 +247,30 @@ func (p *Process) start() error {
 					}
 				}
 			}
+
+			// Additional self-heal: if we're on non-Windows and the command looks Windows-specific, attempt one-shot regenerate
+			if runtime.GOOS != "windows" {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, ".exe") || strings.Contains(joined, "C:") || strings.Contains(joined, "\\") {
+					p.proxyLogger.Warnf("<%s> Detected Windows-style command on %s, attempting one-shot reconfigure", p.ID, runtime.GOOS)
+					if regenErr := p.attemptOneShotRegenerate(); regenErr == nil {
+						p.proxyLogger.Infof("<%s> Regeneration completed, retrying start...", p.ID)
+						newArgs, argErr := p.config.SanitizedCommand()
+						if argErr == nil {
+							p.cmd = exec.CommandContext(cmdContext, newArgs[0], newArgs[1:]...)
+							p.cmd.Stdout = p.processLogger
+							p.cmd.Stderr = p.processLogger
+							p.cmd.Env = append(p.cmd.Environ(), p.config.Env...)
+							p.cmd.Cancel = p.cmdStopUpstreamProcess
+							p.cmd.WaitDelay = p.gracefulStopTimeout
+							if retryErr := p.cmd.Start(); retryErr == nil {
+								p.proxyLogger.Infof("<%s> Successfully started after reconfigure", p.ID)
+								goto startupSuccess
+							}
+						}
+					}
+				}
+			}
 		}
 		
 		if curState, swapErr := p.swapState(StateStarting, StateStopped); swapErr != nil {
@@ -339,6 +367,53 @@ startupSuccess:
 		p.failedStartCount = 0
 		return nil
 	}
+}
+
+// attemptOneShotRegenerate regenerates config.yaml from tracked folders using saved settings.
+func (p *Process) attemptOneShotRegenerate() error {
+    // Load folder DB
+    dbPath := "model_folders.json"
+    data, err := os.ReadFile(dbPath)
+    if err != nil {
+        return fmt.Errorf("no folder DB: %v", err)
+    }
+    var db struct{ Folders []struct{ Path string; Enabled bool } `json:"folders"` }
+    if err := json.Unmarshal(data, &db); err != nil {
+        return fmt.Errorf("invalid folder DB: %v", err)
+    }
+    var folders []string
+    for _, f := range db.Folders { if f.Enabled { folders = append(folders, f.Path) } }
+    if len(folders) == 0 { return fmt.Errorf("no enabled folders") }
+
+    // Load settings if present
+    opts := autosetup.SetupOptions{ EnableJinja: true, ThroughputFirst: true, MinContext: 16384, PreferredContext: 32768 }
+    if sdata, err := os.ReadFile("settings.json"); err == nil {
+        var s struct{ Backend string `json:"backend"`; VRAMGB float64 `json:"vramGB"`; RAMGB float64 `json:"ramGB"`; PreferredContext int `json:"preferredContext"`; ThroughputFirst bool `json:"throughputFirst"`; EnableJinja bool `json:"enableJinja"` }
+        if json.Unmarshal(sdata, &s) == nil {
+            opts.EnableJinja = s.EnableJinja
+            opts.ThroughputFirst = s.ThroughputFirst
+            if s.PreferredContext > 0 { opts.PreferredContext = s.PreferredContext }
+            if s.RAMGB > 0 { opts.ForceRAM = s.RAMGB }
+            if s.VRAMGB > 0 { opts.ForceVRAM = s.VRAMGB }
+            if s.Backend != "" { opts.ForceBackend = s.Backend }
+        }
+    }
+
+    // Detect and generate
+    var allModels []autosetup.ModelInfo
+    for _, pth := range folders {
+        models, err := autosetup.DetectModelsWithOptions(pth, opts)
+        if err == nil { allModels = append(allModels, models...) }
+    }
+    if len(allModels) == 0 { return fmt.Errorf("no models found") }
+    system := autosetup.DetectSystem(); _ = autosetup.EnhanceSystemInfo(&system)
+    bin, err := autosetup.DownloadBinary(filepath.Join(".", "binaries"), system)
+    if err != nil { return err }
+    gen := autosetup.NewConfigGenerator(folders[0], bin.Path, "config.yaml", opts)
+    gen.SetSystemInfo(&system); gen.SetAvailableVRAM(system.TotalVRAMGB)
+    if err := gen.GenerateConfig(allModels); err != nil { return err }
+    event.Emit(ConfigFileChangedEvent{ ReloadingState: ReloadingStateStart })
+    return nil
 }
 
 // Stop will wait for inflight requests to complete before stopping the process.
