@@ -86,6 +86,7 @@ const OnboardConfig: React.FC = () => {
   const [hasExistingModels, setHasExistingModels] = useState(false);
   const [showSetup, setShowSetup] = useState(true);
   const [modelSource, setModelSource] = useState<'existing' | 'download' | null>(null);
+  const [backendNotice, setBackendNotice] = useState<string | null>(null);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
     setNotification({ type, message });
@@ -134,6 +135,14 @@ const OnboardConfig: React.FC = () => {
     checkExistingModels();
     loadExistingFolders(); // Load existing folder database
   }, []);
+
+  // If folders already exist or models are already present, jump to Step 3 (Folder management)
+  useEffect(() => {
+    if ((folderPaths && folderPaths.length > 0) || hasExistingModels) {
+      // Jump to the folder management step (Step 3 of 6), not the results step
+      setCurrentStep(2);
+    }
+  }, [folderPaths, hasExistingModels]);
 
   const detectSystem = async () => {
     setIsDetecting(true);
@@ -206,9 +215,28 @@ const OnboardConfig: React.FC = () => {
   };
 
   // Remove folder from tracking list
-  const removeFolderFromTracking = (folderToRemove: string) => {
-    setFolderPaths(prev => prev.filter(f => f !== folderToRemove));
-    showNotification('info', 'Folder removed');
+  const removeFolderFromTracking = async (folderToRemove: string) => {
+    try {
+      // Call backend API to remove folder from database
+      const response = await fetch('/api/config/folders', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          folderPaths: [folderToRemove]
+        }),
+      });
+
+      if (response.ok) {
+        // Only update UI state if backend removal was successful
+        setFolderPaths(prev => prev.filter(f => f !== folderToRemove));
+        showNotification('success', 'Folder removed from tracking');
+      } else {
+        const errorData = await response.json();
+        showNotification('error', `Failed to remove folder: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      showNotification('error', `Error removing folder: ${error}`);
+    }
   };
 
   // Scan all folders (supports both single and multiple folder modes)
@@ -811,16 +839,43 @@ const OnboardConfig: React.FC = () => {
                           else if (gpuType === 'amd') backend = 'rocm';
                           else if (gpuType === 'apple') backend = 'metal';
                           else backend = 'vulkan';
+
+                          // Platform-aware filtering: on macOS Apple Silicon, map unsupported backends to metal
+                          const isAppleSilicon = (systemDetection?.primaryGPU?.brand === 'apple') || (/Mac/i.test(navigator.platform));
+                          if (isAppleSilicon) {
+                            const unsupported = backend === 'rocm' || backend === 'vulkan' || backend === 'cuda';
+                            if (unsupported) {
+                              setBackendNotice(`Requested backend '${backend}' is unsupported on macOS Apple Silicon. Using 'metal' instead.`);
+                              backend = 'metal';
+                            } else {
+                              setBackendNotice(null);
+                            }
+                          } else {
+                            setBackendNotice(null);
+                          }
+
                           setSystemConfig(prev => ({ ...prev, gpuType, backend }));
                         }}
                         className="w-full p-3 border border-border-secondary rounded-lg bg-background text-text-primary focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
                       >
-                        <option value="nvidia">NVIDIA (RTX, GTX)</option>
-                        <option value="amd">AMD (RX, Radeon)</option>
-                        <option value="intel">Intel (Arc, Iris)</option>
+                        {/* Hide/disable incompatible GPU families based on platform */}
+                        <option value="nvidia" disabled={systemDetection?.primaryGPU?.brand === 'apple'}>
+                          NVIDIA (RTX, GTX)
+                        </option>
+                        <option value="amd" disabled={systemDetection?.primaryGPU?.brand === 'apple'}>
+                          AMD (RX, Radeon)
+                        </option>
+                        <option value="intel" disabled={systemDetection?.primaryGPU?.brand === 'apple'}>
+                          Intel (Arc, Iris)
+                        </option>
                         <option value="apple">Apple Silicon (M1, M2, M3, M4)</option>
                       </select>
                     </div>
+                    {backendNotice && (
+                      <div className="mt-2 text-xs text-amber-400">
+                        {backendNotice}
+                      </div>
+                    )}
                     
                     <div>
                       <label className="block text-sm font-medium text-text-primary mb-2">
@@ -1178,7 +1233,7 @@ const OnboardConfig: React.FC = () => {
             <Button 
               onClick={() => {
                 setShowSetup(false);
-                window.location.href = '/';
+                window.location.href = '/ui/';
               }}
               size="lg"
               icon={<ZapIcon size={20} />}
@@ -1188,18 +1243,12 @@ const OnboardConfig: React.FC = () => {
             <br />
             <Button 
               variant="outline"
-              onClick={() => window.location.href = '/config'}
+              onClick={() => window.location.href = '/ui/config'}
             >
               View Configuration Details
             </Button>
             <br />
-            <Button 
-              variant="ghost"
-              onClick={() => setShowSetup(false)}
-              className="text-text-secondary"
-            >
-              Hide Setup (can be accessed later)
-            </Button>
+            {/* Hide Setup button removed as requested */}
           </div>
         </div>
       )

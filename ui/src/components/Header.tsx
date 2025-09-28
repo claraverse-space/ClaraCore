@@ -9,6 +9,7 @@ import logoSrc from "../assets/logo.svg";
 export function Header() {
   const { screenWidth } = useTheme();
   const [isRestarting, setIsRestarting] = useState(false);
+  const [isReconfiguring, setIsReconfiguring] = useState(false);
   const [showRestartMenu, setShowRestartMenu] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +66,47 @@ export function Header() {
     } catch (error) {
       console.error('Failed to hard restart server:', error);
       setIsRestarting(false);
+    }
+  };
+
+  const handleForceReconfigure = async () => {
+    if (isReconfiguring || isRestarting) return;
+
+    try {
+      setIsReconfiguring(true);
+      setShowRestartMenu(false);
+      const response = await fetch('/api/config/regenerate-from-db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          options: {
+            enableJinja: true,
+            throughputFirst: true,
+            minContext: 16384,
+            preferredContext: 32768
+          }
+        })
+      });
+
+      if (response.ok) {
+        // Explicitly trigger a soft restart so remotes pick up the new config
+        try {
+          await fetch('/api/server/restart', { method: 'POST' });
+        } catch (e) {
+          // Even if restart call fails, proceed to reload the page; backend may still apply changes
+          console.error('Soft restart after reconfigure failed (continuing):', e);
+        }
+        setTimeout(() => {
+          setIsReconfiguring(false);
+          window.location.reload();
+        }, 3000);
+      } else {
+        console.error('Force Reconfigure failed:', await response.text());
+        setIsReconfiguring(false);
+      }
+    } catch (error) {
+      console.error('Force Reconfigure error:', error);
+      setIsReconfiguring(false);
     }
   };
 
@@ -158,10 +200,10 @@ export function Header() {
               title="Restart Server Options"
             >
               <RotateCcw 
-                className={`w-4 h-4 ${isRestarting ? 'animate-spin' : ''}`} 
+                className={`w-4 h-4 ${(isRestarting || isReconfiguring) ? 'animate-spin' : ''}`} 
               />
               {screenWidth !== "xs" && (
-                <span>{isRestarting ? "Restarting..." : "Restart"}</span>
+                <span>{isRestarting ? "Restarting..." : (isReconfiguring ? "Reconfiguring..." : "Restart")}</span>
               )}
               {!isRestarting && (
                 <ChevronDown className="w-3 h-3" />
@@ -199,6 +241,20 @@ export function Header() {
                         <div>
                           <div className="font-medium text-white">Hard Restart</div>
                           <div className="text-xs text-gray-400">Restart entire server process</div>
+                        </div>
+                      </div>
+                    </button>
+                    <div className="h-px bg-gray-800 my-1" />
+                    <button
+                      onClick={handleForceReconfigure}
+                      disabled={isReconfiguring}
+                      className={`w-full text-left px-3 py-2 rounded-md transition-colors group ${isReconfiguring ? 'opacity-70 cursor-not-allowed' : 'hover:bg-gray-800/80'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <RotateCcw className={`w-4 h-4 text-blue-400 ${isReconfiguring ? 'animate-spin' : ''}`} />
+                        <div>
+                          <div className="font-medium text-white">Force Reconfigure</div>
+                          <div className="text-xs text-gray-400">Regenerate config from tracked folders</div>
                         </div>
                       </div>
                     </button>

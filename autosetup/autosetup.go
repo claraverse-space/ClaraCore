@@ -243,6 +243,213 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 	return nil
 }
 
+// AutoSetupMultiFoldersWithOptions performs automatic model detection and configuration from multiple folders
+func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptions) error {
+	fmt.Println("🚀 Starting llama-swap multi-folder auto-setup...")
+
+	// Validate folders
+	if len(modelsFolders) == 0 {
+		return fmt.Errorf("at least one models folder path is required")
+	}
+
+	var validFolders []string
+	for _, folder := range modelsFolders {
+		if folder == "" {
+			continue
+		}
+		if _, err := os.Stat(folder); os.IsNotExist(err) {
+			fmt.Printf("⚠️  Skipping non-existent folder: %s\n", folder)
+			continue
+		}
+		validFolders = append(validFolders, folder)
+	}
+
+	if len(validFolders) == 0 {
+		return fmt.Errorf("no valid model folders found")
+	}
+
+	fmt.Printf("📁 Scanning models in %d folders:\n", len(validFolders))
+	for _, folder := range validFolders {
+		fmt.Printf("   - %s\n", folder)
+	}
+
+	// Detect models from all folders
+	var allModels []ModelInfo
+	var allMMProjMatches []MMProjMatch
+	
+	for _, folder := range validFolders {
+		fmt.Printf("\n🔍 Scanning folder: %s\n", folder)
+		
+		// Detect models with options
+		models, err := DetectModelsWithOptions(folder, options)
+		if err != nil {
+			fmt.Printf("⚠️  Failed to detect models in %s: %v\n", folder, err)
+			continue
+		}
+
+		if len(models) == 0 {
+			fmt.Printf("⚠️  No GGUF models found in: %s\n", folder)
+			continue
+		}
+
+		fmt.Printf("✅ Found %d GGUF models in %s:\n", len(models), folder)
+		for _, model := range models {
+			fmt.Printf("   - %s", model.Name)
+			if model.Size != "" {
+				fmt.Printf(" (%s)", model.Size)
+			}
+			if model.Quantization != "" {
+				fmt.Printf(" [%s]", model.Quantization)
+			}
+			if model.IsInstruct {
+				fmt.Printf(" [Instruct]")
+			}
+			if model.IsDraft {
+				fmt.Printf(" [Draft]")
+			}
+			fmt.Println()
+		}
+
+		allModels = append(allModels, models...)
+
+		// Detect mmproj files in this folder
+		mmprojMatches := FindMMProjMatches(models, folder)
+		allMMProjMatches = append(allMMProjMatches, mmprojMatches...)
+	}
+
+	if len(allModels) == 0 {
+		return fmt.Errorf("no GGUF models found in any of the provided folders")
+	}
+
+	fmt.Printf("\n📊 Total models found across all folders: %d\n", len(allModels))
+
+	// Detect system (same as single folder)
+	fmt.Println("\n🔍 Detecting system capabilities...")
+	system := DetectSystem()
+
+	// Enhance system information with detailed detection
+	if err := EnhanceSystemInfo(&system); err != nil {
+		fmt.Printf("Warning: Failed to enhance system detection: %v\n", err)
+	}
+
+	// Apply hardware overrides if specified
+	if options.ForceBackend != "" || options.ForceRAM > 0 || options.ForceVRAM > 0 {
+		fmt.Println("\n🎛️  Applying hardware overrides...")
+		if options.ForceBackend != "" {
+			fmt.Printf("   🔧 Backend: %s (forced)\n", options.ForceBackend)
+			// Note: PreferredBackend field doesn't exist in SystemInfo, but that's okay
+			// The backend selection is handled elsewhere in the system
+		}
+		if options.ForceRAM > 0 {
+			fmt.Printf("   🧠 RAM: %.1f GB → %.1f GB (forced)\n", system.TotalRAMGB, options.ForceRAM)
+			system.TotalRAMGB = options.ForceRAM
+		}
+		if options.ForceVRAM > 0 {
+			fmt.Printf("   🎮 VRAM: %.1f GB → %.1f GB (forced)\n", system.TotalVRAMGB, options.ForceVRAM)
+			system.TotalVRAMGB = options.ForceVRAM
+		}
+	}
+
+	// Print system information
+	PrintSystemInfo(&system)
+
+	// Download binary (same as single folder)
+	fmt.Println("\n⬇️  Downloading llama-server binary...")
+
+	// Create binaries directory
+	binariesDir := filepath.Join(".", "binaries")
+	binary, err := DownloadBinary(binariesDir, system)
+	if err != nil {
+		return fmt.Errorf("failed to download binary: %v", err)
+	}
+
+	fmt.Printf("✅ Downloaded: %s (%s)\n", binary.Path, binary.Type)
+
+	// Generate configuration
+	fmt.Println("\n⚙️  Generating configuration...")
+
+	if options.EnableDraftModels {
+		fmt.Println("🚀 Draft models enabled - Speculative decoding will be used for suitable models")
+	} else {
+		fmt.Println("⏭️  Draft models disabled - Use --auto-draft to enable speculative decoding")
+	}
+
+	if options.EnableJinja {
+		fmt.Println("📝 Jinja templating enabled for chat models")
+	}
+
+	if options.EnableParallel {
+		fmt.Println("⚡ Parallel processing enabled for faster setup")
+	}
+
+	// Initialize memory estimator
+	memEstimator := NewMemoryEstimator()
+
+	// Use total GPU VRAM instead of available VRAM for allocation
+	totalVRAM := system.TotalVRAMGB
+	if totalVRAM == 0 {
+		// Fallback to memory estimator if system detection failed
+		fmt.Print("🔍 Detecting available VRAM... ")
+		availableVRAM, err := memEstimator.GetAvailableVRAM()
+		if err != nil {
+			fmt.Printf("failed (using default 12GB): %v\n", err)
+			totalVRAM = 12.0 // Default fallback
+		} else {
+			fmt.Printf("%.1f GB detected\n", availableVRAM)
+			totalVRAM = availableVRAM
+		}
+	} else {
+		fmt.Printf("🎯 Using total GPU VRAM: %.1f GB for allocation\n", totalVRAM)
+	}
+
+	// Use config generator with smart GPU allocation
+	// For multi-folder, use the first valid folder as the primary folder for config generation
+	configPath := "config.yaml"
+	generator := NewConfigGenerator(validFolders[0], binary.Path, configPath, options)
+	generator.SetAvailableVRAM(totalVRAM)
+	generator.SetBinaryType(binary.Type)
+	generator.SetSystemInfo(&system)              // Pass system info for optimal parameters
+	generator.SetMMProjMatches(allMMProjMatches)  // Pass all mmproj matches to config generator
+
+	fmt.Printf("⚙️  Generating configuration (SMART GPU ALLOCATION: fit max layers in VRAM)...\n")
+	err = generator.GenerateConfig(allModels) // Use ALL models from ALL folders
+	if err != nil {
+		return fmt.Errorf("failed to generate configuration: %v", err)
+	}
+
+	fmt.Printf("✅ Configuration saved to: %s\n", configPath)
+
+	// Print summary
+	fmt.Println("\n📋 Setup Summary:")
+	fmt.Printf("   Model folders: %d\n", len(validFolders))
+	for i, folder := range validFolders {
+		fmt.Printf("     %d. %s\n", i+1, folder)
+	}
+	fmt.Printf("   Binary: %s\n", binary.Path)
+	fmt.Printf("   Configuration: %s\n", configPath)
+	fmt.Printf("   Models detected: %d\n", len(allModels))
+
+	// Print platform support summary
+	PrintPlatformSupportSummary()
+
+	// Print next steps
+	fmt.Println("\n🎉 Setup complete! Next steps:")
+	fmt.Println("   1. Review the generated config.yaml file")
+	fmt.Println("   2. Start ClaraCore: ./clara-core")
+	fmt.Println("   3. Test with: curl http://localhost:8080/v1/models")
+
+	// Print available models
+	fmt.Println("\n📚 Available models:")
+	for _, model := range allModels {
+		if !model.IsDraft {
+			modelID := generator.generateModelID(model)
+			fmt.Printf("   - %s\n", modelID)
+		}
+	}
+
+	return nil
+}
+
 // ValidateSetup checks if auto-setup has been run and is valid
 func ValidateSetup() error {
 	// Check if config.yaml exists

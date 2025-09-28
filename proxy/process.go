@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prave/ClaraCore/autosetup"
 	"github.com/prave/ClaraCore/event"
 )
 
@@ -210,6 +211,40 @@ func (p *Process) start() error {
 
 	// Set process state to failed
 	if err != nil {
+		// Check if this is a "executable file not found" error - indicates missing binary
+		if strings.Contains(err.Error(), "executable file not found") || strings.Contains(err.Error(), "no such file or directory") {
+			p.proxyLogger.Warnf("<%s> Binary not found, attempting to download: %v", p.ID, err)
+			
+			// Try to self-heal by downloading the binary
+			if healErr := p.attemptBinaryDownload(); healErr != nil {
+				p.proxyLogger.Errorf("<%s> Failed to download binary for self-healing: %v", p.ID, healErr)
+			} else {
+				p.proxyLogger.Infof("<%s> Successfully downloaded binary, retrying start...", p.ID)
+				
+				// Retry the start with the newly downloaded binary
+				// Reset the command with updated args
+				newArgs, argErr := p.config.SanitizedCommand()
+				if argErr == nil {
+					p.cmd = exec.CommandContext(cmdContext, newArgs[0], newArgs[1:]...)
+					p.cmd.Stdout = p.processLogger
+					p.cmd.Stderr = p.processLogger
+					p.cmd.Env = append(p.cmd.Environ(), p.config.Env...)
+					p.cmd.Cancel = p.cmdStopUpstreamProcess
+					p.cmd.WaitDelay = p.gracefulStopTimeout
+					
+					p.proxyLogger.Debugf("<%s> Retrying start command after binary download: %s", p.ID, strings.Join(newArgs, " "))
+					if retryErr := p.cmd.Start(); retryErr == nil {
+						p.proxyLogger.Infof("<%s> Successfully started after binary download", p.ID)
+						// Continue with normal startup flow
+						goto startupSuccess
+					} else {
+						p.proxyLogger.Errorf("<%s> Start failed even after binary download: %v", p.ID, retryErr)
+						err = retryErr // Use the retry error for final error reporting
+					}
+				}
+			}
+		}
+		
 		if curState, swapErr := p.swapState(StateStarting, StateStopped); swapErr != nil {
 			p.state = StateStopped // force it into a stopped state
 			return fmt.Errorf(
@@ -219,6 +254,8 @@ func (p *Process) start() error {
 		}
 		return fmt.Errorf("start() failed for command '%s': %v", strings.Join(args, " "), err)
 	}
+
+startupSuccess:
 
 	// Capture the exit error for later signalling
 	go p.waitForCmd()
@@ -563,5 +600,26 @@ func (p *Process) cmdStopUpstreamProcess() error {
 		}
 	}
 
+	return nil
+}
+
+// attemptBinaryDownload tries to download the llama-server binary for self-healing
+func (p *Process) attemptBinaryDownload() error {
+	p.proxyLogger.Infof("<%s> Attempting to download llama-server binary for self-healing...", p.ID)
+	
+	// Detect system information
+	system := autosetup.DetectSystem()
+	err := autosetup.EnhanceSystemInfo(&system)
+	if err != nil {
+		return fmt.Errorf("failed to detect system info: %v", err)
+	}
+	
+	// Download binary to the binaries directory
+	binary, err := autosetup.DownloadBinary("binaries", system)
+	if err != nil {
+		return fmt.Errorf("failed to download binary: %v", err)
+	}
+	
+	p.proxyLogger.Infof("<%s> Successfully downloaded binary to: %s", p.ID, binary.Path)
 	return nil
 }

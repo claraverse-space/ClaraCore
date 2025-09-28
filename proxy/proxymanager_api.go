@@ -31,6 +31,45 @@ type Model struct {
 	Unlisted    bool   `json:"unlisted"`
 }
 
+// SystemSettings persist user-chosen settings for autosetup/regeneration
+type SystemSettings struct {
+    GPUType          string  `json:"gpuType"`          // nvidia|amd|intel|apple|none
+    Backend          string  `json:"backend"`          // cuda|rocm|vulkan|metal|mlx|cpu
+    VRAMGB           float64 `json:"vramGB"`
+    RAMGB            float64 `json:"ramGB"`
+    PreferredContext int     `json:"preferredContext"`
+    ThroughputFirst  bool    `json:"throughputFirst"`
+    EnableJinja      bool    `json:"enableJinja"`
+}
+
+func (pm *ProxyManager) getSystemSettingsPath() string {
+    return "settings.json"
+}
+
+func (pm *ProxyManager) loadSystemSettings() (*SystemSettings, error) {
+    path := pm.getSystemSettingsPath()
+    if _, err := os.Stat(path); os.IsNotExist(err) {
+        return nil, nil
+    }
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return nil, err
+    }
+    var s SystemSettings
+    if err := json.Unmarshal(data, &s); err != nil {
+        return nil, err
+    }
+    return &s, nil
+}
+
+func (pm *ProxyManager) saveSystemSettings(s *SystemSettings) error {
+    data, err := json.MarshalIndent(s, "", "  ")
+    if err != nil {
+        return err
+    }
+    return os.WriteFile(pm.getSystemSettingsPath(), data, 0644)
+}
+
 func addApiHandlers(pm *ProxyManager) {
 	// Add API endpoints for React to consume
 	apiGroup := pm.ginEngine.Group("/api")
@@ -51,6 +90,10 @@ func addApiHandlers(pm *ProxyManager) {
 		apiGroup.POST("/models/downloads/:id/pause", pm.apiPauseDownload)
 		apiGroup.POST("/models/downloads/:id/resume", pm.apiResumeDownload)
 
+		// System settings persistence
+		apiGroup.GET("/settings/system", pm.apiGetSystemSettings)
+		apiGroup.POST("/settings/system", pm.apiSetSystemSettings)
+
 		// Configuration management endpoints
 		apiGroup.GET("/config", pm.apiGetConfig)
 		apiGroup.POST("/config", pm.apiUpdateConfig)
@@ -66,6 +109,7 @@ func addApiHandlers(pm *ProxyManager) {
 		apiGroup.DELETE("/config/models/:id", pm.apiDeleteModel)
 		apiGroup.GET("/config/validate", pm.apiValidateConfig)
 		apiGroup.POST("/config/validate-models", pm.apiValidateModelsOnDisk) // NEW: Validate model files exist
+		apiGroup.POST("/config/cleanup-duplicates", pm.apiCleanupDuplicateModels) // NEW: Remove duplicate models
 
 		// NEW: Model folder database management
 		apiGroup.GET("/config/folders", pm.apiGetModelFolders)                          // Get all tracked folders
@@ -593,6 +637,39 @@ func (pm *ProxyManager) apiCancelDownload(c *gin.Context) {
 func (pm *ProxyManager) apiGetDownloads(c *gin.Context) {
 	downloads := pm.downloadManager.GetDownloads()
 	c.JSON(http.StatusOK, downloads)
+}
+// apiGetSystemSettings returns saved system settings
+func (pm *ProxyManager) apiGetSystemSettings(c *gin.Context) {
+    s, err := pm.loadSystemSettings()
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to load settings: %v", err)})
+        return
+    }
+    if s == nil {
+        c.JSON(http.StatusOK, gin.H{"settings": nil})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"settings": s})
+}
+
+// apiSetSystemSettings saves system settings with basic validation and platform mapping
+func (pm *ProxyManager) apiSetSystemSettings(c *gin.Context) {
+    var req SystemSettings
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+        return
+    }
+
+    // Platform-aware mapping: on macOS/arm, map unsupported to metal
+    if runtime.GOOS == "darwin" && (req.Backend == "cuda" || req.Backend == "rocm" || req.Backend == "vulkan") {
+        req.Backend = "metal"
+    }
+
+    if err := pm.saveSystemSettings(&req); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to save settings: %v", err)})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"status": "saved"})
 }
 
 func (pm *ProxyManager) apiGetDownloadStatus(c *gin.Context) {
@@ -1158,6 +1235,16 @@ func (pm *ProxyManager) apiAppendModelToConfig(c *gin.Context) {
 	// Generate model ID
 	modelID := pm.generateModelIDFromInfo(*targetModel)
 
+	// Check if model with same file path already exists
+	if existingModelID := pm.findModelByFilePath(absFilePath); existingModelID != "" {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": fmt.Sprintf("Model already exists in config with ID: %s", existingModelID),
+			"existingModelId": existingModelID,
+			"filePath": absFilePath,
+		})
+		return
+	}
+
 	// Append to existing config
 	err = pm.appendModelToConfig(configPath, modelID, modelConfig)
 	if err != nil {
@@ -1414,7 +1501,10 @@ func (pm *ProxyManager) generateSmartModelConfig(model autosetup.ModelInfo, opti
 	}
 
 	// Use existing binary or download (like command-line uses)
-	binaryPath := "binaries\\llama-server\\llama-server.exe"
+	binaryPath := filepath.Join("binaries", "llama-server", "build", "bin", "llama-server")
+	if runtime.GOOS == "windows" {
+		binaryPath += ".exe"
+	}
 	binaryType := "cuda" // Default assumption
 
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
@@ -1851,6 +1941,135 @@ func (pm *ProxyManager) generateModelIDFromInfo(model autosetup.ModelInfo) strin
 	return name
 }
 
+// findModelByFilePath checks if a model with the given file path already exists in config
+func (pm *ProxyManager) findModelByFilePath(filePath string) string {
+	for modelID, modelConfig := range pm.config.Models {
+		// Extract the model path from the command
+		cmd := modelConfig.Cmd
+		if strings.Contains(cmd, "--model") {
+			lines := strings.Split(cmd, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "--model ") {
+					existingPath := strings.TrimSpace(strings.TrimPrefix(line, "--model "))
+					// Compare absolute paths
+					if absExistingPath, err := filepath.Abs(existingPath); err == nil {
+						if absFilePath, err := filepath.Abs(filePath); err == nil {
+							if absExistingPath == absFilePath {
+								return modelID
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// cleanupDuplicateModels removes duplicate models from config and returns count of removed models
+func (pm *ProxyManager) cleanupDuplicateModels(configPath string) (int, error) {
+	// Read current config
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read config file: %v", err)
+	}
+
+	var config map[string]interface{}
+	err = yaml.Unmarshal(configData, &config)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse config YAML: %v", err)
+	}
+
+	models, ok := config["models"].(map[string]interface{})
+	if !ok {
+		return 0, nil // No models found
+	}
+
+	// Track file paths and find duplicates
+	filePathToModels := make(map[string][]string)
+	
+	for modelID, modelConfigInterface := range models {
+		modelConfig, ok := modelConfigInterface.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		
+		cmd, ok := modelConfig["cmd"].(string)
+		if !ok {
+			continue
+		}
+
+		// Extract model file path from command
+		lines := strings.Split(cmd, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "--model ") {
+				modelPath := strings.TrimSpace(strings.TrimPrefix(line, "--model "))
+				if absPath, err := filepath.Abs(modelPath); err == nil {
+					filePathToModels[absPath] = append(filePathToModels[absPath], modelID)
+				}
+				break
+			}
+		}
+	}
+
+	// Find and remove duplicates (keep the first one, remove others)
+	var removedModels []string
+
+	for _, modelIDs := range filePathToModels {
+		if len(modelIDs) > 1 {
+			// Keep the first model, remove the rest
+			for i := 1; i < len(modelIDs); i++ {
+				delete(models, modelIDs[i])
+				removedModels = append(removedModels, modelIDs[i])
+			}
+		}
+	}
+
+	// Update groups to remove deleted models
+	if groups, ok := config["groups"].(map[string]interface{}); ok {
+		for _, groupInterface := range groups {
+			if group, ok := groupInterface.(map[string]interface{}); ok {
+				if members, ok := group["members"].([]interface{}); ok {
+					var newMembers []interface{}
+					for _, member := range members {
+						if memberStr, ok := member.(string); ok {
+							// Keep only non-removed models
+							found := false
+							for _, removed := range removedModels {
+								if memberStr == removed {
+									found = true
+									break
+								}
+							}
+							if !found {
+								newMembers = append(newMembers, member)
+							}
+						}
+					}
+					group["members"] = newMembers
+				}
+			}
+		}
+	}
+
+	// Write updated config back if duplicates were found
+	if len(removedModels) > 0 {
+		newConfigData, err := yaml.Marshal(config)
+		if err != nil {
+			return 0, fmt.Errorf("failed to marshal config YAML: %v", err)
+		}
+
+		err = os.WriteFile(configPath, newConfigData, 0644)
+		if err != nil {
+			return 0, fmt.Errorf("failed to write config file: %v", err)
+		}
+	}
+
+	return len(removedModels), nil
+}
+
 // appendModelToConfig appends a new model configuration to existing config.yaml
 func (pm *ProxyManager) appendModelToConfig(configPath, modelID string, modelConfig map[string]interface{}) error {
 	// Read existing config
@@ -2024,97 +2243,6 @@ func (pm *ProxyManager) loadConfig() error {
 	return nil
 }
 
-// scanAndAddDownloadedModels scans the downloads folder and automatically adds any models not in the config
-func (pm *ProxyManager) scanAndAddDownloadedModels(configPath string) ([]string, error) {
-	// Get the downloads directory
-	downloadDir := pm.config.DownloadDir
-	if downloadDir == "" {
-		downloadDir = "./downloads"
-	}
-
-	// Convert to absolute path
-	absDownloadDir, err := filepath.Abs(downloadDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for downloads directory: %v", err)
-	}
-
-	// Check if downloads directory exists
-	if _, err := os.Stat(absDownloadDir); os.IsNotExist(err) {
-		return []string{}, nil // No downloads directory, nothing to add
-	}
-
-	// Read current config
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %v", err)
-	}
-
-	var config map[string]interface{}
-	err = yaml.Unmarshal(configData, &config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse config YAML: %v", err)
-	}
-
-	// Get existing models
-	existingModels := make(map[string]bool)
-	if modelsMap, ok := config["models"].(map[string]interface{}); ok {
-		for modelKey := range modelsMap {
-			existingModels[modelKey] = true
-		}
-	}
-
-	// Scan downloads directory for .gguf files
-	files, err := os.ReadDir(absDownloadDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read downloads directory: %v", err)
-	}
-
-	var addedModels []string
-
-	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(strings.ToLower(file.Name()), ".gguf") {
-			continue
-		}
-
-		modelPath := filepath.Join(absDownloadDir, file.Name())
-
-		// Check if file is a valid GGUF file
-		if !pm.fileExists(modelPath) {
-			continue
-		}
-
-		// Generate model ID from filename
-		modelID := pm.generateModelID(file.Name())
-
-		// Check if model is already in config
-		if existingModels[modelID] {
-			continue
-		}
-
-		pm.proxyLogger.Infof("Auto-adding model from downloads: %s", file.Name())
-		pm.proxyLogger.Infof("Model path: %s", modelPath)
-
-		// Use autosetup to generate optimal configuration
-		modelName := strings.TrimSuffix(file.Name(), ".gguf")
-		description := fmt.Sprintf("Auto-added from downloads - %s", modelName)
-		config, err := pm.generateModelConfig(modelID, modelName, description, modelPath, true)
-		if err != nil {
-			pm.proxyLogger.Warnf("Failed to generate config for %s: %v", file.Name(), err)
-			continue
-		}
-
-		// Add model to config
-		err = pm.addModelToConfig(configPath, modelID, config)
-		if err != nil {
-			pm.proxyLogger.Warnf("Failed to add model %s to config: %v", modelID, err)
-			continue
-		}
-
-		addedModels = append(addedModels, modelID)
-	}
-
-	return addedModels, nil
-}
 
 // Helper function to add a single model to config file
 func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig map[string]interface{}) error {
@@ -2146,9 +2274,15 @@ func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig
 		config["startPort"] = 5800
 	}
 	if config["macros"] == nil {
+		// Build cross-platform binary path
+		binaryPath := filepath.Join("binaries", "llama-server", "build", "bin", "llama-server")
+		if runtime.GOOS == "windows" {
+			binaryPath += ".exe"
+		}
+		
 		config["macros"] = map[string]interface{}{
-			"llama-embed-base":  "binaries\\llama-server\\llama-server.exe --host 127.0.0.1 --port ${PORT} --embedding",
-			"llama-server-base": "binaries\\llama-server\\llama-server.exe --host 127.0.0.1 --port ${PORT} --metrics --flash-attn auto --no-warmup --dry-penalty-last-n 0 --batch-size 2048 --ubatch-size 512",
+			"llama-embed-base":  fmt.Sprintf("%s --host 127.0.0.1 --port ${PORT} --embedding", binaryPath),
+			"llama-server-base": fmt.Sprintf("%s --host 127.0.0.1 --port ${PORT} --metrics --flash-attn auto --no-warmup --dry-penalty-last-n 0 --batch-size 2048 --ubatch-size 512", binaryPath),
 		}
 	}
 
@@ -2436,6 +2570,133 @@ func (pm *ProxyManager) apiRemoveModelFolders(c *gin.Context) {
 	})
 }
 
+func (pm *ProxyManager) apiCleanupDuplicateModels(c *gin.Context) {
+	configPath := "config.yaml"
+	if !pm.fileExists(configPath) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "config.yaml not found"})
+		return
+	}
+
+	// Read current config
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to read config: %v", err)})
+		return
+	}
+
+	var config map[string]interface{}
+	err = yaml.Unmarshal(configData, &config)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to parse config: %v", err)})
+		return
+	}
+
+	models, ok := config["models"].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"message": "No models found in config", "duplicatesRemoved": 0})
+		return
+	}
+
+	// Track file paths and find duplicates
+	filePathToModels := make(map[string][]string)
+	
+	for modelID, modelConfigInterface := range models {
+		modelConfig, ok := modelConfigInterface.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		
+		cmd, ok := modelConfig["cmd"].(string)
+		if !ok {
+			continue
+		}
+
+		// Extract model file path from command
+		lines := strings.Split(cmd, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "--model ") {
+				modelPath := strings.TrimSpace(strings.TrimPrefix(line, "--model "))
+				if absPath, err := filepath.Abs(modelPath); err == nil {
+					filePathToModels[absPath] = append(filePathToModels[absPath], modelID)
+				}
+				break
+			}
+		}
+	}
+
+	// Find and remove duplicates (keep the first one, remove others)
+	var removedModels []string
+	var keptModels []string
+
+	for _, modelIDs := range filePathToModels {
+		if len(modelIDs) > 1 {
+			// Keep the first model, remove the rest
+			keptModels = append(keptModels, modelIDs[0])
+			for i := 1; i < len(modelIDs); i++ {
+				delete(models, modelIDs[i])
+				removedModels = append(removedModels, modelIDs[i])
+			}
+		}
+	}
+
+	// Update groups to remove deleted models
+	if groups, ok := config["groups"].(map[string]interface{}); ok {
+		for _, groupInterface := range groups {
+			if group, ok := groupInterface.(map[string]interface{}); ok {
+				if members, ok := group["members"].([]interface{}); ok {
+					var newMembers []interface{}
+					for _, member := range members {
+						if memberStr, ok := member.(string); ok {
+							// Keep only non-removed models
+							found := false
+							for _, removed := range removedModels {
+								if memberStr == removed {
+									found = true
+									break
+								}
+							}
+							if !found {
+								newMembers = append(newMembers, member)
+							}
+						}
+					}
+					group["members"] = newMembers
+				}
+			}
+		}
+	}
+
+	// Write updated config back
+	if len(removedModels) > 0 {
+		newConfigData, err := yaml.Marshal(config)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to marshal config: %v", err)})
+			return
+		}
+
+		err = os.WriteFile(configPath, newConfigData, 0644)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to write config: %v", err)})
+			return
+		}
+
+		// Reload config
+		err = pm.loadConfig()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to reload config: %v", err)})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Cleanup completed. Removed %d duplicate models.", len(removedModels)),
+		"duplicatesRemoved": len(removedModels),
+		"removedModels": removedModels,
+		"keptModels": keptModels,
+	})
+}
+
 func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 	var req struct {
 		Options autosetup.SetupOptions `json:"options"`
@@ -2512,12 +2773,8 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 	// CLI uses: autosetup.AutoSetupWithOptions(modelsFolder, options)
 	// This ensures identical behavior between UI and CLI
 
-	// For multi-folder support, we'll use the first folder as primary
-	// TODO: Enhance autosetup to support multiple folders natively
-	mainFolder := folderPaths[0]
-
-	// Call the exact same function as CLI
-	err = autosetup.AutoSetupWithOptions(mainFolder, req.Options)
+	// Use multi-folder autosetup for proper handling of all tracked folders
+	err = autosetup.AutoSetupMultiFoldersWithOptions(folderPaths, req.Options)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("AutoSetup failed (same as CLI): %v", err)})
 		return
@@ -2549,7 +2806,7 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 		"scanSummary":    scanSummary,
 		"config":         string(configData),
 		"source":         "autosetup.AutoSetupWithOptions() - identical to CLI",
-		"primaryFolder":  mainFolder,
+		"primaryFolder":  folderPaths[0],
 		"note":           "Using same function as CLI for guaranteed consistency",
 		"autoRestart":    "Soft restart triggered automatically",
 	})

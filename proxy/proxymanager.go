@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prave/ClaraCore/autosetup"
 	"github.com/prave/ClaraCore/event"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -107,57 +109,14 @@ func New(config Config) *ProxyManager {
 
 	pm.setupGinEngine()
 
-	// Validate models on startup and remove missing ones
-	configReloaded := false
-	if pm.fileExists("config.yaml") {
-		removedModels, err := pm.validateAndCleanupConfig("config.yaml")
-		if err != nil {
-			proxyLogger.Warnf("Failed to validate models on startup: %v", err)
-		} else if len(removedModels) > 0 {
-			proxyLogger.Infof("Removed %d missing models from config on startup: %v", len(removedModels), removedModels)
+	// No automatic config modifications on startup - keep it clean and predictable
 
-			// Reload config after cleanup
-			if newConfig, err := LoadConfig("config.yaml"); err == nil {
-				pm.config = newConfig
-				configReloaded = true
-
-				// Recreate process groups with updated config
-				pm.processGroups = make(map[string]*ProcessGroup)
-				for groupID := range newConfig.Groups {
-					processGroup := NewProcessGroup(groupID, newConfig, proxyLogger, upstreamLogger)
-					pm.processGroups[groupID] = processGroup
-				}
-			} else {
-				proxyLogger.Warnf("Failed to reload config after model cleanup: %v", err)
-			}
+	// Subscribe to download completion to add folder to DB and auto-regenerate config
+	defer event.On(func(e DownloadProgressEvent) {
+		if e.Info != nil && e.Info.Status == StatusCompleted {
+			go pm.handleDownloadCompleted(e.Info.FilePath)
 		}
-	}
-
-	// Scan downloads folder and auto-add any new models
-	if pm.fileExists("config.yaml") {
-		addedModels, err := pm.scanAndAddDownloadedModels("config.yaml")
-		if err != nil {
-			proxyLogger.Warnf("Failed to scan downloads folder on startup: %v", err)
-		} else if len(addedModels) > 0 {
-			proxyLogger.Infof("Auto-added %d new models from downloads folder: %v", len(addedModels), addedModels)
-
-			// Reload config after adding models (only if not already reloaded)
-			if !configReloaded {
-				if newConfig, err := LoadConfig("config.yaml"); err == nil {
-					pm.config = newConfig
-
-					// Recreate process groups with updated config
-					pm.processGroups = make(map[string]*ProcessGroup)
-					for groupID := range newConfig.Groups {
-						processGroup := NewProcessGroup(groupID, newConfig, proxyLogger, upstreamLogger)
-						pm.processGroups[groupID] = processGroup
-					}
-				} else {
-					proxyLogger.Warnf("Failed to reload config after adding models: %v", err)
-				}
-			}
-		}
-	}
+	})()
 
 	// run any startup hooks
 	if len(config.Hooks.OnStartup.Preload) > 0 {
@@ -188,6 +147,105 @@ func New(config Config) *ProxyManager {
 	}
 
 	return pm
+}
+
+// quotePath properly quotes file paths that contain spaces or special characters
+func (pm *ProxyManager) quotePath(path string) string {
+	// Always quote paths that contain spaces (common in external drives like "T7 Shield")
+	if strings.Contains(path, " ") {
+		// Escape any existing quotes and wrap in quotes
+		escaped := strings.ReplaceAll(path, "\"", "\\\"")
+		return fmt.Sprintf("\"%s\"", escaped)
+	}
+	return path
+}
+
+// handleDownloadCompleted ensures the downloaded file's folder is tracked, then regenerates config
+func (pm *ProxyManager) handleDownloadCompleted(downloadedFilePath string) {
+    // Derive folder from file path
+    absFile, err := filepath.Abs(downloadedFilePath)
+    if err != nil {
+        pm.proxyLogger.Warnf("Failed to resolve downloaded file path: %v", err)
+        return
+    }
+    folderPath := filepath.Dir(absFile)
+
+    // Update model folder database if folder is not already present
+    if err := pm.updateModelFolderDatabase([]string{folderPath}, true); err != nil {
+        pm.proxyLogger.Warnf("Failed to update model folder database for %s: %v", folderPath, err)
+        // Continue anyway to try regenerate
+    } else {
+        pm.proxyLogger.Infof("Added/updated model folder in DB: %s", folderPath)
+    }
+
+    // Load persisted settings; fallback to defaults if missing
+    options := autosetup.SetupOptions{
+        EnableJinja:      true,
+        ThroughputFirst:  true,
+        MinContext:       16384,
+        PreferredContext: 32768,
+    }
+    if s, err := pm.loadSystemSettings(); err == nil && s != nil {
+        options.EnableJinja = s.EnableJinja
+        options.ThroughputFirst = s.ThroughputFirst
+        if s.PreferredContext > 0 { options.PreferredContext = s.PreferredContext }
+        if s.RAMGB > 0 { options.ForceRAM = s.RAMGB }
+        if s.VRAMGB > 0 { options.ForceVRAM = s.VRAMGB }
+        if s.Backend != "" { options.ForceBackend = s.Backend }
+    }
+
+    // Reuse same logic used by the API endpoint: scan DB and autosetup
+    db, err := pm.loadModelFolderDatabase()
+    if err != nil {
+        pm.proxyLogger.Warnf("Failed to load folder DB for auto-reconfigure: %v", err)
+        return
+    }
+    var folderPaths []string
+    for _, f := range db.Folders {
+        if f.Enabled {
+            folderPaths = append(folderPaths, f.Path)
+        }
+    }
+    if len(folderPaths) == 0 {
+        pm.proxyLogger.Warnf("Auto-reconfigure skipped: no enabled folders in DB")
+        return
+    }
+
+    // Collect models from all folders
+    var allModels []autosetup.ModelInfo
+    for _, p := range folderPaths {
+        models, err := autosetup.DetectModelsWithOptions(p, options)
+        if err != nil {
+            pm.proxyLogger.Warnf("Folder scan failed (%s): %v", p, err)
+            continue
+        }
+        allModels = append(allModels, models...)
+    }
+    if len(allModels) == 0 {
+        pm.proxyLogger.Warnf("Auto-reconfigure skipped: no models found in tracked folders")
+        return
+    }
+
+    // Use autosetup to generate config
+    system := autosetup.DetectSystem()
+    _ = autosetup.EnhanceSystemInfo(&system)
+    binariesDir := filepath.Join(".", "binaries")
+    binary, err := autosetup.DownloadBinary(binariesDir, system)
+    if err != nil {
+        pm.proxyLogger.Warnf("Auto-reconfigure failed to ensure binary: %v", err)
+        return
+    }
+    generator := autosetup.NewConfigGenerator(folderPaths[0], binary.Path, "config.yaml", options)
+    generator.SetSystemInfo(&system)
+    generator.SetAvailableVRAM(system.TotalVRAMGB)
+    if err := generator.GenerateConfig(allModels); err != nil {
+        pm.proxyLogger.Warnf("Auto-reconfigure failed to generate config: %v", err)
+        return
+    }
+
+    // Trigger soft reload for all clients (same event used elsewhere)
+    pm.proxyLogger.Info("Auto-restarting after model download and config regeneration")
+    event.Emit(ConfigFileChangedEvent{ReloadingState: ReloadingStateStart})
 }
 
 func (pm *ProxyManager) setupGinEngine() {

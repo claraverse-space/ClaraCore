@@ -184,12 +184,12 @@ func (scg *ConfigGenerator) writeModel(config *strings.Builder, model ModelInfo,
 	} else {
 		config.WriteString("      ${llama-server-base}\n")
 	}
-	config.WriteString(fmt.Sprintf("      --model %s\n", model.Path))
+	config.WriteString(fmt.Sprintf("      --model %s\n", quotePath(model.Path)))
 
 	// Add --mmproj parameter if a matching mmproj file is found
 	mmprojPath := scg.findMatchingMMProj(model.Path)
 	if mmprojPath != "" {
-		config.WriteString(fmt.Sprintf("      --mmproj %s\n", mmprojPath))
+		config.WriteString(fmt.Sprintf("      --mmproj %s\n", quotePath(mmprojPath)))
 	}
 
 	// Smart GPU layer allocation algorithm (applies to all models including embeddings)
@@ -794,6 +794,17 @@ func (scg *ConfigGenerator) findMatchingMMProj(modelPath string) string {
 		}
 	}
 	return "" // No matching mmproj found
+}
+
+// quotePath properly quotes file paths that contain spaces or special characters
+func quotePath(path string) string {
+	// Always quote paths that contain spaces (common in external drives like "T7 Shield")
+	if strings.Contains(path, " ") {
+		// Escape any existing quotes and wrap in quotes
+		escaped := strings.ReplaceAll(path, "\"", "\\\"")
+		return fmt.Sprintf("\"%s\"", escaped)
+	}
+	return path
 }
 
 // isEmbeddingModel determines if a model is an embedding model using GGUF metadata
