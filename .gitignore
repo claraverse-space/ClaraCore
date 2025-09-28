@@ -18,3 +18,4 @@ claracore.exe
 /downloads/gguf/gguf/gguf/gguf/gguf/*
 claracore.exe
 /downloads/*
+model_folders.json
