@@ -26,7 +26,7 @@ While maintaining 100% compatibility with llama-swap, ClaraCore adds:
 
 ```bash
 # One command setup - that's it!
-./claracore --models-folder /path/to/your/gguf/models
+./claracore --models-folder /path/to/your/gguf/models --backend vulkan
 
 # ClaraCore will:
 # 1. Scan for GGUF files
