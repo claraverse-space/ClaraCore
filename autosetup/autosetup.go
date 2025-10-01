@@ -155,7 +155,7 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 
 	// Create binaries directory
 	binariesDir := filepath.Join(".", "binaries")
-	binary, err := DownloadBinary(binariesDir, system)
+	binary, err := DownloadBinary(binariesDir, system, options.ForceBackend)
 	if err != nil {
 		return fmt.Errorf("failed to download binary: %v", err)
 	}
@@ -276,10 +276,10 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 	// Detect models from all folders
 	var allModels []ModelInfo
 	var allMMProjMatches []MMProjMatch
-	
+
 	for _, folder := range validFolders {
 		fmt.Printf("\n🔍 Scanning folder: %s\n", folder)
-		
+
 		// Detect models with options
 		models, err := DetectModelsWithOptions(folder, options)
 		if err != nil {
@@ -358,7 +358,7 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 
 	// Create binaries directory
 	binariesDir := filepath.Join(".", "binaries")
-	binary, err := DownloadBinary(binariesDir, system)
+	binary, err := DownloadBinary(binariesDir, system, options.ForceBackend)
 	if err != nil {
 		return fmt.Errorf("failed to download binary: %v", err)
 	}
@@ -408,8 +408,8 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 	generator := NewConfigGenerator(validFolders[0], binary.Path, configPath, options)
 	generator.SetAvailableVRAM(totalVRAM)
 	generator.SetBinaryType(binary.Type)
-	generator.SetSystemInfo(&system)              // Pass system info for optimal parameters
-	generator.SetMMProjMatches(allMMProjMatches)  // Pass all mmproj matches to config generator
+	generator.SetSystemInfo(&system)             // Pass system info for optimal parameters
+	generator.SetMMProjMatches(allMMProjMatches) // Pass all mmproj matches to config generator
 
 	fmt.Printf("⚙️  Generating configuration (SMART GPU ALLOCATION: fit max layers in VRAM)...\n")
 	err = generator.GenerateConfig(allModels) // Use ALL models from ALL folders

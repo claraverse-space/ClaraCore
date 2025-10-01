@@ -15,12 +15,13 @@ import (
 	"syscall"
 	"time"
 
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
+
 	"github.com/prave/ClaraCore/autosetup"
 	"github.com/prave/ClaraCore/event"
-    "encoding/json"
-    "os"
-    "path/filepath"
-    "runtime"
 )
 
 type ProcessState string
@@ -218,13 +219,13 @@ func (p *Process) start() error {
 		// Check if this is a "executable file not found" error - indicates missing binary
 		if strings.Contains(err.Error(), "executable file not found") || strings.Contains(err.Error(), "no such file or directory") {
 			p.proxyLogger.Warnf("<%s> Binary not found, attempting to download: %v", p.ID, err)
-			
+
 			// Try to self-heal by downloading the binary
 			if healErr := p.attemptBinaryDownload(); healErr != nil {
 				p.proxyLogger.Errorf("<%s> Failed to download binary for self-healing: %v", p.ID, healErr)
 			} else {
 				p.proxyLogger.Infof("<%s> Successfully downloaded binary, retrying start...", p.ID)
-				
+
 				// Retry the start with the newly downloaded binary
 				// Reset the command with updated args
 				newArgs, argErr := p.config.SanitizedCommand()
@@ -235,7 +236,7 @@ func (p *Process) start() error {
 					p.cmd.Env = append(p.cmd.Environ(), p.config.Env...)
 					p.cmd.Cancel = p.cmdStopUpstreamProcess
 					p.cmd.WaitDelay = p.gracefulStopTimeout
-					
+
 					p.proxyLogger.Debugf("<%s> Retrying start command after binary download: %s", p.ID, strings.Join(newArgs, " "))
 					if retryErr := p.cmd.Start(); retryErr == nil {
 						p.proxyLogger.Infof("<%s> Successfully started after binary download", p.ID)
@@ -272,7 +273,7 @@ func (p *Process) start() error {
 				}
 			}
 		}
-		
+
 		if curState, swapErr := p.swapState(StateStarting, StateStopped); swapErr != nil {
 			p.state = StateStopped // force it into a stopped state
 			return fmt.Errorf(
@@ -371,49 +372,85 @@ startupSuccess:
 
 // attemptOneShotRegenerate regenerates config.yaml from tracked folders using saved settings.
 func (p *Process) attemptOneShotRegenerate() error {
-    // Load folder DB
-    dbPath := "model_folders.json"
-    data, err := os.ReadFile(dbPath)
-    if err != nil {
-        return fmt.Errorf("no folder DB: %v", err)
-    }
-    var db struct{ Folders []struct{ Path string; Enabled bool } `json:"folders"` }
-    if err := json.Unmarshal(data, &db); err != nil {
-        return fmt.Errorf("invalid folder DB: %v", err)
-    }
-    var folders []string
-    for _, f := range db.Folders { if f.Enabled { folders = append(folders, f.Path) } }
-    if len(folders) == 0 { return fmt.Errorf("no enabled folders") }
+	// Load folder DB
+	dbPath := "model_folders.json"
+	data, err := os.ReadFile(dbPath)
+	if err != nil {
+		return fmt.Errorf("no folder DB: %v", err)
+	}
+	var db struct {
+		Folders []struct {
+			Path    string
+			Enabled bool
+		} `json:"folders"`
+	}
+	if err := json.Unmarshal(data, &db); err != nil {
+		return fmt.Errorf("invalid folder DB: %v", err)
+	}
+	var folders []string
+	for _, f := range db.Folders {
+		if f.Enabled {
+			folders = append(folders, f.Path)
+		}
+	}
+	if len(folders) == 0 {
+		return fmt.Errorf("no enabled folders")
+	}
 
-    // Load settings if present
-    opts := autosetup.SetupOptions{ EnableJinja: true, ThroughputFirst: true, MinContext: 16384, PreferredContext: 32768 }
-    if sdata, err := os.ReadFile("settings.json"); err == nil {
-        var s struct{ Backend string `json:"backend"`; VRAMGB float64 `json:"vramGB"`; RAMGB float64 `json:"ramGB"`; PreferredContext int `json:"preferredContext"`; ThroughputFirst bool `json:"throughputFirst"`; EnableJinja bool `json:"enableJinja"` }
-        if json.Unmarshal(sdata, &s) == nil {
-            opts.EnableJinja = s.EnableJinja
-            opts.ThroughputFirst = s.ThroughputFirst
-            if s.PreferredContext > 0 { opts.PreferredContext = s.PreferredContext }
-            if s.RAMGB > 0 { opts.ForceRAM = s.RAMGB }
-            if s.VRAMGB > 0 { opts.ForceVRAM = s.VRAMGB }
-            if s.Backend != "" { opts.ForceBackend = s.Backend }
-        }
-    }
+	// Load settings if present
+	opts := autosetup.SetupOptions{EnableJinja: true, ThroughputFirst: true, MinContext: 16384, PreferredContext: 32768}
+	if sdata, err := os.ReadFile("settings.json"); err == nil {
+		var s struct {
+			Backend          string  `json:"backend"`
+			VRAMGB           float64 `json:"vramGB"`
+			RAMGB            float64 `json:"ramGB"`
+			PreferredContext int     `json:"preferredContext"`
+			ThroughputFirst  bool    `json:"throughputFirst"`
+			EnableJinja      bool    `json:"enableJinja"`
+		}
+		if json.Unmarshal(sdata, &s) == nil {
+			opts.EnableJinja = s.EnableJinja
+			opts.ThroughputFirst = s.ThroughputFirst
+			if s.PreferredContext > 0 {
+				opts.PreferredContext = s.PreferredContext
+			}
+			if s.RAMGB > 0 {
+				opts.ForceRAM = s.RAMGB
+			}
+			if s.VRAMGB > 0 {
+				opts.ForceVRAM = s.VRAMGB
+			}
+			if s.Backend != "" {
+				opts.ForceBackend = s.Backend
+			}
+		}
+	}
 
-    // Detect and generate
-    var allModels []autosetup.ModelInfo
-    for _, pth := range folders {
-        models, err := autosetup.DetectModelsWithOptions(pth, opts)
-        if err == nil { allModels = append(allModels, models...) }
-    }
-    if len(allModels) == 0 { return fmt.Errorf("no models found") }
-    system := autosetup.DetectSystem(); _ = autosetup.EnhanceSystemInfo(&system)
-    bin, err := autosetup.DownloadBinary(filepath.Join(".", "binaries"), system)
-    if err != nil { return err }
-    gen := autosetup.NewConfigGenerator(folders[0], bin.Path, "config.yaml", opts)
-    gen.SetSystemInfo(&system); gen.SetAvailableVRAM(system.TotalVRAMGB)
-    if err := gen.GenerateConfig(allModels); err != nil { return err }
-    event.Emit(ConfigFileChangedEvent{ ReloadingState: ReloadingStateStart })
-    return nil
+	// Detect and generate
+	var allModels []autosetup.ModelInfo
+	for _, pth := range folders {
+		models, err := autosetup.DetectModelsWithOptions(pth, opts)
+		if err == nil {
+			allModels = append(allModels, models...)
+		}
+	}
+	if len(allModels) == 0 {
+		return fmt.Errorf("no models found")
+	}
+	system := autosetup.DetectSystem()
+	_ = autosetup.EnhanceSystemInfo(&system)
+	bin, err := autosetup.DownloadBinary(filepath.Join(".", "binaries"), system, opts.ForceBackend)
+	if err != nil {
+		return err
+	}
+	gen := autosetup.NewConfigGenerator(folders[0], bin.Path, "config.yaml", opts)
+	gen.SetSystemInfo(&system)
+	gen.SetAvailableVRAM(system.TotalVRAMGB)
+	if err := gen.GenerateConfig(allModels); err != nil {
+		return err
+	}
+	event.Emit(ConfigFileChangedEvent{ReloadingState: ReloadingStateStart})
+	return nil
 }
 
 // Stop will wait for inflight requests to complete before stopping the process.
@@ -681,20 +718,20 @@ func (p *Process) cmdStopUpstreamProcess() error {
 // attemptBinaryDownload tries to download the llama-server binary for self-healing
 func (p *Process) attemptBinaryDownload() error {
 	p.proxyLogger.Infof("<%s> Attempting to download llama-server binary for self-healing...", p.ID)
-	
+
 	// Detect system information
 	system := autosetup.DetectSystem()
 	err := autosetup.EnhanceSystemInfo(&system)
 	if err != nil {
 		return fmt.Errorf("failed to detect system info: %v", err)
 	}
-	
+
 	// Download binary to the binaries directory
-	binary, err := autosetup.DownloadBinary("binaries", system)
+	binary, err := autosetup.DownloadBinary("binaries", system, "")
 	if err != nil {
 		return fmt.Errorf("failed to download binary: %v", err)
 	}
-	
+
 	p.proxyLogger.Infof("<%s> Successfully downloaded binary to: %s", p.ID, binary.Path)
 	return nil
 }

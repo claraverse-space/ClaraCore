@@ -198,6 +198,8 @@ const Configuration: React.FC = () => {
       });
 
       if (response.ok) {
+        const result = await response.json();
+        
         // Update the local model state to reflect changes
         const updatedModel = {
           ...selectedModel,
@@ -211,6 +213,14 @@ const Configuration: React.FC = () => {
         setSelectedModel(updatedModel);
 
         showNotification('success', 'Model settings saved successfully! YAML structure preserved.');
+        
+        // Check if restart is required and show prompt
+        if (result.requiresRestart) {
+          const shouldRestart = window.confirm(result.restartMessage || 'Configuration has been updated. Would you like to restart the server to apply changes?');
+          if (shouldRestart) {
+            await handleSoftRestart();
+          }
+        }
       } else {
         const error = await response.json();
         throw new Error(error.error || 'Failed to save configuration');
@@ -219,6 +229,25 @@ const Configuration: React.FC = () => {
       showNotification('error', 'Failed to save model settings: ' + error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSoftRestart = async () => {
+    try {
+      showNotification('info', 'Restarting server to apply configuration changes...');
+      const response = await fetch('/api/server/restart', {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        // Soft restart doesn't kill the server, just reload after a moment
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Failed to soft restart server:', error);
+      showNotification('error', 'Failed to restart server: ' + error);
     }
   };
 

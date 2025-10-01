@@ -962,8 +962,10 @@ func (pm *ProxyManager) apiUpdateConfig(c *gin.Context) {
 	event.Emit(ConfigFileChangedEvent{})
 
 	c.JSON(http.StatusOK, gin.H{
-		"status": "Configuration updated successfully",
-		"backup": backupPath,
+		"status":          "Configuration updated successfully",
+		"backup":          backupPath,
+		"requiresRestart": true,
+		"restartMessage":  "Configuration has been updated. Would you like to restart the server to apply changes?",
 	})
 }
 
@@ -1385,6 +1387,8 @@ func (pm *ProxyManager) apiAppendModelToConfig(c *gin.Context) {
 			"isEmbedding":   targetModel.IsEmbedding,
 			"contextLength": targetModel.ContextLength,
 		},
+		"requiresRestart": true,
+		"restartMessage":  "New model has been added to configuration. Would you like to restart the server to apply changes?",
 	})
 }
 
@@ -1624,7 +1628,7 @@ func (pm *ProxyManager) generateSmartModelConfig(model autosetup.ModelInfo, opti
 
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
 		// Try to download if not exists (same as command-line)
-		binary, err := autosetup.DownloadBinary("binaries", system)
+		binary, err := autosetup.DownloadBinary("binaries", system, options.ForceBackend)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find or download binary: %v", err)
 		}
@@ -1692,10 +1696,13 @@ func (pm *ProxyManager) apiGenerateAllModels(c *gin.Context) {
 	var req struct {
 		FolderPath string `json:"folderPath"`
 		Options    struct {
-			EnableJinja      bool `json:"enableJinja"`
-			ThroughputFirst  bool `json:"throughputFirst"`
-			MinContext       int  `json:"minContext"`
-			PreferredContext int  `json:"preferredContext"`
+			EnableJinja      bool    `json:"enableJinja"`
+			ThroughputFirst  bool    `json:"throughputFirst"`
+			MinContext       int     `json:"minContext"`
+			PreferredContext int     `json:"preferredContext"`
+			ForceBackend     string  `json:"forceBackend"` // User-selected backend
+			ForceVRAM        float64 `json:"forceVRAM"`    // User-selected VRAM
+			ForceRAM         float64 `json:"forceRAM"`     // User-selected RAM
 		} `json:"options"`
 	}
 
@@ -1713,12 +1720,15 @@ func (pm *ProxyManager) apiGenerateAllModels(c *gin.Context) {
 	progressMgr := autosetup.GetProgressManager()
 	progressMgr.Reset()
 
-	// Use SAME options as command-line
+	// Use SAME options as command-line, but with user-selected overrides
 	options := autosetup.SetupOptions{
 		EnableJinja:      req.Options.EnableJinja || true,
 		ThroughputFirst:  req.Options.ThroughputFirst || true,
 		MinContext:       req.Options.MinContext,
 		PreferredContext: req.Options.PreferredContext,
+		ForceBackend:     req.Options.ForceBackend, // Use user-selected backend
+		ForceVRAM:        req.Options.ForceVRAM,    // Use user-selected VRAM
+		ForceRAM:         req.Options.ForceRAM,     // Use user-selected RAM
 	}
 
 	if options.MinContext == 0 {
@@ -1929,6 +1939,8 @@ func (pm *ProxyManager) apiUpdateModelParams(c *gin.Context) {
 			"cacheType":   req.CacheType,
 			"batchSize":   req.BatchSize,
 		},
+		"requiresRestart": true,
+		"restartMessage":  "Model configuration has been updated. Would you like to restart the server to apply changes?",
 	})
 }
 

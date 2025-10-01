@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // SystemInfo contains information about the current system
@@ -119,50 +120,90 @@ func DetectSystem() SystemInfo {
 }
 
 // GetOptimalBinaryURL returns the best binary download URL for the system
-func GetOptimalBinaryURL(system SystemInfo) (string, string, error) {
+func GetOptimalBinaryURL(system SystemInfo, forceBackend string) (string, string, error) {
 	var filename, binaryType string
 
+	// If a backend is forced, use that instead of auto-detection
+	if forceBackend != "" {
+		binaryType = forceBackend
+		fmt.Printf("🎯 Using forced backend: %s\n", forceBackend)
+	} else {
+		// Auto-detect best backend for the system
+		switch system.OS {
+		case "windows":
+			// Windows: CUDA > ROCm > Vulkan > CPU
+			if system.HasCUDA {
+				binaryType = "cuda"
+			} else if system.HasROCm {
+				binaryType = "rocm"
+			} else if system.HasVulkan {
+				binaryType = "vulkan"
+			} else {
+				binaryType = "cpu"
+			}
+		case "linux":
+			// Linux: CUDA > ROCm > Vulkan > CPU
+			if system.HasCUDA {
+				binaryType = "cuda"
+			} else if system.HasROCm {
+				binaryType = "rocm"
+			} else if system.HasVulkan {
+				binaryType = "vulkan"
+			} else {
+				binaryType = "cpu"
+			}
+		case "darwin":
+			// macOS: Metal (Apple Silicon) > CPU (Intel)
+			if system.Architecture == "arm64" {
+				binaryType = "metal"
+			} else {
+				binaryType = "cpu"
+			}
+		default:
+			return "", "", fmt.Errorf("unsupported operating system: %s", system.OS)
+		}
+	}
+
+	// Now determine the filename based on the chosen backend
 	switch system.OS {
 	case "windows":
-		// Windows: CUDA > ROCm > Vulkan > CPU
-		if system.HasCUDA {
+		switch binaryType {
+		case "cuda":
 			filename = "llama-b6527-bin-win-cuda-12.4-x64.zip"
-			binaryType = "cuda"
-		} else if system.HasROCm {
+		case "rocm":
 			filename = "llama-b6527-bin-win-rocm-x64.zip"
-			binaryType = "rocm"
-		} else if system.HasVulkan {
+		case "vulkan":
 			filename = "llama-b6527-bin-win-vulkan-x64.zip"
-			binaryType = "vulkan"
-		} else {
+		case "cpu":
 			filename = "llama-b6527-bin-win-cpu-x64.zip"
-			binaryType = "cpu"
+		default:
+			return "", "", fmt.Errorf("unsupported backend '%s' for Windows", binaryType)
 		}
 	case "linux":
-		// Linux: CUDA > ROCm > Vulkan > CPU
-		if system.HasCUDA {
+		switch binaryType {
+		case "cuda":
 			filename = "llama-b6527-bin-ubuntu-x64.zip"
-			binaryType = "cuda"
-		} else if system.HasROCm {
+		case "rocm":
 			filename = "llama-b6527-bin-ubuntu-rocm-x64.zip"
-			binaryType = "rocm"
-		} else if system.HasVulkan {
+		case "vulkan":
 			filename = "llama-b6527-bin-ubuntu-vulkan-x64.zip"
-			binaryType = "vulkan"
-		} else {
+		case "cpu":
 			filename = "llama-b6527-bin-ubuntu-x64.zip"
-			binaryType = "cpu"
+		default:
+			return "", "", fmt.Errorf("unsupported backend '%s' for Linux", binaryType)
 		}
 	case "darwin":
-		// macOS: Metal (Apple Silicon) > CPU (Intel)
-		if system.Architecture == "arm64" {
-			// Apple Silicon Macs - Metal acceleration
+		switch binaryType {
+		case "metal":
 			filename = "llama-b6527-bin-macos-arm64.zip"
-			binaryType = "metal"
-		} else {
-			// Intel Macs - CPU only
-			filename = "llama-b6527-bin-macos-x64.zip"
-			binaryType = "cpu"
+		case "cpu":
+			if system.Architecture == "arm64" {
+				filename = "llama-b6527-bin-macos-arm64.zip"
+			} else {
+				filename = "llama-b6527-bin-macos-x64.zip"
+			}
+		default:
+			return "", "", fmt.Errorf("unsupported backend '%s' for macOS", binaryType)
 		}
 	default:
 		return "", "", fmt.Errorf("unsupported operating system: %s", system.OS)
@@ -172,9 +213,58 @@ func GetOptimalBinaryURL(system SystemInfo) (string, string, error) {
 	return url, binaryType, nil
 }
 
+// removeDirectoryRobust attempts to remove a directory with retry logic for Windows file locking issues
+func removeDirectoryRobust(dir string) error {
+	// First, try to kill any running llama-server processes
+	if runtime.GOOS == "windows" {
+		killLlamaServerProcesses()
+	}
+
+	maxRetries := 5
+	retryDelay := 500 * time.Millisecond
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := os.RemoveAll(dir)
+		if err == nil {
+			return nil
+		}
+
+		// If it's not a permission error, don't retry
+		if !strings.Contains(err.Error(), "Access is denied") &&
+			!strings.Contains(err.Error(), "being used by another process") {
+			return err
+		}
+
+		if attempt < maxRetries-1 {
+			fmt.Printf("⏳ Retry %d/%d: Waiting for file handles to be released...\n", attempt+1, maxRetries)
+			time.Sleep(retryDelay)
+			retryDelay *= 2 // Exponential backoff
+		}
+	}
+
+	return fmt.Errorf("failed to remove directory after %d attempts", maxRetries)
+}
+
+// killLlamaServerProcesses kills any running llama-server processes on Windows
+func killLlamaServerProcesses() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+
+	// Only kill llama-server.exe processes, not claracore.exe
+	cmd := exec.Command("taskkill", "/F", "/IM", "llama-server.exe")
+	err := cmd.Run()
+	if err == nil {
+		fmt.Printf("🔄 Terminated running llama-server processes\n")
+	}
+
+	// Give a moment for cleanup
+	time.Sleep(200 * time.Millisecond)
+}
+
 // DownloadBinary downloads and extracts the llama-server binary
-func DownloadBinary(downloadDir string, system SystemInfo) (*BinaryInfo, error) {
-	url, binaryType, err := GetOptimalBinaryURL(system)
+func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) (*BinaryInfo, error) {
+	url, binaryType, err := GetOptimalBinaryURL(system, forceBackend)
 	if err != nil {
 		return nil, err
 	}
@@ -228,9 +318,15 @@ func DownloadBinary(downloadDir string, system SystemInfo) (*BinaryInfo, error) 
 			}
 
 			// Remove existing binary directory to ensure clean installation
-			err = os.RemoveAll(extractDir)
+			err = removeDirectoryRobust(extractDir)
 			if err != nil {
 				fmt.Printf("⚠️  Failed to remove existing binary directory: %v\n", err)
+				fmt.Printf("💡 This can happen if binary files are locked by Windows.\n")
+				fmt.Printf("   Try:\n")
+				fmt.Printf("   1. Restart ClaraCore\n")
+				fmt.Printf("   2. Wait a few seconds and try again\n")
+				fmt.Printf("   3. Manually delete the 'binaries' folder if needed\n")
+				// Continue with download anyway - it might still work
 			} else {
 				fmt.Printf("🗑️  Removed existing binary directory\n")
 			}

@@ -387,6 +387,9 @@ const OnboardConfig: React.FC = () => {
             throughputFirst: systemConfig.throughputFirst,
             minContext: Math.min(16384, systemConfig.preferredContext),
             preferredContext: systemConfig.preferredContext,
+            forceBackend: systemConfig.backend,      // Force the user-selected backend
+            forceVRAM: systemConfig.vramGB,         // Force the user-selected VRAM
+            forceRAM: systemConfig.ramGB,           // Force the user-selected RAM
           }
         }),
       });
@@ -863,6 +866,7 @@ const OnboardConfig: React.FC = () => {
                         onChange={(e) => {
                           const gpuType = e.target.value as 'nvidia' | 'amd' | 'intel' | 'apple';
                           let backend: 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
+                          // Set default backend based on GPU type, but allow user to change it
                           if (gpuType === 'nvidia') backend = 'cuda';
                           else if (gpuType === 'amd') backend = 'rocm';
                           else if (gpuType === 'apple') backend = 'metal';
@@ -899,9 +903,62 @@ const OnboardConfig: React.FC = () => {
                         <option value="apple">Apple Silicon (M1, M2, M3, M4)</option>
                       </select>
                     </div>
+
+                    {/* Backend Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">
+                        Compute Backend
+                        <span className="text-xs text-text-secondary ml-1">(Choose your GPU acceleration)</span>
+                      </label>
+                      <select
+                        value={systemConfig.backend}
+                        onChange={(e) => {
+                          const backend = e.target.value as 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
+                          
+                          // Platform-aware warnings
+                          const isAppleSilicon = (systemDetection?.primaryGPU?.brand === 'apple') || (/Mac/i.test(navigator.platform));
+                          if (isAppleSilicon && ['rocm', 'vulkan', 'cuda'].includes(backend)) {
+                            setBackendNotice(`Warning: '${backend}' may not be supported on macOS Apple Silicon. Consider using 'metal' instead.`);
+                          } else {
+                            setBackendNotice(null);
+                          }
+
+                          setSystemConfig(prev => ({ ...prev, backend }));
+                        }}
+                        className="w-full p-3 border border-border-secondary rounded-lg bg-background text-text-primary focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                      >
+                        {/* CUDA - NVIDIA only */}
+                        <option value="cuda" disabled={systemConfig.gpuType !== 'nvidia'}>
+                          CUDA (NVIDIA only) {systemConfig.gpuType !== 'nvidia' ? '- Not available for your GPU' : '- Recommended for NVIDIA'}
+                        </option>
+                        
+                        {/* ROCm - AMD only */}
+                        <option value="rocm" disabled={systemConfig.gpuType !== 'amd'}>
+                          ROCm (AMD only) {systemConfig.gpuType !== 'amd' ? '- Not available for your GPU' : '- Recommended for AMD'}
+                        </option>
+                        
+                        {/* Vulkan - Universal but not Apple */}
+                        <option value="vulkan" disabled={systemConfig.gpuType === 'apple'}>
+                          Vulkan (Cross-platform) {systemConfig.gpuType === 'apple' ? '- Not available on Apple Silicon' : '- Works on NVIDIA/AMD/Intel'}
+                        </option>
+                        
+                        {/* Metal - Apple only */}
+                        <option value="metal" disabled={systemConfig.gpuType !== 'apple'}>
+                          Metal (Apple only) {systemConfig.gpuType !== 'apple' ? '- Only for Apple Silicon' : '- Recommended for Apple'}
+                        </option>
+                        
+                        {/* CPU - Always available */}
+                        <option value="cpu">
+                          CPU (No GPU acceleration) - Works everywhere but slower
+                        </option>
+                      </select>
+                    </div>
+                    
                     {backendNotice && (
-                      <div className="mt-2 text-xs text-amber-400">
-                        {backendNotice}
+                      <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <div className="text-xs text-amber-700 dark:text-amber-300">
+                          ⚠️ {backendNotice}
+                        </div>
                       </div>
                     )}
                     

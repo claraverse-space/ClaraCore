@@ -47,11 +47,11 @@ type ProxyManager struct {
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelFunc
 
-    // subscription canceller for download progress
-    downloadSubCancel context.CancelFunc
+	// subscription canceller for download progress
+	downloadSubCancel context.CancelFunc
 
-    // debounce timer for auto reconfigure after downloads
-    autoReconfigTimer *time.Timer
+	// debounce timer for auto reconfigure after downloads
+	autoReconfigTimer *time.Timer
 }
 
 func New(config Config) *ProxyManager {
@@ -117,12 +117,12 @@ func New(config Config) *ProxyManager {
 
 	// No automatic config modifications on startup - keep it clean and predictable
 
-    // Subscribe to download completion to add folder to DB and auto-regenerate config
-    pm.downloadSubCancel = event.On(func(e DownloadProgressEvent) {
-        if e.Info != nil && e.Info.Status == StatusCompleted {
-            go pm.handleDownloadCompleted(e.Info.FilePath)
-        }
-    })
+	// Subscribe to download completion to add folder to DB and auto-regenerate config
+	pm.downloadSubCancel = event.On(func(e DownloadProgressEvent) {
+		if e.Info != nil && e.Info.Status == StatusCompleted {
+			go pm.handleDownloadCompleted(e.Info.FilePath)
+		}
+	})
 
 	// run any startup hooks
 	if len(config.Hooks.OnStartup.Preload) > 0 {
@@ -168,103 +168,111 @@ func (pm *ProxyManager) quotePath(path string) string {
 
 // handleDownloadCompleted ensures the downloaded file's folder is tracked, then regenerates config
 func (pm *ProxyManager) handleDownloadCompleted(downloadedFilePath string) {
-    pm.Lock()
-    defer pm.Unlock()
-    // Derive folder from file path
-    absFile, err := filepath.Abs(downloadedFilePath)
-    if err != nil {
-        pm.proxyLogger.Warnf("Failed to resolve downloaded file path: %v", err)
-        return
-    }
-    folderPath := filepath.Dir(absFile)
+	pm.Lock()
+	defer pm.Unlock()
+	// Derive folder from file path
+	absFile, err := filepath.Abs(downloadedFilePath)
+	if err != nil {
+		pm.proxyLogger.Warnf("Failed to resolve downloaded file path: %v", err)
+		return
+	}
+	folderPath := filepath.Dir(absFile)
 
-    // Update model folder database if folder is not already present
-    if err := pm.updateModelFolderDatabase([]string{folderPath}, true); err != nil {
-        pm.proxyLogger.Warnf("Failed to update model folder database for %s: %v", folderPath, err)
-        // Continue anyway to try regenerate
-    } else {
-        pm.proxyLogger.Infof("Added/updated model folder in DB: %s", folderPath)
-    }
+	// Update model folder database if folder is not already present
+	if err := pm.updateModelFolderDatabase([]string{folderPath}, true); err != nil {
+		pm.proxyLogger.Warnf("Failed to update model folder database for %s: %v", folderPath, err)
+		// Continue anyway to try regenerate
+	} else {
+		pm.proxyLogger.Infof("Added/updated model folder in DB: %s", folderPath)
+	}
 
-    // Debounce full regeneration to batch multiple downloads
-    if pm.autoReconfigTimer != nil {
-        pm.autoReconfigTimer.Stop()
-    }
-    pm.autoReconfigTimer = time.AfterFunc(3*time.Second, func() {
-        pm.Lock()
-        defer pm.Unlock()
-        pm.autoReconfigTimer = nil
-        pm.generateConfigFromDBLocked()
-    })
+	// Debounce full regeneration to batch multiple downloads
+	if pm.autoReconfigTimer != nil {
+		pm.autoReconfigTimer.Stop()
+	}
+	pm.autoReconfigTimer = time.AfterFunc(3*time.Second, func() {
+		pm.Lock()
+		defer pm.Unlock()
+		pm.autoReconfigTimer = nil
+		pm.generateConfigFromDBLocked()
+	})
 }
 
 // generateConfigFromDBLocked performs full regenerate using saved settings.
 // Caller must hold pm.Lock().
 func (pm *ProxyManager) generateConfigFromDBLocked() {
-    // Load persisted settings; fallback to defaults if missing
-    options := autosetup.SetupOptions{
-        EnableJinja:      true,
-        ThroughputFirst:  true,
-        MinContext:       16384,
-        PreferredContext: 32768,
-    }
-    if s, err := pm.loadSystemSettings(); err == nil && s != nil {
-        options.EnableJinja = s.EnableJinja
-        options.ThroughputFirst = s.ThroughputFirst
-        if s.PreferredContext > 0 { options.PreferredContext = s.PreferredContext }
-        if s.RAMGB > 0 { options.ForceRAM = s.RAMGB }
-        if s.VRAMGB > 0 { options.ForceVRAM = s.VRAMGB }
-        if s.Backend != "" { options.ForceBackend = s.Backend }
-    }
+	// Load persisted settings; fallback to defaults if missing
+	options := autosetup.SetupOptions{
+		EnableJinja:      true,
+		ThroughputFirst:  true,
+		MinContext:       16384,
+		PreferredContext: 32768,
+	}
+	if s, err := pm.loadSystemSettings(); err == nil && s != nil {
+		options.EnableJinja = s.EnableJinja
+		options.ThroughputFirst = s.ThroughputFirst
+		if s.PreferredContext > 0 {
+			options.PreferredContext = s.PreferredContext
+		}
+		if s.RAMGB > 0 {
+			options.ForceRAM = s.RAMGB
+		}
+		if s.VRAMGB > 0 {
+			options.ForceVRAM = s.VRAMGB
+		}
+		if s.Backend != "" {
+			options.ForceBackend = s.Backend
+		}
+	}
 
-    db, err := pm.loadModelFolderDatabase()
-    if err != nil {
-        pm.proxyLogger.Warnf("Failed to load folder DB for auto-reconfigure: %v", err)
-        return
-    }
-    var folderPaths []string
-    for _, f := range db.Folders {
-        if f.Enabled {
-            folderPaths = append(folderPaths, f.Path)
-        }
-    }
-    if len(folderPaths) == 0 {
-        pm.proxyLogger.Warnf("Auto-reconfigure skipped: no enabled folders in DB")
-        return
-    }
+	db, err := pm.loadModelFolderDatabase()
+	if err != nil {
+		pm.proxyLogger.Warnf("Failed to load folder DB for auto-reconfigure: %v", err)
+		return
+	}
+	var folderPaths []string
+	for _, f := range db.Folders {
+		if f.Enabled {
+			folderPaths = append(folderPaths, f.Path)
+		}
+	}
+	if len(folderPaths) == 0 {
+		pm.proxyLogger.Warnf("Auto-reconfigure skipped: no enabled folders in DB")
+		return
+	}
 
-    // Collect models from all folders
-    var allModels []autosetup.ModelInfo
-    for _, p := range folderPaths {
-        models, err := autosetup.DetectModelsWithOptions(p, options)
-        if err != nil {
-            pm.proxyLogger.Warnf("Folder scan failed (%s): %v", p, err)
-            continue
-        }
-        allModels = append(allModels, models...)
-    }
-    if len(allModels) == 0 {
-        pm.proxyLogger.Warnf("Auto-reconfigure skipped: no models found in tracked folders")
-        return
-    }
+	// Collect models from all folders
+	var allModels []autosetup.ModelInfo
+	for _, p := range folderPaths {
+		models, err := autosetup.DetectModelsWithOptions(p, options)
+		if err != nil {
+			pm.proxyLogger.Warnf("Folder scan failed (%s): %v", p, err)
+			continue
+		}
+		allModels = append(allModels, models...)
+	}
+	if len(allModels) == 0 {
+		pm.proxyLogger.Warnf("Auto-reconfigure skipped: no models found in tracked folders")
+		return
+	}
 
-    system := autosetup.DetectSystem()
-    _ = autosetup.EnhanceSystemInfo(&system)
-    binariesDir := filepath.Join(".", "binaries")
-    binary, err := autosetup.DownloadBinary(binariesDir, system)
-    if err != nil {
-        pm.proxyLogger.Warnf("Auto-reconfigure failed to ensure binary: %v", err)
-        return
-    }
-    generator := autosetup.NewConfigGenerator(folderPaths[0], binary.Path, "config.yaml", options)
-    generator.SetSystemInfo(&system)
-    generator.SetAvailableVRAM(system.TotalVRAMGB)
-    if err := generator.GenerateConfig(allModels); err != nil {
-        pm.proxyLogger.Warnf("Auto-reconfigure failed to generate config: %v", err)
-        return
-    }
-    pm.proxyLogger.Info("Auto-restarting after model download and config regeneration")
-    event.Emit(ConfigFileChangedEvent{ReloadingState: ReloadingStateStart})
+	system := autosetup.DetectSystem()
+	_ = autosetup.EnhanceSystemInfo(&system)
+	binariesDir := filepath.Join(".", "binaries")
+	binary, err := autosetup.DownloadBinary(binariesDir, system, options.ForceBackend)
+	if err != nil {
+		pm.proxyLogger.Warnf("Auto-reconfigure failed to ensure binary: %v", err)
+		return
+	}
+	generator := autosetup.NewConfigGenerator(folderPaths[0], binary.Path, "config.yaml", options)
+	generator.SetSystemInfo(&system)
+	generator.SetAvailableVRAM(system.TotalVRAMGB)
+	if err := generator.GenerateConfig(allModels); err != nil {
+		pm.proxyLogger.Warnf("Auto-reconfigure failed to generate config: %v", err)
+		return
+	}
+	pm.proxyLogger.Info("Auto-restarting after model download and config regeneration")
+	event.Emit(ConfigFileChangedEvent{ReloadingState: ReloadingStateStart})
 }
 
 func (pm *ProxyManager) setupGinEngine() {
@@ -324,34 +332,34 @@ func (pm *ProxyManager) setupGinEngine() {
 
 	mm := MetricsMiddleware(pm)
 
-    // Auth middleware for OpenAI-compatible endpoints (optional based on settings)
-    auth := pm.requireAPIKey()
+	// Auth middleware for OpenAI-compatible endpoints (optional based on settings)
+	auth := pm.requireAPIKey()
 
-    // Set up routes using the Gin engine
-    pm.ginEngine.POST("/v1/chat/completions", auth, mm, pm.proxyOAIHandler)
-    // Support legacy /v1/completions api, see issue #12
-    pm.ginEngine.POST("/v1/completions", auth, mm, pm.proxyOAIHandler)
+	// Set up routes using the Gin engine
+	pm.ginEngine.POST("/v1/chat/completions", auth, mm, pm.proxyOAIHandler)
+	// Support legacy /v1/completions api, see issue #12
+	pm.ginEngine.POST("/v1/completions", auth, mm, pm.proxyOAIHandler)
 
 	// Support embeddings and reranking
-    pm.ginEngine.POST("/v1/embeddings", auth, mm, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/v1/embeddings", auth, mm, pm.proxyOAIHandler)
 
 	// llama-server's /reranking endpoint + aliases
-    pm.ginEngine.POST("/reranking", auth, mm, pm.proxyOAIHandler)
-    pm.ginEngine.POST("/rerank", auth, mm, pm.proxyOAIHandler)
-    pm.ginEngine.POST("/v1/rerank", auth, mm, pm.proxyOAIHandler)
-    pm.ginEngine.POST("/v1/reranking", auth, mm, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/reranking", auth, mm, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/rerank", auth, mm, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/v1/rerank", auth, mm, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/v1/reranking", auth, mm, pm.proxyOAIHandler)
 
 	// llama-server's /infill endpoint for code infilling
-    pm.ginEngine.POST("/infill", auth, mm, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/infill", auth, mm, pm.proxyOAIHandler)
 
 	// llama-server's /completion endpoint
-    pm.ginEngine.POST("/completion", auth, mm, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/completion", auth, mm, pm.proxyOAIHandler)
 
 	// Support audio/speech endpoint
-    pm.ginEngine.POST("/v1/audio/speech", auth, pm.proxyOAIHandler)
-    pm.ginEngine.POST("/v1/audio/transcriptions", auth, pm.proxyOAIPostFormHandler)
+	pm.ginEngine.POST("/v1/audio/speech", auth, pm.proxyOAIHandler)
+	pm.ginEngine.POST("/v1/audio/transcriptions", auth, pm.proxyOAIPostFormHandler)
 
-    pm.ginEngine.GET("/v1/models", auth, pm.listModelsHandler)
+	pm.ginEngine.GET("/v1/models", auth, pm.listModelsHandler)
 
 	// in proxymanager_loghandlers.go
 	pm.ginEngine.GET("/logs", pm.sendLogsHandlers)
@@ -433,32 +441,32 @@ func (pm *ProxyManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // requireAPIKey returns a gin.HandlerFunc that enforces API key only if enabled in settings.
 func (pm *ProxyManager) requireAPIKey() gin.HandlerFunc {
-    return func(c *gin.Context) {
-        // Allow unauthenticated access to settings endpoint so users can configure a key
-        if strings.HasPrefix(c.Request.URL.Path, "/api/settings/system") {
-            c.Next()
-            return
-        }
+	return func(c *gin.Context) {
+		// Allow unauthenticated access to settings endpoint so users can configure a key
+		if strings.HasPrefix(c.Request.URL.Path, "/api/settings/system") {
+			c.Next()
+			return
+		}
 
-        if settings, _ := pm.loadSystemSettings(); settings != nil && settings.RequireAPIKey {
-            key := c.GetHeader("Authorization")
-            if key == "" {
-                key = c.GetHeader("X-API-Key")
-            }
-            if key == "" {
-                // Allow API key via query param for EventSource and limited clients
-                key = c.Query("api_key")
-            }
-            if strings.HasPrefix(strings.ToLower(key), "bearer ") {
-                key = strings.TrimSpace(key[7:])
-            }
-            if strings.TrimSpace(key) == "" || strings.TrimSpace(settings.APIKey) == "" || key != settings.APIKey {
-                c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API key required or invalid"})
-                return
-            }
-        }
-        c.Next()
-    }
+		if settings, _ := pm.loadSystemSettings(); settings != nil && settings.RequireAPIKey {
+			key := c.GetHeader("Authorization")
+			if key == "" {
+				key = c.GetHeader("X-API-Key")
+			}
+			if key == "" {
+				// Allow API key via query param for EventSource and limited clients
+				key = c.Query("api_key")
+			}
+			if strings.HasPrefix(strings.ToLower(key), "bearer ") {
+				key = strings.TrimSpace(key[7:])
+			}
+			if strings.TrimSpace(key) == "" || strings.TrimSpace(settings.APIKey) == "" || key != settings.APIKey {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API key required or invalid"})
+				return
+			}
+		}
+		c.Next()
+	}
 }
 
 // StopProcesses acquires a lock and stops all running upstream processes.
@@ -499,10 +507,10 @@ func (pm *ProxyManager) Shutdown() {
 		}(processGroup)
 	}
 	wg.Wait()
-    if pm.downloadSubCancel != nil {
-        pm.downloadSubCancel()
-        pm.downloadSubCancel = nil
-    }
+	if pm.downloadSubCancel != nil {
+		pm.downloadSubCancel()
+		pm.downloadSubCancel = nil
+	}
 	pm.shutdownCancel()
 }
 
@@ -578,27 +586,27 @@ func (pm *ProxyManager) listModelsHandler(c *gin.Context) {
 func (pm *ProxyManager) proxyToUpstream(c *gin.Context) {
 	upstreamPath := c.Param("upstreamPath")
 
-    // If API key is required, enforce it
-    if settings, _ := pm.loadSystemSettings(); settings != nil && settings.RequireAPIKey {
-        key := c.GetHeader("Authorization")
-        // Accept either Bearer <key> or raw key in X-API-Key
-        if key == "" {
-            key = c.GetHeader("X-API-Key")
-        }
-        if key == "" {
-            // Allow API key via query param for EventSource and limited clients
-            key = c.Query("api_key")
-        }
-        if strings.HasPrefix(strings.ToLower(key), "bearer ") {
-            key = strings.TrimSpace(key[7:])
-        }
-        if strings.TrimSpace(key) == "" || strings.TrimSpace(settings.APIKey) == "" || key != settings.APIKey {
-            pm.sendErrorResponse(c, http.StatusUnauthorized, "API key required or invalid")
-            return
-        }
-    }
+	// If API key is required, enforce it
+	if settings, _ := pm.loadSystemSettings(); settings != nil && settings.RequireAPIKey {
+		key := c.GetHeader("Authorization")
+		// Accept either Bearer <key> or raw key in X-API-Key
+		if key == "" {
+			key = c.GetHeader("X-API-Key")
+		}
+		if key == "" {
+			// Allow API key via query param for EventSource and limited clients
+			key = c.Query("api_key")
+		}
+		if strings.HasPrefix(strings.ToLower(key), "bearer ") {
+			key = strings.TrimSpace(key[7:])
+		}
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(settings.APIKey) == "" || key != settings.APIKey {
+			pm.sendErrorResponse(c, http.StatusUnauthorized, "API key required or invalid")
+			return
+		}
+	}
 
-    // split the upstream path by / and search for the model name
+	// split the upstream path by / and search for the model name
 	parts := strings.Split(strings.TrimSpace(upstreamPath), "/")
 	if len(parts) == 0 {
 		pm.sendErrorResponse(c, http.StatusBadRequest, "model id required in path")
