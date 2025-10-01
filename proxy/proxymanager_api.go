@@ -29,48 +29,48 @@ type Model struct {
 	Description string `json:"description"`
 	State       string `json:"state"`
 	Unlisted    bool   `json:"unlisted"`
-    ProxyURL    string `json:"proxyUrl"`
+	ProxyURL    string `json:"proxyUrl"`
 }
 
 // SystemSettings persist user-chosen settings for autosetup/regeneration
 type SystemSettings struct {
-    GPUType          string  `json:"gpuType"`          // nvidia|amd|intel|apple|none
-    Backend          string  `json:"backend"`          // cuda|rocm|vulkan|metal|mlx|cpu
-    VRAMGB           float64 `json:"vramGB"`
-    RAMGB            float64 `json:"ramGB"`
-    PreferredContext int     `json:"preferredContext"`
-    ThroughputFirst  bool    `json:"throughputFirst"`
-    EnableJinja      bool    `json:"enableJinja"`
-    RequireAPIKey    bool    `json:"requireApiKey"`
-    APIKey           string  `json:"apiKey,omitempty"`
+	GPUType          string  `json:"gpuType"` // nvidia|amd|intel|apple|none
+	Backend          string  `json:"backend"` // cuda|rocm|vulkan|metal|mlx|cpu
+	VRAMGB           float64 `json:"vramGB"`
+	RAMGB            float64 `json:"ramGB"`
+	PreferredContext int     `json:"preferredContext"`
+	ThroughputFirst  bool    `json:"throughputFirst"`
+	EnableJinja      bool    `json:"enableJinja"`
+	RequireAPIKey    bool    `json:"requireApiKey"`
+	APIKey           string  `json:"apiKey,omitempty"`
 }
 
 func (pm *ProxyManager) getSystemSettingsPath() string {
-    return "settings.json"
+	return "settings.json"
 }
 
 func (pm *ProxyManager) loadSystemSettings() (*SystemSettings, error) {
-    path := pm.getSystemSettingsPath()
-    if _, err := os.Stat(path); os.IsNotExist(err) {
-        return nil, nil
-    }
-    data, err := os.ReadFile(path)
-    if err != nil {
-        return nil, err
-    }
-    var s SystemSettings
-    if err := json.Unmarshal(data, &s); err != nil {
-        return nil, err
-    }
-    return &s, nil
+	path := pm.getSystemSettingsPath()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var s SystemSettings
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
 }
 
 func (pm *ProxyManager) saveSystemSettings(s *SystemSettings) error {
-    data, err := json.MarshalIndent(s, "", "  ")
-    if err != nil {
-        return err
-    }
-    return os.WriteFile(pm.getSystemSettingsPath(), data, 0644)
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(pm.getSystemSettingsPath(), data, 0644)
 }
 
 func addApiHandlers(pm *ProxyManager) {
@@ -109,9 +109,10 @@ func addApiHandlers(pm *ProxyManager) {
 		apiGroup.POST("/server/restart", pm.apiRestartServer)          // Soft restart (reload config)
 		apiGroup.POST("/server/restart/hard", pm.apiHardRestartServer) // Hard restart (full process restart)
 		apiGroup.POST("/config/generate-all", pm.apiGenerateAllModels) // SMART generation like command-line
+		apiGroup.GET("/setup/progress", pm.apiGetSetupProgress)        // Get setup progress for polling
 		apiGroup.DELETE("/config/models/:id", pm.apiDeleteModel)
 		apiGroup.GET("/config/validate", pm.apiValidateConfig)
-		apiGroup.POST("/config/validate-models", pm.apiValidateModelsOnDisk) // NEW: Validate model files exist
+		apiGroup.POST("/config/validate-models", pm.apiValidateModelsOnDisk)      // NEW: Validate model files exist
 		apiGroup.POST("/config/cleanup-duplicates", pm.apiCleanupDuplicateModels) // NEW: Remove duplicate models
 
 		// NEW: Model folder database management
@@ -163,13 +164,13 @@ func (pm *ProxyManager) getModelStatus() []Model {
 				state = stateStr
 			}
 		}
-        models = append(models, Model{
+		models = append(models, Model{
 			Id:          modelID,
 			Name:        pm.config.Models[modelID].Name,
 			Description: pm.config.Models[modelID].Description,
 			State:       state,
 			Unlisted:    pm.config.Models[modelID].Unlisted,
-            ProxyURL:    pm.config.Models[modelID].Proxy,
+			ProxyURL:    pm.config.Models[modelID].Proxy,
 		})
 	}
 
@@ -279,6 +280,27 @@ func (pm *ProxyManager) apiSendEvents(c *gin.Context) {
 		if err == nil {
 			select {
 			case sendBuffer <- messageEnvelope{Type: "downloadProgress", Data: string(data)}:
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+	})()
+
+	/**
+	 * Send Config generation progress data
+	 */
+	defer event.On(func(e ConfigGenerationProgressEvent) {
+		data, err := json.Marshal(gin.H{
+			"stage":              e.Stage,
+			"currentModel":       e.CurrentModel,
+			"current":            e.Current,
+			"total":              e.Total,
+			"percentageComplete": e.PercentageComplete,
+		})
+		if err == nil {
+			select {
+			case sendBuffer <- messageEnvelope{Type: "configProgress", Data: string(data)}:
 			case <-ctx.Done():
 				return
 			default:
@@ -558,6 +580,24 @@ func (pm *ProxyManager) apiGetSystemDetection(c *gin.Context) {
 	c.JSON(http.StatusOK, detection)
 }
 
+func (pm *ProxyManager) apiGetSetupProgress(c *gin.Context) {
+	progressMgr := autosetup.GetProgressManager()
+	state := progressMgr.GetState()
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":           state.Status,
+		"current_step":     state.CurrentStep,
+		"progress":         state.Progress,
+		"total_models":     state.TotalModels,
+		"processed_models": state.ProcessedModels,
+		"current_model":    state.CurrentModel,
+		"error":            state.Error,
+		"completed":        state.Completed,
+		"started_at":       state.StartedAt,
+		"updated_at":       state.UpdatedAt,
+	})
+}
+
 func (pm *ProxyManager) apiGetHFApiKey(c *gin.Context) {
 	// For now, return empty - could be extended to read from config file
 	c.JSON(http.StatusOK, gin.H{"apiKey": ""})
@@ -642,90 +682,105 @@ func (pm *ProxyManager) apiGetDownloads(c *gin.Context) {
 	downloads := pm.downloadManager.GetDownloads()
 	c.JSON(http.StatusOK, downloads)
 }
+
 // apiGetSystemSettings returns saved system settings
 func (pm *ProxyManager) apiGetSystemSettings(c *gin.Context) {
-    s, err := pm.loadSystemSettings()
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to load settings: %v", err)})
-        return
-    }
-    if s == nil {
-        c.JSON(http.StatusOK, gin.H{"settings": nil})
-        return
-    }
-    // Redact API key from response
-    redacted := *s
-    redacted.APIKey = ""
-    c.JSON(http.StatusOK, gin.H{"settings": redacted})
+	s, err := pm.loadSystemSettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to load settings: %v", err)})
+		return
+	}
+	if s == nil {
+		c.JSON(http.StatusOK, gin.H{"settings": nil})
+		return
+	}
+	// Redact API key from response
+	redacted := *s
+	redacted.APIKey = ""
+	c.JSON(http.StatusOK, gin.H{"settings": redacted})
 }
 
 // apiSetSystemSettings saves system settings with basic validation and platform mapping
 func (pm *ProxyManager) apiSetSystemSettings(c *gin.Context) {
-    var req SystemSettings
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-        return
-    }
+	var req SystemSettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
 
-    // Platform-aware mapping: on macOS/arm, map unsupported to metal
-    if runtime.GOOS == "darwin" && (req.Backend == "cuda" || req.Backend == "rocm" || req.Backend == "vulkan") {
-        req.Backend = "metal"
-    }
+	// Platform-aware mapping: on macOS/arm, map unsupported to metal
+	if runtime.GOOS == "darwin" && (req.Backend == "cuda" || req.Backend == "rocm" || req.Backend == "vulkan") {
+		req.Backend = "metal"
+	}
 
-    // Basic validation
-    if req.VRAMGB < 0 || req.RAMGB < 0 {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "ramGB and vramGB must be >= 0"})
-        return
-    }
-    if req.PreferredContext < 0 {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "preferredContext must be >= 0"})
-        return
-    }
+	// Basic validation
+	if req.VRAMGB < 0 || req.RAMGB < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ramGB and vramGB must be >= 0"})
+		return
+	}
+	if req.PreferredContext < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "preferredContext must be >= 0"})
+		return
+	}
 
-    // Preserve existing API key if require is true and new key is empty; also auto-populate hardware defaults when zeros
-    if existing, _ := pm.loadSystemSettings(); existing != nil {
-        if req.RequireAPIKey && strings.TrimSpace(req.APIKey) == "" && strings.TrimSpace(existing.APIKey) != "" {
-            req.APIKey = existing.APIKey
-        }
-        // If values are zero, carry forward existing (so we don't wipe)
-        if req.VRAMGB == 0 { req.VRAMGB = existing.VRAMGB }
-        if req.RAMGB == 0 { req.RAMGB = existing.RAMGB }
-        if req.PreferredContext == 0 { req.PreferredContext = existing.PreferredContext }
-        if req.Backend == "" { req.Backend = existing.Backend }
-    }
-    if req.RequireAPIKey && strings.TrimSpace(req.APIKey) == "" {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "requireApiKey=true needs a non-empty apiKey"})
-        return
-    }
+	// Preserve existing API key if require is true and new key is empty; also auto-populate hardware defaults when zeros
+	if existing, _ := pm.loadSystemSettings(); existing != nil {
+		if req.RequireAPIKey && strings.TrimSpace(req.APIKey) == "" && strings.TrimSpace(existing.APIKey) != "" {
+			req.APIKey = existing.APIKey
+		}
+		// If values are zero, carry forward existing (so we don't wipe)
+		if req.VRAMGB == 0 {
+			req.VRAMGB = existing.VRAMGB
+		}
+		if req.RAMGB == 0 {
+			req.RAMGB = existing.RAMGB
+		}
+		if req.PreferredContext == 0 {
+			req.PreferredContext = existing.PreferredContext
+		}
+		if req.Backend == "" {
+			req.Backend = existing.Backend
+		}
+	}
+	if req.RequireAPIKey && strings.TrimSpace(req.APIKey) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "requireApiKey=true needs a non-empty apiKey"})
+		return
+	}
 
-    // If still zeros (first-time save), auto-populate from detection
-    if req.VRAMGB == 0 || req.RAMGB == 0 || req.PreferredContext == 0 || req.Backend == "" {
-        system := autosetup.DetectSystem()
-        _ = autosetup.EnhanceSystemInfo(&system)
-        if req.VRAMGB == 0 { req.VRAMGB = system.TotalVRAMGB }
-        if req.RAMGB == 0 { req.RAMGB = system.TotalRAMGB }
-        if req.PreferredContext == 0 { req.PreferredContext = 32768 }
-        if req.Backend == "" {
-            // crude mapping
-            if runtime.GOOS == "darwin" || system.HasMetal {
-                req.Backend = "metal"
-            } else if system.HasCUDA {
-                req.Backend = "cuda"
-            } else if system.HasROCm {
-                req.Backend = "rocm"
-            } else if system.HasVulkan {
-                req.Backend = "vulkan"
-            } else {
-                req.Backend = "cpu"
-            }
-        }
-    }
+	// If still zeros (first-time save), auto-populate from detection
+	if req.VRAMGB == 0 || req.RAMGB == 0 || req.PreferredContext == 0 || req.Backend == "" {
+		system := autosetup.DetectSystem()
+		_ = autosetup.EnhanceSystemInfo(&system)
+		if req.VRAMGB == 0 {
+			req.VRAMGB = system.TotalVRAMGB
+		}
+		if req.RAMGB == 0 {
+			req.RAMGB = system.TotalRAMGB
+		}
+		if req.PreferredContext == 0 {
+			req.PreferredContext = 32768
+		}
+		if req.Backend == "" {
+			// crude mapping
+			if runtime.GOOS == "darwin" || system.HasMetal {
+				req.Backend = "metal"
+			} else if system.HasCUDA {
+				req.Backend = "cuda"
+			} else if system.HasROCm {
+				req.Backend = "rocm"
+			} else if system.HasVulkan {
+				req.Backend = "vulkan"
+			} else {
+				req.Backend = "cpu"
+			}
+		}
+	}
 
-    if err := pm.saveSystemSettings(&req); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to save settings: %v", err)})
-        return
-    }
-    c.JSON(http.StatusOK, gin.H{"status": "saved"})
+	if err := pm.saveSystemSettings(&req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to save settings: %v", err)})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "saved"})
 }
 
 func (pm *ProxyManager) apiGetDownloadStatus(c *gin.Context) {
@@ -940,6 +995,10 @@ func (pm *ProxyManager) apiScanModelFolder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+
+	// Reset progress at the start
+	progressMgr := autosetup.GetProgressManager()
+	progressMgr.Reset()
 
 	// Backward compatibility: convert single folder to array
 	var foldersToScan []string
@@ -1294,9 +1353,9 @@ func (pm *ProxyManager) apiAppendModelToConfig(c *gin.Context) {
 	// Check if model with same file path already exists
 	if existingModelID := pm.findModelByFilePath(absFilePath); existingModelID != "" {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": fmt.Sprintf("Model already exists in config with ID: %s", existingModelID),
+			"error":           fmt.Sprintf("Model already exists in config with ID: %s", existingModelID),
 			"existingModelId": existingModelID,
-			"filePath": absFilePath,
+			"filePath":        absFilePath,
 		})
 		return
 	}
@@ -1650,6 +1709,10 @@ func (pm *ProxyManager) apiGenerateAllModels(c *gin.Context) {
 		return
 	}
 
+	// Reset progress at the start
+	progressMgr := autosetup.GetProgressManager()
+	progressMgr.Reset()
+
 	// Use SAME options as command-line
 	options := autosetup.SetupOptions{
 		EnableJinja:      req.Options.EnableJinja || true,
@@ -1668,6 +1731,7 @@ func (pm *ProxyManager) apiGenerateAllModels(c *gin.Context) {
 	// EXACTLY like command-line: AutoSetupWithOptions
 	err := autosetup.AutoSetupWithOptions(req.FolderPath, options)
 	if err != nil {
+		progressMgr.SetError(fmt.Sprintf("Failed to generate configuration: %v", err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to generate configuration: %v", err)})
 		return
 	}
@@ -2044,13 +2108,13 @@ func (pm *ProxyManager) cleanupDuplicateModels(configPath string) (int, error) {
 
 	// Track file paths and find duplicates
 	filePathToModels := make(map[string][]string)
-	
+
 	for modelID, modelConfigInterface := range models {
 		modelConfig, ok := modelConfigInterface.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		
+
 		cmd, ok := modelConfig["cmd"].(string)
 		if !ok {
 			continue
@@ -2299,7 +2363,6 @@ func (pm *ProxyManager) loadConfig() error {
 	return nil
 }
 
-
 // Helper function to add a single model to config file
 func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig map[string]interface{}) error {
 	// Read current config
@@ -2335,7 +2398,7 @@ func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig
 		if runtime.GOOS == "windows" {
 			binaryPath += ".exe"
 		}
-		
+
 		config["macros"] = map[string]interface{}{
 			"llama-embed-base":  fmt.Sprintf("%s --host 127.0.0.1 --port ${PORT} --embedding", binaryPath),
 			"llama-server-base": fmt.Sprintf("%s --host 127.0.0.1 --port ${PORT} --metrics --flash-attn auto --no-warmup --dry-penalty-last-n 0 --batch-size 2048 --ubatch-size 512", binaryPath),
@@ -2655,13 +2718,13 @@ func (pm *ProxyManager) apiCleanupDuplicateModels(c *gin.Context) {
 
 	// Track file paths and find duplicates
 	filePathToModels := make(map[string][]string)
-	
+
 	for modelID, modelConfigInterface := range models {
 		modelConfig, ok := modelConfigInterface.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		
+
 		cmd, ok := modelConfig["cmd"].(string)
 		if !ok {
 			continue
@@ -2746,10 +2809,10 @@ func (pm *ProxyManager) apiCleanupDuplicateModels(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("Cleanup completed. Removed %d duplicate models.", len(removedModels)),
+		"message":           fmt.Sprintf("Cleanup completed. Removed %d duplicate models.", len(removedModels)),
 		"duplicatesRemoved": len(removedModels),
-		"removedModels": removedModels,
-		"keptModels": keptModels,
+		"removedModels":     removedModels,
+		"keptModels":        keptModels,
 	})
 }
 
@@ -2793,12 +2856,34 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 		return
 	}
 
-	// Scan all folders and collect models
+	// Scan all folders and collect models with progress
 	var allModels []autosetup.ModelInfo
 	var scanSummary []gin.H
+	totalFolders := len(folderPaths)
 
-	for _, folderPath := range folderPaths {
-		models, err := autosetup.DetectModelsWithOptions(folderPath, req.Options)
+	for folderIndex, folderPath := range folderPaths {
+		// Emit folder scanning progress
+		event.Emit(ConfigGenerationProgressEvent{
+			Stage:              fmt.Sprintf("Scanning folder %d/%d", folderIndex+1, totalFolders),
+			CurrentModel:       folderPath,
+			Current:            folderIndex,
+			Total:              totalFolders,
+			PercentageComplete: float64(folderIndex) / float64(totalFolders) * 30, // Scanning is 30% of total
+		})
+
+		models, err := autosetup.DetectModelsWithProgress(folderPath, req.Options,
+			func(stage string, currentModel string, current, total int) {
+				// Emit per-model progress during scanning
+				overallProgress := (float64(folderIndex)/float64(totalFolders) +
+					float64(current)/float64(total)/float64(totalFolders)) * 30
+				event.Emit(ConfigGenerationProgressEvent{
+					Stage:              fmt.Sprintf("Scanning folder %d/%d: %s", folderIndex+1, totalFolders, stage),
+					CurrentModel:       currentModel,
+					Current:            current + (folderIndex * 100), // Offset for multiple folders
+					Total:              total * totalFolders,
+					PercentageComplete: overallProgress,
+				})
+			})
 		if err != nil {
 			scanSummary = append(scanSummary, gin.H{
 				"folder": folderPath,
@@ -2825,6 +2910,15 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 		return
 	}
 
+	// Emit progress for config generation start
+	event.Emit(ConfigGenerationProgressEvent{
+		Stage:              "Generating configuration...",
+		CurrentModel:       "",
+		Current:            0,
+		Total:              len(allModels),
+		PercentageComplete: 35, // Config generation starts at 35%
+	})
+
 	// Use the SAME function as CLI for consistency
 	// CLI uses: autosetup.AutoSetupWithOptions(modelsFolder, options)
 	// This ensures identical behavior between UI and CLI
@@ -2835,6 +2929,15 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("AutoSetup failed (same as CLI): %v", err)})
 		return
 	}
+
+	// Emit progress for config generation completion
+	event.Emit(ConfigGenerationProgressEvent{
+		Stage:              "Configuration generated successfully",
+		CurrentModel:       "",
+		Current:            len(allModels),
+		Total:              len(allModels),
+		PercentageComplete: 100,
+	})
 
 	// Read the generated config (AutoSetupWithOptions always writes to config.yaml)
 	configData, err := os.ReadFile("config.yaml")

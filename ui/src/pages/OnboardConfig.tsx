@@ -256,6 +256,21 @@ const OnboardConfig: React.FC = () => {
     }
 
     setIsScanning(true);
+    
+    // Start progress polling for scanning
+    const pollScanProgress = setInterval(async () => {
+      try {
+        const progressResponse = await fetch('/api/setup/progress');
+        if (progressResponse.ok) {
+          const progressData = await progressResponse.json();
+          console.log('Scan progress:', progressData);
+          // You could use this data to show scan progress in the UI
+        }
+      } catch (pollError) {
+        console.warn('Failed to poll scan progress:', pollError);
+      }
+    }, 500);
+    
     try {
       const response = await fetch('/api/config/scan-folder', {
         method: 'POST',
@@ -266,6 +281,8 @@ const OnboardConfig: React.FC = () => {
           addToDatabase: true // Persist to JSON database
         }),
       });
+
+      clearInterval(pollScanProgress);
 
       if (response.ok) {
         const data = await response.json();
@@ -288,6 +305,7 @@ const OnboardConfig: React.FC = () => {
         showNotification('error', 'Failed to scan folder');
       }
     } catch (error) {
+      clearInterval(pollScanProgress);
       showNotification('error', 'Scan error: ' + error);
     } finally {
       setIsScanning(false);
@@ -311,63 +329,73 @@ const OnboardConfig: React.FC = () => {
     try {
       showNotification('info', '🚀 Generating your personalized SMART configuration...');
       
-      // Simulate progress updates during the API call
-      const progressInterval = setInterval(() => {
-        setGenerationProgress(prev => {
-          const elapsed = (new Date().getTime() - startTime.getTime()) / 1000;
-          const avgTimePerModel = elapsed / Math.max(1, prev.current);
-          const remaining = (prev.total - prev.current) * avgTimePerModel;
-          
-          // Simulate progression through models
-          if (prev.current < prev.total) {
-            const nextIndex = Math.min(prev.current + 1, prev.total);
-            const currentModel = scanResults[nextIndex - 1]?.filename || '';
+      // Connect to real-time progress updates via polling
+      // This replaces the old simulated progress with actual backend progress
+      const pollProgressInterval = setInterval(async () => {
+        try {
+          const progressResponse = await fetch('/api/setup/progress');
+          if (progressResponse.ok) {
+            const progressData = await progressResponse.json();
             
-            // Update stage based on progress
-            const stages = [
-              'Analyzing model compatibility...',
-              'Optimizing memory allocation...',
-              'Configuring GPU settings...',
-              'Finalizing configuration...'
-            ];
-            const progress = nextIndex / prev.total;
-            const stageIndex = Math.floor(progress * stages.length);
-            const currentStage = stages[Math.min(stageIndex, stages.length - 1)];
+            const elapsed = (new Date().getTime() - startTime.getTime()) / 1000;
+            const remaining = progressData.progress > 0 && progressData.progress < 100 ? 
+              (elapsed * (100 - progressData.progress)) / progressData.progress : null;
             
-            return {
-              ...prev,
-              current: nextIndex,
-              currentModel,
-              stage: currentStage,
-              estimatedTimeRemaining: remaining > 0 ? Math.ceil(remaining) : null
-            };
+            setGenerationProgress({
+              current: progressData.processed_models || 0,
+              total: progressData.total_models || scanResults.length,
+              currentModel: progressData.current_model || '',
+              stage: progressData.current_step || 'Generating configuration...',
+              startTime,
+              estimatedTimeRemaining: remaining ? Math.ceil(remaining) : null
+            });
+
+            // Check if completed or error
+            if (progressData.completed || progressData.status === 'completed') {
+              clearInterval(pollProgressInterval);
+              setGenerationProgress(prev => ({
+                ...prev,
+                current: prev.total,
+                stage: 'Configuration generated successfully!',
+                estimatedTimeRemaining: 0
+              }));
+            } else if (progressData.error) {
+              clearInterval(pollProgressInterval);
+              throw new Error(progressData.error);
+            }
           }
-          return prev;
-        });
-      }, Math.max(1000, (scanResults.length * 2000) / scanResults.length)); // Adaptive interval
+        } catch (pollError) {
+          console.warn('Failed to poll progress:', pollError);
+        }
+      }, 500); // Poll every 500ms
       
+      // Cleanup function for polling
+      const cleanup = () => {
+        clearInterval(pollProgressInterval);
+      };
+
       // Use the new database-driven config generation
-      const response = await fetch('/api/config/regenerate-from-db', {
+      const response = await fetch('/api/config/generate-all', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          folderPath: folderPaths[0] || '/models', // Use first folder or default
           options: {
             enableJinja: true,
             throughputFirst: systemConfig.throughputFirst,
             minContext: Math.min(16384, systemConfig.preferredContext),
             preferredContext: systemConfig.preferredContext,
-            forceBackend: systemConfig.backend,
-            forceVRAM: systemConfig.vramGB,
-            forceRAM: systemConfig.ramGB,
           }
         }),
       });
 
-      clearInterval(progressInterval);
+      // Clean up polling
+      cleanup();
 
       if (!response.ok) {
+        cleanup(); // Clean up on error too
         throw new Error('Failed to generate configuration');
       }
 

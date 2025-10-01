@@ -54,8 +54,13 @@ func (scg *ConfigGenerator) SetSystemInfo(systemInfo *SystemInfo) {
 
 // GenerateConfig generates a simple configuration file
 func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
+	pm := GetProgressManager()
+	pm.UpdateStatus("generating")
+	pm.UpdateStep("Starting configuration generation...")
+
 	// Use real-time hardware monitoring if enabled
 	if scg.Options.EnableRealtime {
+		pm.UpdateStep("Checking real-time hardware info...")
 		fmt.Println("🔄 Real-time hardware monitoring enabled...")
 		realtimeInfo, err := GetRealtimeHardwareInfo()
 		if err != nil {
@@ -76,6 +81,7 @@ func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
 		}
 	}
 
+	pm.UpdateStep("Building configuration structure...")
 	config := strings.Builder{}
 
 	// Write header
@@ -84,29 +90,53 @@ func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
 	// Write macros
 	scg.writeMacros(&config)
 
+	pm.UpdateStep("Processing model configurations...")
 	// Generate model IDs consistently (first pass)
 	modelIDMap := make(map[string]string)
+	validModels := 0
+	for _, model := range models {
+		if !model.IsDraft {
+			validModels++
+		}
+	}
+
+	processed := 0
 	for _, model := range models {
 		if model.IsDraft {
 			continue
 		}
+		processed++
+		pm.UpdateProgress(processed, validModels, model.Name)
 		modelIDMap[model.Path] = scg.generateModelID(model)
 	}
 
+	pm.UpdateStep("Writing model definitions...")
 	// Write models
 	config.WriteString("\nmodels:\n")
+	processed = 0
 	for _, model := range models {
 		if model.IsDraft {
 			continue // Skip draft models
 		}
+		processed++
+		pm.UpdateProgress(processed, validModels, model.Name)
 		scg.writeModel(&config, model, modelIDMap)
 	}
 
+	pm.UpdateStep("Writing model groups...")
 	// Write groups
 	scg.writeGroups(&config, models, modelIDMap)
 
+	pm.UpdateStep("Saving configuration file...")
 	// Save to file
-	return os.WriteFile(scg.OutputPath, []byte(config.String()), 0644)
+	err := os.WriteFile(scg.OutputPath, []byte(config.String()), 0644)
+	if err != nil {
+		pm.SetError(fmt.Sprintf("Failed to save config file: %v", err))
+		return err
+	}
+
+	pm.UpdateStatus("completed")
+	return nil
 }
 
 // writeHeader writes the configuration header
