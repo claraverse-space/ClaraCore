@@ -21,3 +21,19 @@ claracore.exe
 model_folders.json
 progress_state.json
 config.yaml.backup.*
+
+# Release management
+.github_token
+*.token
+dist/
+release_temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/

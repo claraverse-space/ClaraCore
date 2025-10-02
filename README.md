@@ -133,7 +133,46 @@ groups:
     members: ["llama-3-70b", "qwen-72b"]
 ```
 
-## 🙏 Credits & Acknowledgments
+## � Documentation
+
+### API Reference
+- **[Complete API Documentation](docs/API_COMPREHENSIVE.md)** - Full API reference with examples
+- **[Quick API Reference](docs/API.md)** - Concise API overview
+
+### Key Features
+- **OpenAI-Compatible Endpoints**: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models`
+- **Configuration Management**: `/api/config/*` - Manage models and settings
+- **Model Downloads**: `/api/models/download` - Download from Hugging Face
+- **System Detection**: `/api/system/detection` - Hardware and backend detection
+- **Real-time Events**: `/api/events` - SSE stream for live updates
+
+### Common Operations
+
+```bash
+# Get all available models
+curl http://localhost:5800/v1/models
+
+# Update model parameters with restart prompt
+curl -X POST http://localhost:5800/api/config/model/llama-3-8b \
+  -H "Content-Type: application/json" \
+  -d '{"temperature": 0.8, "max_tokens": 1024}'
+
+# Smart configuration regeneration
+curl -X POST http://localhost:5800/api/config/regenerate-from-db \
+  -H "Content-Type: application/json" \
+  -d '{"options": {"forceBackend": "vulkan", "preferredContext": 8192}}'
+
+# Monitor setup progress
+curl http://localhost:5800/api/setup/progress
+```
+
+### Web Interface
+- **Setup Wizard**: `http://localhost:5800/ui/setup` - Initial configuration
+- **Model Management**: `http://localhost:5800/ui/models` - Chat and model controls  
+- **Configuration**: `http://localhost:5800/ui/configuration` - Edit settings
+- **Downloads**: `http://localhost:5800/ui/downloads` - Model download manager
+
+## �🙏 Credits & Acknowledgments
 
 **ClaraCore is built on [llama-swap](https://github.com/mostlygeek/llama-swap) by [@mostlygeek](https://github.com/mostlygeek)** 
 
@@ -154,7 +193,25 @@ We welcome contributions! Whether it's bug fixes, new features, or documentation
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## � Release Management
+
+For maintainers creating releases:
+
+```bash
+# Quick release (interactive)
+./release.bat        # Windows
+./release.sh         # Linux/macOS
+
+# Manual release
+python release.py --version v0.1.0 --token-file .github_token
+
+# Draft release for testing
+python release.py --version v0.1.0 --token-file .github_token --draft
+```
+
+See [RELEASE_MANAGEMENT.md](RELEASE_MANAGEMENT.md) for detailed release procedures.
+
+## �📄 License
 
 MIT License - Same as llama-swap. See [LICENSE](LICENSE) for details.
 
