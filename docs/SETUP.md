@@ -11,6 +11,8 @@ This guide covers installation, configuration, and getting started with ClaraCor
 curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
 ```
 
+**Note**: For containers, WSL, or systemd-less environments, see our [Container Setup Guide](CONTAINER_SETUP.md).
+
 Or download and run manually:
 ```bash
 wget https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh

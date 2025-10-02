@@ -176,6 +176,20 @@ EOF
 
 # Setup Linux systemd service
 setup_linux_service() {
+    # Check if systemd is available
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo -e "${YELLOW}Systemd not available - skipping service setup${NC}"
+        echo -e "${YELLOW}You can manually start ClaraCore with: claracore --config $CONFIG_DIR/config.yaml${NC}"
+        return 0
+    fi
+    
+    # Test if systemd is running
+    if ! systemctl is-system-running >/dev/null 2>&1; then
+        echo -e "${YELLOW}Systemd not running (possibly in container/WSL) - skipping service setup${NC}"
+        echo -e "${YELLOW}You can manually start ClaraCore with: claracore --config $CONFIG_DIR/config.yaml${NC}"
+        return 0
+    fi
+    
     echo -e "${BLUE}Setting up systemd service...${NC}"
     
     SERVICE_FILE="$SYSTEMD_DIR/$SERVICE_NAME.service"
@@ -208,13 +222,19 @@ WantedBy=default.target
 EOF
 
     if [[ "$SYSTEM_INSTALL" == true ]]; then
-        systemctl daemon-reload
-        systemctl enable "$SERVICE_NAME"
-        echo -e "${GREEN}System service enabled. Start with: sudo systemctl start $SERVICE_NAME${NC}"
+        if systemctl daemon-reload 2>/dev/null && systemctl enable "$SERVICE_NAME" 2>/dev/null; then
+            echo -e "${GREEN}System service enabled. Start with: sudo systemctl start $SERVICE_NAME${NC}"
+        else
+            echo -e "${YELLOW}Failed to enable system service. You may need to run with sudo or start manually.${NC}"
+            echo -e "${YELLOW}Manual start: sudo $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+        fi
     else
-        systemctl --user daemon-reload
-        systemctl --user enable "$SERVICE_NAME"
-        echo -e "${GREEN}User service enabled. Start with: systemctl --user start $SERVICE_NAME${NC}"
+        if systemctl --user daemon-reload 2>/dev/null && systemctl --user enable "$SERVICE_NAME" 2>/dev/null; then
+            echo -e "${GREEN}User service enabled. Start with: systemctl --user start $SERVICE_NAME${NC}"
+        else
+            echo -e "${YELLOW}Failed to enable user service. Starting manually may be required.${NC}"
+            echo -e "${YELLOW}Manual start: $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+        fi
     fi
 }
 
@@ -308,14 +328,19 @@ main() {
     echo
     echo -e "3. Service management:"
     if [[ "$PLATFORM" == "linux" ]]; then
-        if [[ "$SYSTEM_INSTALL" == true ]]; then
-            echo -e "   Start:   ${BLUE}sudo systemctl start $SERVICE_NAME${NC}"
-            echo -e "   Stop:    ${BLUE}sudo systemctl stop $SERVICE_NAME${NC}"
-            echo -e "   Status:  ${BLUE}sudo systemctl status $SERVICE_NAME${NC}"
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+            if [[ "$SYSTEM_INSTALL" == true ]]; then
+                echo -e "   Start:   ${BLUE}sudo systemctl start $SERVICE_NAME${NC}"
+                echo -e "   Stop:    ${BLUE}sudo systemctl stop $SERVICE_NAME${NC}"
+                echo -e "   Status:  ${BLUE}sudo systemctl status $SERVICE_NAME${NC}"
+            else
+                echo -e "   Start:   ${BLUE}systemctl --user start $SERVICE_NAME${NC}"
+                echo -e "   Stop:    ${BLUE}systemctl --user stop $SERVICE_NAME${NC}"
+                echo -e "   Status:  ${BLUE}systemctl --user status $SERVICE_NAME${NC}"
+            fi
         else
-            echo -e "   Start:   ${BLUE}systemctl --user start $SERVICE_NAME${NC}"
-            echo -e "   Stop:    ${BLUE}systemctl --user stop $SERVICE_NAME${NC}"
-            echo -e "   Status:  ${BLUE}systemctl --user status $SERVICE_NAME${NC}"
+            echo -e "   ${YELLOW}Systemd not available - manual start required:${NC}"
+            echo -e "   Start:   ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     elif [[ "$PLATFORM" == "darwin" ]]; then
         echo -e "   Start:   ${BLUE}launchctl start $LABEL${NC}"
