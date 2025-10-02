@@ -13,20 +13,24 @@ $colors = @{
     Red = "Red"
     Green = "Green"
     Yellow = "Yellow"
-    Blue = "Cyan"
+    Blue = "Blue"
 }
 
 function Write-ColorOutput {
     param([string]$Message, [string]$Color = "White")
-    Write-Host $Message -ForegroundColor $colors[$Color]
+    if ($colors.ContainsKey($Color)) {
+        Write-Host $Message -ForegroundColor $colors[$Color]
+    } else {
+        Write-Host $Message -ForegroundColor White
+    }
 }
 
 function Write-Header {
     param([string]$Title)
     Write-Host ""
-    Write-ColorOutput "╔══════════════════════════════════════╗" "Blue"
-    Write-ColorOutput "║  $Title" "Blue"
-    Write-ColorOutput "╚══════════════════════════════════════╝" "Blue"
+    Write-ColorOutput "========================================" "Blue"
+    Write-ColorOutput "  $Title" "Blue"
+    Write-ColorOutput "========================================" "Blue"
     Write-Host ""
 }
 
@@ -111,6 +115,15 @@ function Install-Binary {
     # Install binary
     $binaryPath = Join-Path $installDir "claracore.exe"
     Copy-Item $TempFile $binaryPath -Force
+    
+    # Unblock the downloaded file to prevent Windows security warnings
+    try {
+        Unblock-File $binaryPath
+        Write-ColorOutput "Unblocked executable for Windows security" "Green"
+    }
+    catch {
+        Write-ColorOutput "Warning: Could not unblock file. You may need to run 'Unblock-File `"$binaryPath`"' manually" "Yellow"
+    }
     
     # Add to PATH if user install
     if (-not $SystemWide) {

@@ -346,6 +346,34 @@ curl -X POST http://localhost:5800/api/config/folders \
 
 ## 🔍 Troubleshooting
 
+### Windows Security Issues
+
+**Error: "An Application Control policy has blocked this file"**
+
+This is Windows security protection, not malware. ClaraCore is safe! Solutions:
+
+1. **Unblock the downloaded file**:
+   ```powershell
+   Unblock-File "$env:LOCALAPPDATA\ClaraCore\claracore.exe"
+   ```
+
+2. **Use local build instead**:
+   ```powershell
+   git clone https://github.com/claraverse-space/ClaraCore.git
+   cd ClaraCore
+   python build.py
+   .\claracore.exe
+   ```
+
+3. **Run as Administrator**:
+   ```powershell
+   Start-Process -Verb RunAs -FilePath "$env:LOCALAPPDATA\ClaraCore\claracore.exe"
+   ```
+
+4. **Add to Windows Defender exclusions**:
+   - Windows Security > Virus & threat protection > Exclusions
+   - Add folder: `%LOCALAPPDATA%\ClaraCore`
+
 ### Common Issues
 
 **1. Models Not Detected**

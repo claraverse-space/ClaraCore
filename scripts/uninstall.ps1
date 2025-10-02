@@ -11,20 +11,24 @@ $colors = @{
     Red = "Red"
     Green = "Green"
     Yellow = "Yellow"
-    Blue = "Cyan"
+    Blue = "Blue"
 }
 
 function Write-ColorOutput {
     param([string]$Message, [string]$Color = "White")
-    Write-Host $Message -ForegroundColor $colors[$Color]
+    if ($colors.ContainsKey($Color)) {
+        Write-Host $Message -ForegroundColor $colors[$Color]
+    } else {
+        Write-Host $Message -ForegroundColor White
+    }
 }
 
 function Write-Header {
     param([string]$Title)
     Write-Host ""
-    Write-ColorOutput "╔══════════════════════════════════════╗" "Blue"
-    Write-ColorOutput "║  $Title" "Blue"
-    Write-ColorOutput "╚══════════════════════════════════════╝" "Blue"
+    Write-ColorOutput "========================================" "Blue"
+    Write-ColorOutput "  $Title" "Blue"
+    Write-ColorOutput "========================================" "Blue"
     Write-Host ""
 }
 
@@ -145,7 +149,9 @@ function Remove-Installation {
         if ($Installation.Type -eq "User") {
             $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
             if ($userPath -like "*$($Installation.Path)*") {
-                $newPath = ($userPath -split ";") | Where-Object { $_ -ne $Installation.Path } | Join-String -Separator ";"
+                $pathParts = $userPath -split ";"
+                $newPathParts = $pathParts | Where-Object { $_ -ne $Installation.Path }
+                $newPath = $newPathParts -join ";"
                 [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
                 Write-ColorOutput "Removed from user PATH" "Green"
             }
