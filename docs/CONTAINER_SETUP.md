@@ -13,6 +13,9 @@ export PATH="$HOME/.local/bin:$PATH"
 # Start ClaraCore directly
 claracore --config ~/.config/claracore/config.yaml
 
+# Check version (should show proper version info as of v0.1.1+)
+claracore --version
+
 # Or with custom models folder
 claracore --models-folder /path/to/models
 
@@ -21,6 +24,8 @@ nohup claracore --config ~/.config/claracore/config.yaml > ~/.config/claracore/c
 ```
 
 **Note**: If you get "command not found", either restart your terminal or run the export command above.
+
+**Version Info**: As of v0.1.1, ClaraCore binaries now show proper version information instead of placeholder values.
 
 ## Docker Container
 

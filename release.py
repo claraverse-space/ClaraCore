@@ -158,9 +158,9 @@ def build_binaries(version: str) -> List[Dict]:
     # Set build variables
     build_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     ldflags = [
-        f"-X main.Version={version}",
-        f"-X main.BuildTime={build_time}",
-        f"-X main.GitCommit={get_git_commit()}",
+        f"-X main.version={version}",
+        f"-X main.date={build_time}",
+        f"-X main.commit={get_git_commit()}",
         "-w", "-s"  # Strip debug info for smaller binaries
     ]
     

@@ -114,6 +114,9 @@ If you used the automated installer, ClaraCore is ready to use:
 ### 3. Verify Installation
 
 ```bash
+# Test version info (should show proper version as of v0.1.1+)
+claracore --version
+
 # Check if models are loaded
 curl http://localhost:5800/v1/models
 

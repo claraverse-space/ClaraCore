@@ -10,6 +10,37 @@ import subprocess
 import time
 from pathlib import Path
 import platform
+from datetime import datetime
+
+def get_git_commit():
+    """Get current git commit hash"""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()[:8]  # Short hash
+    except Exception:
+        pass
+    return "unknown"
+
+def get_version():
+    """Get version from git tag or default"""
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "dev"
 
 def print_banner():
     """Print build script banner"""
@@ -139,10 +170,25 @@ def build_go():
     
     # Build Go application
     print("🔨 Building Go application...")
+    
+    # Get version information
+    version = get_version()
+    commit = get_git_commit()
+    build_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    print(f"📋 Version: {version}")
+    print(f"📋 Commit: {commit}")
+    print(f"📋 Build time: {build_time}")
+    
+    # Set ldflags for version information
+    ldflags = f"-X main.version={version} -X main.commit={commit} -X main.date={build_time}"
+    
     env = os.environ.copy()
     env["GOOS"] = goos
     env["GOARCH"] = goarch
-    if not run_command(f"go build -o {output_name} .", env=env):
+    
+    build_command = f"go build -ldflags \"{ldflags}\" -o {output_name} ."
+    if not run_command(build_command, env=env):
         return False
     
     # Check if executable was created
