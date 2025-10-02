@@ -481,7 +481,7 @@ func (p *Process) StopImmediately() {
 	p.stopCommand()
 }
 
-// Shutdown is called when llama-swap is shutting down. It will give a little bit
+// Shutdown is called when ClaraCore is shutting down. It will give a little bit
 // of time for any inflight requests to complete before shutting down. If the Process
 // is in the state of starting, it will cancel it and shut it down. Once a process is in
 // the StateShutdown state, it can not be started again.

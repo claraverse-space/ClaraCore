@@ -36,7 +36,7 @@ func AutoSetup(modelsFolder string) error {
 
 // AutoSetupWithOptions performs automatic model detection and configuration with custom options
 func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
-	fmt.Println("🚀 Starting llama-swap auto-setup...")
+	fmt.Println("🚀 Starting ClaraCore auto-setup...")
 
 	// Validate models folder
 	if modelsFolder == "" {
@@ -245,7 +245,7 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 
 // AutoSetupMultiFoldersWithOptions performs automatic model detection and configuration from multiple folders
 func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptions) error {
-	fmt.Println("🚀 Starting llama-swap multi-folder auto-setup...")
+	fmt.Println("🚀 Starting ClaraCore multi-folder auto-setup...")
 
 	// Validate folders
 	if len(modelsFolders) == 0 {
