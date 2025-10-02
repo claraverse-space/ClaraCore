@@ -4,13 +4,50 @@
 
 # ClaraCore 🚀
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MI## 🔧 Quick Troubleshooting
+
+**"claracore: command not found"**
+```bash
+# Add to PATH and reload shell:
+export PATH="$HOME/.local/bin:$PATH"
+source ~/.bashrc
+```
+
+**Windows security blocking**
+```powershell
+# Run troubleshooter:
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/troubleshoot.ps1 | powershell
+```
+
+**Need help?** See our [Setup Guide](docs/SETUP.md) or [Container Guide](docs/CONTAINER_SETUP.md)
+
+## 🙏 Credits & Acknowledgments)
 [![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/prave/ClaraCore)
 
 > **Auto-setup for llama.cpp** - Point it at your GGUF models folder and get a complete AI inference server in seconds.
 
 ClaraCore extends [llama-swap](https://github.com/mostlygeek/llama-swap) with intelligent automation, bringing zero-configuration setup to llama.cpp deployments.
+
+## 🔥 Quick Install
+
+**Linux/macOS (Recommended):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
+```
+
+**Windows:**
+```powershell
+irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1 | iex
+```
+
+**Then start immediately:**
+```bash
+claracore --models-folder /path/to/your/gguf/models
+# Visit: http://localhost:5800/ui/setup
+```
+
+✨ **Features include:** Auto-setup, hardware detection, binary management, and production configs!
 
 ## ✨ What's New in ClaraCore
 
@@ -38,27 +75,50 @@ While maintaining 100% compatibility with llama-swap, ClaraCore adds:
 
 ## 📦 Installation
 
-### Download Binaries
+### Automated Installer (Recommended)
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
+```
+
+**Windows:**
+```powershell
+irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1 | iex
+```
+
+The installer will:
+- Download the latest binary for your platform
+- Set up configuration files
+- Add to system PATH
+- Configure auto-start service (systemd/launchd/Windows Service)
+
+### Manual Download
 
 ```bash
 # Windows
-curl -L -o claracore.exe https://github.com/prave/ClaraCore/releases/latest/download/claracore-windows-amd64.exe
+curl -L -o claracore.exe https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-windows-amd64.exe
 
 # Linux
-curl -L -o claracore https://github.com/prave/ClaraCore/releases/latest/download/claracore-linux-amd64
+curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-linux-amd64
 chmod +x claracore
 
-# macOS
-curl -L -o claracore https://github.com/prave/ClaraCore/releases/latest/download/claracore-darwin-amd64
+# macOS Intel
+curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-darwin-amd64
+chmod +x claracore
+
+# macOS Apple Silicon
+curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-darwin-arm64
 chmod +x claracore
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/prave/ClaraCore.git
+git clone https://github.com/claraverse-space/ClaraCore.git
 cd ClaraCore
-go build -o claracore .
+python build.py  # Builds UI + Go backend with version info
+# or: go build -o claracore .
 ```
 
 ## 🎛️ Core Features
@@ -203,10 +263,10 @@ For maintainers creating releases:
 ./release.sh         # Linux/macOS
 
 # Manual release
-python release.py --version v0.1.0 --token-file .github_token
+python release.py --version v0.1.1 --token-file .github_token
 
 # Draft release for testing
-python release.py --version v0.1.0 --token-file .github_token --draft
+python release.py --version v0.1.1 --token-file .github_token --draft
 ```
 
 See [RELEASE_MANAGEMENT.md](RELEASE_MANAGEMENT.md) for detailed release procedures.

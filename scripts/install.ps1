@@ -208,8 +208,9 @@ function Install-WindowsService {
         Start-Sleep -Seconds 2
     }
     
-    # Create service
-    $binaryPath = "`"$($Paths.BinaryPath)`" --config `"$(Join-Path $Paths.ConfigDir "config.yaml")`""
+    # Create service with proper user context
+    # Don't specify config file - let ClaraCore create its own
+    $binaryPath = "`"$($Paths.BinaryPath)`""
     
     try {
         # Test if binary can run first
@@ -220,20 +221,40 @@ function Install-WindowsService {
             throw "Binary test failed. Likely blocked by Windows security policies."
         }
         
-        New-Service -Name $serviceName -BinaryPathName $binaryPath -DisplayName $serviceDisplayName -Description $serviceDescription -StartupType Automatic | Out-Null
+        # Create service with automatic config creation
+        # Set working directory to the binary directory so config.yaml is created there
+        $workingDir = Split-Path $Paths.BinaryPath -Parent
+        $serviceParams = @{
+            Name = $serviceName
+            BinaryPathName = $binaryPath
+            DisplayName = $serviceDisplayName
+            Description = $serviceDescription
+            StartupType = "Automatic"
+        }
+        
+        New-Service @serviceParams | Out-Null
+        
         Write-ColorOutput "Windows Service installed successfully" "Green"
+        Write-ColorOutput "Service will create config.yaml automatically in: $workingDir" "Blue"
         Write-ColorOutput "Service will start automatically on system boot" "Green"
         
         # Start the service with better error handling
         try {
-            Start-Service -Name $serviceName
+            Start-Service -Name $serviceName -ErrorAction Stop
             Write-ColorOutput "Service started successfully" "Green"
         }
         catch {
-            Write-ColorOutput "Warning: Service installed but failed to start: $($_.Exception.Message)" "Yellow"
-            Write-ColorOutput "This is likely due to Windows security policies blocking the executable" "Yellow"
-            Write-ColorOutput "Try running: Unblock-File `"$($Paths.BinaryPath)`"" "Yellow"
-            Write-ColorOutput "Or start manually: $($Paths.BinaryPath)" "Yellow"
+            Write-ColorOutput "Warning: Service installed but failed to start" "Yellow"
+            Write-ColorOutput "Reason: $($_.Exception.Message)" "Yellow"
+            Write-ColorOutput "" "White"
+            Write-ColorOutput "This is typically due to:" "Yellow"
+            Write-ColorOutput "1. Windows security blocking the executable" "Yellow"
+            Write-ColorOutput "2. Service trying to access user directories as LocalSystem" "Yellow"
+            Write-ColorOutput "" "White"
+            Write-ColorOutput "Solutions:" "Green"
+            Write-ColorOutput "- Manual start: $($Paths.BinaryPath)" "Blue"
+            Write-ColorOutput "- Run troubleshooter: .\scripts\troubleshoot.ps1 -All" "Blue"
+            Write-ColorOutput "- Or use manual startup instead of service" "Blue"
         }
     }
     catch {
