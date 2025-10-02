@@ -352,17 +352,34 @@ curl -X POST http://localhost:5800/api/config/folders \
 
 This is Windows security protection, not malware. ClaraCore is safe! Solutions:
 
-1. **Unblock the downloaded file**:
+1. **Run the troubleshooter first:**
+   ```powershell
+   .\scripts\troubleshoot.ps1 -UnblockFile
+   ```
+
+2. **Manual unblock**:
    ```powershell
    Unblock-File "$env:LOCALAPPDATA\ClaraCore\claracore.exe"
    ```
 
-2. **Use local build instead**:
+3. **If still blocked, disable Windows Defender Application Control:**
+   - Open Windows Security (search "Windows Security" in Start menu)
+   - Go to "App & browser control"
+   - Click "Reputation-based protection settings"
+   - Turn OFF "Check apps and files"
+   - Re-enable after installation for security
+
+4. **Alternative - Build from source**:
    ```powershell
    git clone https://github.com/claraverse-space/ClaraCore.git
    cd ClaraCore
    python build.py
    .\claracore.exe
+   ```
+
+5. **Service issues**:
+   ```powershell
+   .\scripts\troubleshoot.ps1 -FixService
    ```
 
 3. **Run as Administrator**:

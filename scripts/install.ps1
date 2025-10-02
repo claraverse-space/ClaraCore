@@ -212,17 +212,38 @@ function Install-WindowsService {
     $binaryPath = "`"$($Paths.BinaryPath)`" --config `"$(Join-Path $Paths.ConfigDir "config.yaml")`""
     
     try {
+        # Test if binary can run first
+        Write-ColorOutput "Testing binary before service installation..." "Blue"
+        $testResult = Start-Process -FilePath $Paths.BinaryPath -ArgumentList "--version" -Wait -PassThru -WindowStyle Hidden -ErrorAction SilentlyContinue
+        
+        if ($testResult.ExitCode -ne 0) {
+            throw "Binary test failed. Likely blocked by Windows security policies."
+        }
+        
         New-Service -Name $serviceName -BinaryPathName $binaryPath -DisplayName $serviceDisplayName -Description $serviceDescription -StartupType Automatic | Out-Null
         Write-ColorOutput "Windows Service installed successfully" "Green"
         Write-ColorOutput "Service will start automatically on system boot" "Green"
         
-        # Start the service
-        Start-Service -Name $serviceName
-        Write-ColorOutput "Service started successfully" "Green"
+        # Start the service with better error handling
+        try {
+            Start-Service -Name $serviceName
+            Write-ColorOutput "Service started successfully" "Green"
+        }
+        catch {
+            Write-ColorOutput "Warning: Service installed but failed to start: $($_.Exception.Message)" "Yellow"
+            Write-ColorOutput "This is likely due to Windows security policies blocking the executable" "Yellow"
+            Write-ColorOutput "Try running: Unblock-File `"$($Paths.BinaryPath)`"" "Yellow"
+            Write-ColorOutput "Or start manually: $($Paths.BinaryPath)" "Yellow"
+        }
     }
     catch {
         Write-ColorOutput "Error: Failed to install Windows Service: $($_.Exception.Message)" "Red"
-        Write-ColorOutput "You can start ClaraCore manually: $($Paths.BinaryPath)" "Yellow"
+        Write-ColorOutput "" "White"
+        Write-ColorOutput "This is likely due to Windows security policies blocking the executable." "Yellow"
+        Write-ColorOutput "Solutions:" "Yellow"
+        Write-ColorOutput "1. Unblock the file: Unblock-File `"$($Paths.BinaryPath)`"" "White"
+        Write-ColorOutput "2. Start manually: $($Paths.BinaryPath)" "White"
+        Write-ColorOutput "3. Add Windows Defender exclusion for: $(Split-Path $Paths.BinaryPath)" "White"
     }
 }
 
@@ -248,6 +269,27 @@ function Show-NextSteps {
     Write-Header "Installation Completed!"
     
     Write-ColorOutput "Next steps:" "Yellow"
+    Write-Host ""
+    
+    # Test if binary works
+    Write-ColorOutput "Testing installation..." "Blue"
+    try {
+        $testResult = Start-Process -FilePath $Paths.BinaryPath -ArgumentList "--version" -Wait -PassThru -WindowStyle Hidden -ErrorAction Stop
+        if ($testResult.ExitCode -eq 0) {
+            Write-ColorOutput "✅ Installation test successful!" "Green"
+        } else {
+            throw "Binary test failed"
+        }
+    }
+    catch {
+        Write-ColorOutput "⚠️  Binary is blocked by Windows security" "Yellow"
+        Write-Host ""
+        Write-ColorOutput "IMPORTANT: Fix Windows security blocking:" "Red"
+        Write-ColorOutput "   Unblock-File `"$($Paths.BinaryPath)`"" "White"
+        Write-Host ""
+        Write-ColorOutput "Or add Windows Defender exclusion:" "Yellow"
+        Write-ColorOutput "   Windows Security > Exclusions > Add folder: $(Split-Path $Paths.BinaryPath)" "White"
+    }
     Write-Host ""
     
     Write-ColorOutput "1. Configure your models folder:" "White"
