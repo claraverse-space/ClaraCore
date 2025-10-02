@@ -7,6 +7,9 @@ This guide helps you run ClaraCore in environments without systemd (containers, 
 If the installer couldn't set up systemd service, you can still run ClaraCore manually:
 
 ```bash
+# If 'claracore' command not found, add to PATH:
+export PATH="$HOME/.local/bin:$PATH"
+
 # Start ClaraCore directly
 claracore --config ~/.config/claracore/config.yaml
 
@@ -16,6 +19,8 @@ claracore --models-folder /path/to/models
 # Background execution
 nohup claracore --config ~/.config/claracore/config.yaml > ~/.config/claracore/claracore.log 2>&1 &
 ```
+
+**Note**: If you get "command not found", either restart your terminal or run the export command above.
 
 ## Docker Container
 

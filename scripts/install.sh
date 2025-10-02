@@ -129,12 +129,38 @@ download_binary() {
         mv "$TEMP_FILE" "$INSTALL_DIR/claracore"
         # Add to PATH if not already there
         if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+            echo -e "${BLUE}Adding ~/.local/bin to PATH...${NC}"
+            
+            # Add to shell configuration files
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc" 2>/dev/null || true
+            
+            # Also try common profile files
+            [[ -f "$HOME/.profile" ]] && echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
+            
+            # Export for current session
+            export PATH="$HOME/.local/bin:$PATH"
+            
+            # Try to source bashrc for current session if running interactively
+            if [[ -t 0 ]] && [[ -f "$HOME/.bashrc" ]]; then
+                echo -e "${BLUE}Updating current session...${NC}"
+                source "$HOME/.bashrc" 2>/dev/null || true
+            fi
+            
+            echo -e "${GREEN}PATH updated. You may need to restart your terminal or run: source ~/.bashrc${NC}"
+        else
+            echo -e "${GREEN}~/.local/bin already in PATH${NC}"
         fi
     fi
     
     echo -e "${GREEN}Binary installed successfully${NC}"
+    
+    # Test if binary works and is in PATH
+    if command -v claracore >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ claracore command is accessible${NC}"
+    else
+        echo -e "${YELLOW}⚠ claracore not yet in PATH for this session${NC}"
+    fi
 }
 
 # Create default configuration
@@ -318,6 +344,18 @@ main() {
     echo -e "${GREEN}║     Installation Completed!         ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
     echo
+    
+    # Check if claracore is now accessible
+    if command -v claracore >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ claracore command is ready to use!${NC}"
+    else
+        echo -e "${YELLOW}⚠ To use 'claracore' command, restart your terminal or run:${NC}"
+        echo -e "   ${BLUE}source ~/.bashrc${NC}"
+        echo -e "   ${BLUE}# or${NC}"
+        echo -e "   ${BLUE}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
+        echo
+    fi
+    
     echo -e "${YELLOW}Next steps:${NC}"
     echo -e "1. Configure your models folder:"
     echo -e "   ${BLUE}claracore --models-folder /path/to/your/models${NC}"

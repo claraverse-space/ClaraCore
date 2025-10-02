@@ -395,7 +395,22 @@ This is Windows security protection, not malware. ClaraCore is safe! Solutions:
 
 ### Common Issues
 
-**1. Models Not Detected**
+**1. "claracore: command not found"**
+```bash
+# Quick fix - add to current session:
+export PATH="$HOME/.local/bin:$PATH"
+
+# Automatic fix script:
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/fix-path.sh | bash
+
+# Manual fix - restart terminal or run:
+source ~/.bashrc
+
+# Verify it works:
+claracore --version
+```
+
+**2. Models Not Detected**
 ```bash
 # Check folder permissions
 ls -la /path/to/models
