@@ -40,7 +40,7 @@ function Get-LatestRelease {
     Write-ColorOutput "Fetching latest release information..." "Blue"
     
     try {
-        $repo = "badboysm890/ClaraCore"
+        $repo = "claraverse-space/ClaraCore"
         $releaseUrl = "https://api.github.com/repos/$repo/releases/latest"
         $release = Invoke-RestMethod -Uri $releaseUrl -UseBasicParsing
         

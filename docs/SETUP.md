@@ -8,24 +8,24 @@ This guide covers installation, configuration, and getting started with ClaraCor
 
 #### Linux and macOS
 ```bash
-curl -fsSL https://raw.githubusercontent.com/badboysm890/ClaraCore/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
 ```
 
 Or download and run manually:
 ```bash
-wget https://raw.githubusercontent.com/badboysm890/ClaraCore/main/scripts/install.sh
+wget https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh
 chmod +x install.sh
 ./install.sh
 ```
 
 #### Windows (PowerShell as Administrator)
 ```powershell
-irm https://raw.githubusercontent.com/badboysm890/ClaraCore/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1 | iex
 ```
 
 Or download and run manually:
 ```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/badboysm890/ClaraCore/main/scripts/install.ps1" -OutFile "install.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1" -OutFile "install.ps1"
 .\install.ps1
 ```
 
@@ -455,7 +455,7 @@ tail -f /var/log/system.log | grep claracore
 **Cross-platform service script:**
 ```bash
 # Download service management script
-wget https://raw.githubusercontent.com/badboysm890/ClaraCore/main/scripts/claracore-service.sh
+wget https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/claracore-service.sh
 chmod +x claracore-service.sh
 
 # Use the service script
@@ -492,7 +492,7 @@ Get-EventLog -LogName Application -Source ClaraCore -Newest 50
 **Linux/macOS:**
 ```bash
 # Download uninstall script
-wget https://raw.githubusercontent.com/badboysm890/ClaraCore/main/scripts/uninstall.sh
+wget https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/uninstall.sh
 chmod +x uninstall.sh
 
 # Uninstall (keeps config)
@@ -505,7 +505,7 @@ sudo ./uninstall.sh --remove-config
 **Windows:**
 ```powershell
 # Download uninstall script
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/badboysm890/ClaraCore/main/scripts/uninstall.ps1" -OutFile "uninstall.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/uninstall.ps1" -OutFile "uninstall.ps1"
 
 # Uninstall (keeps config)
 .\uninstall.ps1

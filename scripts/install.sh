@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO="badboysm890/ClaraCore"
+    REPO="claraverse-space/ClaraCore"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="$HOME/.config/claracore"
 SERVICE_NAME="claracore"

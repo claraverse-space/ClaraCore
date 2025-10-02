@@ -34,7 +34,7 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-REPO_OWNER = "badboysm890"
+REPO_OWNER = "claraverse-space"
 REPO_NAME = "ClaraCore"
 BUILD_DIR = "dist"
 BINARY_NAME = "claracore"
