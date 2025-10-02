@@ -221,40 +221,30 @@ function Install-WindowsService {
             throw "Binary test failed. Likely blocked by Windows security policies."
         }
         
-        # Create service with automatic config creation
-        # Set working directory to the binary directory so config.yaml is created there
-        $workingDir = Split-Path $Paths.BinaryPath -Parent
-        $serviceParams = @{
-            Name = $serviceName
-            BinaryPathName = $binaryPath
-            DisplayName = $serviceDisplayName
-            Description = $serviceDescription
-            StartupType = "Automatic"
-        }
+        # Create startup shortcut instead of Windows service (more reliable for console apps)
+        Write-ColorOutput "Setting up auto-start shortcut..." "Blue"
         
-        New-Service @serviceParams | Out-Null
-        
-        Write-ColorOutput "Windows Service installed successfully" "Green"
-        Write-ColorOutput "Service will create config.yaml automatically in: $workingDir" "Blue"
-        Write-ColorOutput "Service will start automatically on system boot" "Green"
-        
-        # Start the service with better error handling
         try {
-            Start-Service -Name $serviceName -ErrorAction Stop
-            Write-ColorOutput "Service started successfully" "Green"
-        }
-        catch {
-            Write-ColorOutput "Warning: Service installed but failed to start" "Yellow"
-            Write-ColorOutput "Reason: $($_.Exception.Message)" "Yellow"
-            Write-ColorOutput "" "White"
-            Write-ColorOutput "This is typically due to:" "Yellow"
-            Write-ColorOutput "1. Windows security blocking the executable" "Yellow"
-            Write-ColorOutput "2. Service trying to access user directories as LocalSystem" "Yellow"
-            Write-ColorOutput "" "White"
-            Write-ColorOutput "Solutions:" "Green"
-            Write-ColorOutput "- Manual start: $($Paths.BinaryPath)" "Blue"
-            Write-ColorOutput "- Run troubleshooter: .\scripts\troubleshoot.ps1 -All" "Blue"
-            Write-ColorOutput "- Or use manual startup instead of service" "Blue"
+            $startupPath = [Environment]::GetFolderPath("Startup")
+            $shortcutPath = Join-Path $startupPath "ClaraCore.lnk"
+            
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcut = $shell.CreateShortcut($shortcutPath)
+            $shortcut.TargetPath = $Paths.BinaryPath
+            $shortcut.WorkingDirectory = Split-Path $Paths.BinaryPath -Parent
+            $shortcut.WindowStyle = 7  # Minimized window
+            $shortcut.Description = "ClaraCore AI Inference Server"
+            $shortcut.Save()
+            
+            Write-ColorOutput "Auto-start shortcut created successfully" "Green"
+            Write-ColorOutput "ClaraCore will start automatically when you log in" "Green"
+            Write-ColorOutput "Shortcut location: $shortcutPath" "Blue"
+            
+            # Release COM object
+            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null
+            
+        } catch {
+            Write-ColorOutput "Warning: Could not create auto-start shortcut: $($_.Exception.Message)" "Yellow"
         }
     }
     catch {
@@ -322,13 +312,11 @@ function Show-NextSteps {
     Write-ColorOutput "   Then visit: http://localhost:5800/ui/setup" "Blue"
     Write-Host ""
     
-    if (-not $NoService -and (Test-AdminRights)) {
-        Write-ColorOutput "3. Service management:" "White"
-        Write-ColorOutput "   Start:   Start-Service ClaraCore" "Blue"
-        Write-ColorOutput "   Stop:    Stop-Service ClaraCore" "Blue"
-        Write-ColorOutput "   Status:  Get-Service ClaraCore" "Blue"
-        Write-Host ""
-    }
+    Write-ColorOutput "3. Auto-start:" "White"
+    Write-ColorOutput "   ClaraCore will start automatically when you log in" "Blue"
+    Write-ColorOutput "   Manual start: $($Paths.BinaryPath)" "Blue"
+    Write-ColorOutput "   Stop: Close the ClaraCore window or press Ctrl+C" "Blue"
+    Write-Host ""
     
     Write-ColorOutput "4. Configuration files:" "White"
     Write-ColorOutput "   Config:    $(Join-Path $Paths.ConfigDir "config.yaml")" "Blue"
