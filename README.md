@@ -4,9 +4,7 @@
 
 # ClaraCore 🚀
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MI## 🔧 Quick Troubleshooting
-
-**"claracore: command not found"**
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ```bash
 # Add to PATH and reload shell:
 export PATH="$HOME/.local/bin:$PATH"
