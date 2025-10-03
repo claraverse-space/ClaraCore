@@ -58,11 +58,61 @@ type BinaryMetadata struct {
 	Path    string `json:"path"`
 }
 
+// GitHubRelease represents a GitHub release response
+type GitHubRelease struct {
+	TagName    string `json:"tag_name"`
+	Name       string `json:"name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+	CreatedAt  string `json:"created_at"`
+	Assets     []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
 const (
-	LLAMA_CPP_RELEASE_URL   = "https://github.com/ggml-org/llama.cpp/releases/tag/b6527"
-	LLAMA_CPP_DOWNLOAD_BASE = "https://github.com/ggml-org/llama.cpp/releases/download/b6527"
-	BINARY_METADATA_FILE    = "binary_metadata.json"
+	LLAMA_CPP_GITHUB_API      = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+	LLAMA_CPP_CURRENT_VERSION = "b6527" // Fallback version
+	BINARY_METADATA_FILE      = "binary_metadata.json"
 )
+
+// GetLatestReleaseVersion fetches the latest llama.cpp release version from GitHub
+func GetLatestReleaseVersion() (string, error) {
+	fmt.Printf("🔍 Checking for latest llama.cpp release...\n")
+	
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	
+	resp, err := client.Get(LLAMA_CPP_GITHUB_API)
+	if err != nil {
+		fmt.Printf("⚠️  Failed to check latest release, using fallback version %s\n", LLAMA_CPP_CURRENT_VERSION)
+		return LLAMA_CPP_CURRENT_VERSION, nil
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("⚠️  GitHub API returned %d, using fallback version %s\n", resp.StatusCode, LLAMA_CPP_CURRENT_VERSION)
+		return LLAMA_CPP_CURRENT_VERSION, nil
+	}
+	
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		fmt.Printf("⚠️  Failed to parse release info, using fallback version %s\n", LLAMA_CPP_CURRENT_VERSION)
+		return LLAMA_CPP_CURRENT_VERSION, nil
+	}
+	
+	// Validate the tag name format (should be like "b6527" or "v1.0.0")
+	version := release.TagName
+	if version == "" {
+		fmt.Printf("⚠️  Empty version tag, using fallback version %s\n", LLAMA_CPP_CURRENT_VERSION)
+		return LLAMA_CPP_CURRENT_VERSION, nil
+	}
+	
+	fmt.Printf("✅ Latest release found: %s\n", version)
+	return version, nil
+}
 
 // saveBinaryMetadata saves information about the installed binary
 func saveBinaryMetadata(extractDir string, binaryInfo *BinaryInfo) error {
@@ -84,8 +134,8 @@ func saveBinaryMetadata(extractDir string, binaryInfo *BinaryInfo) error {
 	return encoder.Encode(metadata)
 }
 
-// loadBinaryMetadata loads information about the currently installed binary
-func loadBinaryMetadata(extractDir string) (*BinaryMetadata, error) {
+// LoadBinaryMetadata loads information about the currently installed binary
+func LoadBinaryMetadata(extractDir string) (*BinaryMetadata, error) {
 	metadataPath := filepath.Join(extractDir, BINARY_METADATA_FILE)
 	file, err := os.Open(metadataPath)
 	if err != nil {
@@ -120,8 +170,17 @@ func DetectSystem() SystemInfo {
 }
 
 // GetOptimalBinaryURL returns the best binary download URL for the system
-func GetOptimalBinaryURL(system SystemInfo, forceBackend string) (string, string, error) {
+func GetOptimalBinaryURL(system SystemInfo, forceBackend string, version string) (string, string, error) {
 	var filename, binaryType string
+
+	// If version is empty, get the latest version
+	if version == "" {
+		var err error
+		version, err = GetLatestReleaseVersion()
+		if err != nil {
+			version = LLAMA_CPP_CURRENT_VERSION
+		}
+	}
 
 	// If a backend is forced, use that instead of auto-detection
 	if forceBackend != "" {
@@ -164,43 +223,43 @@ func GetOptimalBinaryURL(system SystemInfo, forceBackend string) (string, string
 		}
 	}
 
-	// Now determine the filename based on the chosen backend
+	// Now determine the filename based on the chosen backend and version
 	switch system.OS {
 	case "windows":
 		switch binaryType {
 		case "cuda":
-			filename = "llama-b6527-bin-win-cuda-12.4-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-win-cuda-12.4-x64.zip", version)
 		case "rocm":
-			filename = "llama-b6527-bin-win-rocm-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-win-rocm-x64.zip", version)
 		case "vulkan":
-			filename = "llama-b6527-bin-win-vulkan-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-win-vulkan-x64.zip", version)
 		case "cpu":
-			filename = "llama-b6527-bin-win-cpu-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-win-cpu-x64.zip", version)
 		default:
 			return "", "", fmt.Errorf("unsupported backend '%s' for Windows", binaryType)
 		}
 	case "linux":
 		switch binaryType {
 		case "cuda":
-			filename = "llama-b6527-bin-ubuntu-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-vulkan-x64.zip", version)
 		case "rocm":
-			filename = "llama-b6527-bin-ubuntu-rocm-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-rocm-x64.zip", version)
 		case "vulkan":
-			filename = "llama-b6527-bin-ubuntu-vulkan-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-vulkan-x64.zip", version)
 		case "cpu":
-			filename = "llama-b6527-bin-ubuntu-x64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
 		default:
 			return "", "", fmt.Errorf("unsupported backend '%s' for Linux", binaryType)
 		}
 	case "darwin":
 		switch binaryType {
 		case "metal":
-			filename = "llama-b6527-bin-macos-arm64.zip"
+			filename = fmt.Sprintf("llama-%s-bin-macos-arm64.zip", version)
 		case "cpu":
 			if system.Architecture == "arm64" {
-				filename = "llama-b6527-bin-macos-arm64.zip"
+				filename = fmt.Sprintf("llama-%s-bin-macos-arm64.zip", version)
 			} else {
-				filename = "llama-b6527-bin-macos-x64.zip"
+				filename = fmt.Sprintf("llama-%s-bin-macos-x64.zip", version)
 			}
 		default:
 			return "", "", fmt.Errorf("unsupported backend '%s' for macOS", binaryType)
@@ -209,7 +268,8 @@ func GetOptimalBinaryURL(system SystemInfo, forceBackend string) (string, string
 		return "", "", fmt.Errorf("unsupported operating system: %s", system.OS)
 	}
 
-	url := fmt.Sprintf("%s/%s", LLAMA_CPP_DOWNLOAD_BASE, filename)
+	downloadBase := fmt.Sprintf("https://github.com/ggml-org/llama.cpp/releases/download/%s", version)
+	url := fmt.Sprintf("%s/%s", downloadBase, filename)
 	return url, binaryType, nil
 }
 
@@ -264,7 +324,13 @@ func killLlamaServerProcesses() {
 
 // DownloadBinary downloads and extracts the llama-server binary
 func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) (*BinaryInfo, error) {
-	url, binaryType, err := GetOptimalBinaryURL(system, forceBackend)
+	// Get the latest version
+	version, err := GetLatestReleaseVersion()
+	if err != nil {
+		version = LLAMA_CPP_CURRENT_VERSION
+	}
+
+	url, binaryType, err := GetOptimalBinaryURL(system, forceBackend, version)
 	if err != nil {
 		return nil, err
 	}
@@ -279,22 +345,22 @@ func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) 
 
 	// Check if binary already exists
 	fmt.Printf("🔍 Checking for existing binary in: %s\n", extractDir)
-	existingServerPath, err := findLlamaServer(extractDir)
+	existingServerPath, err := FindLlamaServer(extractDir)
 	if err == nil {
-		// Binary exists, check if it's the right type for our system
+		// Binary exists, check if it's the right type and version
 		fmt.Printf("✅ Found existing llama-server binary: %s\n", existingServerPath)
 
-		// Check metadata to see if the existing binary matches the required type
-		metadata, metaErr := loadBinaryMetadata(extractDir)
-		if metaErr == nil && metadata.Type == binaryType {
-			// Binary type matches, check for additional requirements
+		// Check metadata to see if the existing binary matches the required type and version
+		metadata, metaErr := LoadBinaryMetadata(extractDir)
+		if metaErr == nil && metadata.Type == binaryType && metadata.Version == version {
+			// Binary type and version match, check for additional requirements
 			if system.HasCUDA && system.OS == "windows" {
 				cudartPath := filepath.Join(extractDir, "cudart64_12.dll")
 				if _, err := os.Stat(cudartPath); err == nil {
-					fmt.Printf("✅ Existing %s binary is compatible, skipping download\n", binaryType)
+					fmt.Printf("✅ Existing %s binary (v%s) is compatible, skipping download\n", binaryType, version)
 					return &BinaryInfo{
 						Path:    existingServerPath,
-						Version: "b6527",
+						Version: version,
 						Type:    binaryType,
 					}, nil
 				} else {
@@ -302,19 +368,23 @@ func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) 
 				}
 			} else {
 				// Non-CUDA system or metadata matches, existing binary is sufficient
-				fmt.Printf("✅ Existing %s binary is compatible, skipping download\n", binaryType)
+				fmt.Printf("✅ Existing %s binary (v%s) is compatible, skipping download\n", binaryType, version)
 				return &BinaryInfo{
 					Path:    existingServerPath,
-					Version: "b6527",
+					Version: version,
 					Type:    binaryType,
 				}, nil
 			}
 		} else {
-			// Binary type doesn't match or no metadata - need to re-download
+			// Binary type doesn't match, version is outdated, or no metadata - need to re-download
 			if metaErr == nil {
-				fmt.Printf("🔄 Binary type mismatch: existing=%s, required=%s. Re-downloading...\n", metadata.Type, binaryType)
+				if metadata.Version != version {
+					fmt.Printf("🔄 Version update available: %s -> %s. Re-downloading...\n", metadata.Version, version)
+				} else {
+					fmt.Printf("🔄 Binary type mismatch: existing=%s, required=%s. Re-downloading...\n", metadata.Type, binaryType)
+				}
 			} else {
-				fmt.Printf("🔄 No binary metadata found. Re-downloading %s binary...\n", binaryType)
+				fmt.Printf("🔄 No binary metadata found. Re-downloading %s binary (v%s)...\n", binaryType, version)
 			}
 
 			// Remove existing binary directory to ensure clean installation
@@ -334,11 +404,11 @@ func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) 
 	}
 
 	// If we get here, we need to download
-	fmt.Printf("⬇️  Downloading llama-server binary...\n")
+	fmt.Printf("⬇️  Downloading llama-server binary (v%s)...\n", version)
 
 	// For CUDA on Windows, download both runtime and binary
 	if system.HasCUDA && system.OS == "windows" {
-		cudartURL := LLAMA_CPP_DOWNLOAD_BASE + "/cudart-llama-bin-win-cuda-12.4-x64.zip"
+		cudartURL := fmt.Sprintf("https://github.com/ggml-org/llama.cpp/releases/download/%s/cudart-llama-bin-win-cuda-12.4-x64.zip", version)
 		fmt.Printf("Downloading CUDA runtime from: %s\n", cudartURL)
 
 		// Download CUDA runtime
@@ -391,7 +461,7 @@ func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) 
 
 	// Find the llama-server executable
 	fmt.Printf("🔍 Searching for llama-server executable in: %s\n", extractDir)
-	serverPath, err := findLlamaServer(extractDir)
+	serverPath, err := FindLlamaServer(extractDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find llama-server executable: %v", err)
 	}
@@ -407,7 +477,7 @@ func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) 
 
 	binaryInfo := &BinaryInfo{
 		Path:    serverPath,
-		Version: "b6527",
+		Version: version,
 		Type:    binaryType,
 	}
 
@@ -417,7 +487,128 @@ func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) 
 		fmt.Printf("⚠️  Warning: Failed to save binary metadata: %v\n", err)
 		// Don't fail the entire process for metadata saving failure
 	} else {
-		fmt.Printf("📝 Saved binary metadata: %s type\n", binaryType)
+		fmt.Printf("📝 Saved binary metadata: %s type, version %s\n", binaryType, version)
+	}
+
+	return binaryInfo, nil
+}
+
+// ForceDownloadBinary forces a download and re-extraction of the llama-server binary, bypassing existing files
+func ForceDownloadBinary(downloadDir string, system SystemInfo, forceBackend string) (*BinaryInfo, error) {
+	// Get the latest version
+	version, err := GetLatestReleaseVersion()
+	if err != nil {
+		version = LLAMA_CPP_CURRENT_VERSION
+	}
+
+	url, binaryType, err := GetOptimalBinaryURL(system, forceBackend, version)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create download directory
+	err = os.MkdirAll(downloadDir, 0755)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create download directory: %v", err)
+	}
+
+	extractDir := filepath.Join(downloadDir, "llama-server")
+
+	// Force remove existing binary directory
+	fmt.Printf("🗑️  Removing existing binary directory for forced update...\n")
+	err = removeDirectoryRobust(extractDir)
+	if err != nil {
+		fmt.Printf("⚠️  Failed to remove existing binary directory: %v\n", err)
+		// Continue with download anyway - it might still work
+	} else {
+		fmt.Printf("🗑️  Removed existing binary directory\n")
+	}
+
+	// Always download fresh binary
+	fmt.Printf("⬇️  Force downloading llama-server binary (%s v%s)...\n", binaryType, version)
+
+	// For CUDA on Windows, download both runtime and binary
+	if system.HasCUDA && system.OS == "windows" {
+		cudartURL := fmt.Sprintf("https://github.com/ggml-org/llama.cpp/releases/download/%s/cudart-llama-bin-win-cuda-12.4-x64.zip", version)
+		fmt.Printf("Downloading CUDA runtime from: %s\n", cudartURL)
+
+		// Download CUDA runtime
+		cudartZipPath := filepath.Join(downloadDir, "cudart.zip")
+		err = downloadFile(cudartURL, cudartZipPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download CUDA runtime: %v", err)
+		}
+
+		// Extract CUDA runtime
+		err = extractZip(cudartZipPath, extractDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract CUDA runtime: %v", err)
+		}
+		os.Remove(cudartZipPath)
+
+		fmt.Printf("Downloading llama-server (%s) from: %s\n", binaryType, url)
+
+		// Download llama binary
+		llamaZipPath := filepath.Join(downloadDir, "llama-server.zip")
+		err = downloadFile(url, llamaZipPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download llama binary: %v", err)
+		}
+
+		// Extract llama binary to same directory
+		err = extractZip(llamaZipPath, extractDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract llama binary: %v", err)
+		}
+		os.Remove(llamaZipPath)
+	} else {
+		// Single download for non-CUDA or non-Windows
+		fmt.Printf("Downloading llama-server (%s) from: %s\n", binaryType, url)
+
+		// Download the file
+		zipPath := filepath.Join(downloadDir, "llama-server.zip")
+		err = downloadFile(url, zipPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download binary: %v", err)
+		}
+
+		// Extract the zip file
+		err = extractZip(zipPath, extractDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract binary: %v", err)
+		}
+		os.Remove(zipPath)
+	}
+
+	// Find the llama-server executable
+	fmt.Printf("🔍 Searching for llama-server executable in: %s\n", extractDir)
+	serverPath, err := FindLlamaServer(extractDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find llama-server executable: %v", err)
+	}
+	fmt.Printf("✅ Found llama-server at: %s\n", serverPath)
+
+	// Make it executable on Unix systems
+	if system.OS != "windows" {
+		err = os.Chmod(serverPath, 0755)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make binary executable: %v", err)
+		}
+	}
+
+	binaryInfo := &BinaryInfo{
+		Path:    serverPath,
+		Version: version,
+		Type:    binaryType,
+	}
+
+	// Save metadata about the downloaded binary
+	err = saveBinaryMetadata(extractDir, binaryInfo)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Failed to save binary metadata: %v\n", err)
+		// Don't fail the entire process for metadata saving failure
+	} else {
+		fmt.Printf("📝 Saved binary metadata: %s type, version %s\n", binaryType, version)
 	}
 
 	return binaryInfo, nil
@@ -484,8 +675,8 @@ func extractZip(src, dest string) error {
 	return nil
 }
 
-// findLlamaServer finds the llama-server executable in extracted directory
-func findLlamaServer(dir string) (string, error) {
+// FindLlamaServer finds the llama-server executable in extracted directory
+func FindLlamaServer(dir string) (string, error) {
 	var serverPath string
 
 	// Priority order for searching llama-server executable

@@ -120,6 +120,11 @@ func addApiHandlers(pm *ProxyManager) {
 		apiGroup.POST("/config/folders", pm.apiAddModelFolders)                         // Add folders to database
 		apiGroup.DELETE("/config/folders", pm.apiRemoveModelFolders)                    // Remove folders from database
 		apiGroup.POST("/config/regenerate-from-db", pm.apiRegenerateConfigFromDatabase) // Regenerate YAML from JSON database
+
+		// Binary management endpoints
+		apiGroup.GET("/binary/status", pm.apiGetBinaryStatus)       // Get current binary information
+		apiGroup.POST("/binary/update", pm.apiUpdateBinary)         // Update binary to latest version
+		apiGroup.POST("/binary/update/force", pm.apiForceUpdateBinary) // Force update binary (even if same version)
 	}
 }
 
@@ -2224,6 +2229,11 @@ func (pm *ProxyManager) appendModelToConfig(configPath, modelID string, modelCon
 		config["models"] = models
 	}
 
+	// Ensure model config has TTL (Time To Live) - default 300 seconds
+	if _, hasTTL := modelConfig["ttl"]; !hasTTL {
+		modelConfig["ttl"] = 300
+	}
+
 	// Add new model
 	models[modelID] = modelConfig
 
@@ -2397,12 +2407,12 @@ func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig
 	// Ensure basic config sections exist
 	if config["healthCheckTimeout"] == nil {
 		config["healthCheckTimeout"] = 300
-	}
+	}	curl -X POST http://localhost:5800/api/binary/update/force
 	if config["logLevel"] == nil {
 		config["logLevel"] = "info"
 	}
 	if config["startPort"] == nil {
-		config["startPort"] = 5800
+		config["startPort"] = 8100
 	}
 	if config["macros"] == nil {
 		// Build cross-platform binary path
@@ -2427,6 +2437,12 @@ func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig
 		modelsMap = make(map[string]interface{})
 		config["models"] = modelsMap
 	}
+	
+	// Ensure model config has TTL (Time To Live) - default 300 seconds
+	if _, hasTTL := modelConfig["ttl"]; !hasTTL {
+		modelConfig["ttl"] = 300
+	}
+	
 	modelsMap[modelID] = modelConfig
 
 	// Add to appropriate group (large-models by default)
@@ -2446,7 +2462,7 @@ func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig
 		groupsMap["large-models"] = map[string]interface{}{
 			"exclusive": true,
 			"members":   []interface{}{},
-			"startPort": 5800,
+			"startPort": 8200,
 			"swap":      true,
 		}
 	}
@@ -3001,4 +3017,132 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 		"note":           "Using same function as CLI for guaranteed consistency",
 		"autoRestart":    "Soft restart triggered automatically",
 	})
+}
+
+// Binary management API endpoints
+
+// apiGetBinaryStatus returns information about the current llama-server binary
+func (pm *ProxyManager) apiGetBinaryStatus(c *gin.Context) {
+	extractDir := filepath.Join("binaries", "llama-server")
+	
+	// Check if binary exists
+	serverPath, err := autosetup.FindLlamaServer(extractDir)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"exists": false,
+			"error":  "Binary not found",
+		})
+		return
+	}
+
+	// Load metadata
+	metadata, err := autosetup.LoadBinaryMetadata(extractDir)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"exists":    true,
+			"path":      serverPath,
+			"hasMetadata": false,
+			"error":     "Metadata not found",
+		})
+		return
+	}
+
+	// Detect current system for compatibility check
+	system := autosetup.DetectSystem()
+	err = autosetup.EnhanceSystemInfo(&system)
+	if err != nil {
+		pm.proxyLogger.Warnf("Failed to enhance system info: %v", err)
+	}
+
+	// Get latest version for comparison
+	latestVersion, versionErr := autosetup.GetLatestReleaseVersion()
+	if versionErr != nil {
+		latestVersion = "unknown"
+	}
+
+	// Get optimal binary type for system
+	_, optimalType, err := autosetup.GetOptimalBinaryURL(system, "", latestVersion)
+	if err != nil {
+		optimalType = "unknown"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"exists":          true,
+		"path":            serverPath,
+		"hasMetadata":     true,
+		"currentVersion":  metadata.Version,
+		"currentType":     metadata.Type,
+		"latestVersion":   latestVersion,
+		"optimalType":     optimalType,
+		"isOptimal":       metadata.Type == optimalType,
+		"isUpToDate":      metadata.Version == latestVersion,
+		"updateAvailable": metadata.Version != latestVersion,
+	})
+}
+
+// apiUpdateBinary updates the llama-server binary to the latest version
+func (pm *ProxyManager) apiUpdateBinary(c *gin.Context) {
+	// Get force parameter
+	forceUpdate := c.Query("force") == "true"
+	
+	extractDir := filepath.Join("binaries", "llama-server")
+	
+	// Check current binary if not forcing
+	if !forceUpdate {
+		metadata, err := autosetup.LoadBinaryMetadata(extractDir)
+		if err == nil {
+			// Get latest version to compare
+			latestVersion, versionErr := autosetup.GetLatestReleaseVersion()
+			if versionErr == nil && metadata.Version == latestVersion {
+				c.JSON(http.StatusOK, gin.H{
+					"status":     "up-to-date",
+					"message":    "Binary is already up to date",
+					"version":    metadata.Version,
+					"skipReason": "same-version",
+				})
+				return
+			}
+		}
+	}
+
+	// Detect system
+	system := autosetup.DetectSystem()
+	err := autosetup.EnhanceSystemInfo(&system)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to detect system: %v", err),
+		})
+		return
+	}
+
+	// Stop all models before updating binary
+	pm.proxyLogger.Info("Stopping all models before binary update...")
+	pm.StopProcesses(StopWaitForInflightRequest)
+
+	// Force download new binary
+	pm.proxyLogger.Info("Downloading latest llama-server binary...")
+	binary, err := autosetup.ForceDownloadBinary("binaries", system, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to update binary: %v", err),
+		})
+		return
+	}
+
+	pm.proxyLogger.Infof("Successfully updated binary to version %s (%s)", binary.Version, binary.Type)
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":     "updated",
+		"message":    "Binary updated successfully",
+		"version":    binary.Version,
+		"type":       binary.Type,
+		"path":       binary.Path,
+		"wasForced":  forceUpdate,
+	})
+}
+
+// apiForceUpdateBinary forces an update of the llama-server binary
+func (pm *ProxyManager) apiForceUpdateBinary(c *gin.Context) {
+	c.Request.URL.RawQuery = "force=true"
+	pm.apiUpdateBinary(c)
 }

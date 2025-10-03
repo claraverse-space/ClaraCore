@@ -13,7 +13,10 @@ import {
   CpuIcon,
   ZapIcon,
   LayersIcon,
-  MemoryStickIcon
+  MemoryStickIcon,
+  DownloadIcon,
+  ServerIcon,
+  InfoIcon
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -39,6 +42,19 @@ interface ModelSettings {
   batchSize: number;
 }
 
+interface BinaryStatus {
+  exists: boolean;
+  path?: string;
+  hasMetadata: boolean;
+  currentVersion?: string;
+  currentType?: string;
+  optimalType?: string;
+  isOptimal?: boolean;
+  latestVersion?: string;
+  updateAvailable?: boolean;
+  error?: string;
+}
+
 const Configuration: React.FC = () => {
   const navigate = useNavigate();
   const [models, setModels] = useState<ConfiguredModel[]>([]);
@@ -54,10 +70,13 @@ const Configuration: React.FC = () => {
   const [notification, setNotification] = useState<{type: 'success' | 'error' | 'info', message: string} | null>(null);
   const [requireApiKey, setRequireApiKey] = useState<boolean>(false);
   const [apiKey, setApiKey] = useState<string>("");
+  const [binaryStatus, setBinaryStatus] = useState<BinaryStatus | null>(null);
+  const [isUpdatingBinary, setIsUpdatingBinary] = useState(false);
 
   useEffect(() => {
     loadConfiguration();
     loadSystemSettings();
+    loadBinaryStatus();
   }, []);
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
@@ -154,6 +173,46 @@ const Configuration: React.FC = () => {
       }
     } catch (e: any) {
       showNotification('error', `Failed to save settings: ${e?.message || e}`);
+    }
+  };
+
+  const loadBinaryStatus = async () => {
+    try {
+      const res = await fetch('/api/binary/status');
+      if (res.ok) {
+        const data = await res.json();
+        setBinaryStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to load binary status:', e);
+    }
+  };
+
+  const updateBinary = async (force = false) => {
+    setIsUpdatingBinary(true);
+    try {
+      const endpoint = force ? '/api/binary/update/force' : '/api/binary/update';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'up-to-date') {
+          showNotification('info', data.message);
+        } else {
+          showNotification('success', `Binary updated to version ${data.version} (${data.type})`);
+        }
+        // Reload binary status
+        await loadBinaryStatus();
+      } else {
+        const error = await res.json();
+        showNotification('error', `Failed to update binary: ${error.error}`);
+      }
+    } catch (e: any) {
+      showNotification('error', `Failed to update binary: ${e?.message || e}`);
+    } finally {
+      setIsUpdatingBinary(false);
     }
   };
 
@@ -570,6 +629,164 @@ const Configuration: React.FC = () => {
             </Card>
           )}
         </motion.div>
+
+        {/* Binary Management */}
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <ServerIcon className="w-6 h-6 text-brand-500" />
+                <div>
+                  <CardTitle>Binary Management</CardTitle>
+                  <CardDescription>Manage llama-server binary updates and compatibility</CardDescription>
+                </div>
+              </div>
+              <Button
+                onClick={loadBinaryStatus}
+                variant="outline"
+                icon={<RefreshCwIcon size={16} />}
+              >
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {binaryStatus ? (
+              <div className="space-y-4">
+                {binaryStatus.exists ? (
+                  <>
+                    {/* Binary Status Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-3 bg-surface-secondary rounded-lg">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <InfoIcon className="w-4 h-4 text-brand-500" />
+                          <span className="text-sm font-medium text-text-secondary">Version</span>
+                        </div>
+                        <p className="font-mono text-sm text-text-primary">
+                          {binaryStatus.currentVersion || 'Unknown'}
+                        </p>
+                      </div>
+                      
+                      <div className="p-3 bg-surface-secondary rounded-lg">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <CpuIcon className="w-4 h-4 text-brand-500" />
+                          <span className="text-sm font-medium text-text-secondary">Type</span>
+                        </div>
+                        <p className="font-mono text-sm text-text-primary">
+                          {binaryStatus.currentType || 'Unknown'}
+                        </p>
+                      </div>
+                      
+                      <div className="p-3 bg-surface-secondary rounded-lg">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <ZapIcon className="w-4 h-4 text-brand-500" />
+                          <span className="text-sm font-medium text-text-secondary">Optimal</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          {binaryStatus.isOptimal ? (
+                            <CheckCircleIcon className="w-4 h-4 text-success-500" />
+                          ) : (
+                            <AlertTriangleIcon className="w-4 h-4 text-warning-500" />
+                          )}
+                          <span className="text-sm text-text-primary">
+                            {binaryStatus.isOptimal ? 'Yes' : 'No'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="p-3 bg-surface-secondary rounded-lg">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <DownloadIcon className="w-4 h-4 text-brand-500" />
+                          <span className="text-sm font-medium text-text-secondary">Status</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          {binaryStatus.updateAvailable ? (
+                            <>
+                              <AlertTriangleIcon className="w-4 h-4 text-warning-500" />
+                              <span className="text-sm text-warning-600 dark:text-warning-400">Update Available</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircleIcon className="w-4 h-4 text-success-500" />
+                              <span className="text-sm text-success-600 dark:text-success-400">Up to Date</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Update Actions */}
+                    <div className="flex items-center justify-between p-4 bg-surface-secondary rounded-lg">
+                      <div>
+                        <h4 className="font-medium text-text-primary mb-1">Update Binary</h4>
+                        <p className="text-sm text-text-secondary">
+                          {binaryStatus.updateAvailable 
+                            ? `Update available: ${binaryStatus.latestVersion}`
+                            : 'Your binary is up to date'
+                          }
+                          {!binaryStatus.isOptimal && (
+                            <span className="ml-2 text-warning-600 dark:text-warning-400">
+                              (Current: {binaryStatus.currentType}, Optimal: {binaryStatus.optimalType})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          onClick={() => updateBinary(false)}
+                          loading={isUpdatingBinary}
+                          disabled={!binaryStatus.updateAvailable && binaryStatus.isOptimal}
+                          icon={<DownloadIcon size={16} />}
+                        >
+                          Update
+                        </Button>
+                        <Button
+                          onClick={() => updateBinary(true)}
+                          loading={isUpdatingBinary}
+                          variant="outline"
+                          icon={<RefreshCwIcon size={16} />}
+                        >
+                          Force Update
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Binary Path Info */}
+                    <div className="p-3 bg-surface-secondary rounded-lg">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <FileIcon className="w-4 h-4 text-brand-500" />
+                        <span className="text-sm font-medium text-text-secondary">Binary Path</span>
+                      </div>
+                      <p className="font-mono text-xs text-text-tertiary break-all">
+                        {binaryStatus.path}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <ServerIcon className="w-16 h-16 text-text-tertiary mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-text-primary mb-2">No Binary Found</h3>
+                    <p className="text-text-secondary mb-4">
+                      {binaryStatus.error || 'llama-server binary not detected'}
+                    </p>
+                    <Button
+                      onClick={() => updateBinary(true)}
+                      loading={isUpdatingBinary}
+                      icon={<DownloadIcon size={16} />}
+                    >
+                      Download Binary
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCwIcon className="w-8 h-8 animate-spin text-brand-500 mr-3" />
+                <span className="text-text-secondary">Loading binary status...</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Security / API key settings */}
         <Card className="lg:col-span-3">

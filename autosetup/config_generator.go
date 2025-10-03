@@ -165,7 +165,7 @@ func (scg *ConfigGenerator) writeHeader(config *strings.Builder) {
 	config.WriteString("\n")
 	config.WriteString("healthCheckTimeout: 300\n")
 	config.WriteString("logLevel: info\n")
-	config.WriteString("startPort: 5800\n")
+	config.WriteString("startPort: 8100\n")
 }
 
 // writeMacros writes the base macros
@@ -250,6 +250,9 @@ func (scg *ConfigGenerator) writeModel(config *strings.Builder, model ModelInfo,
 
 	// Add proxy
 	config.WriteString("    proxy: \"http://127.0.0.1:${PORT}\"\n")
+	
+	// Add TTL (Time To Live) - default 300 seconds
+	config.WriteString("    ttl: 300\n")
 
 	// Add environment
 	config.WriteString("    env:\n")
@@ -793,7 +796,7 @@ func (scg *ConfigGenerator) writeGroups(config *strings.Builder, models []ModelI
 		config.WriteString("  \"large-models\":\n")
 		config.WriteString("    swap: true\n")
 		config.WriteString("    exclusive: true\n")
-		config.WriteString("    startPort: 5800\n")
+		config.WriteString("    startPort: 8200\n")
 		config.WriteString("    members:\n")
 		for _, model := range largeModels {
 			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))
@@ -806,7 +809,7 @@ func (scg *ConfigGenerator) writeGroups(config *strings.Builder, models []ModelI
 		config.WriteString("    swap: false\n")
 		config.WriteString("    exclusive: false\n")
 		config.WriteString("    persistent: true\n")
-		config.WriteString("    startPort: 6000\n")
+		config.WriteString("    startPort: 8300\n")
 		config.WriteString("    members:\n")
 		for _, model := range smallModels {
 			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))

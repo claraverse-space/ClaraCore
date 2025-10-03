@@ -29,9 +29,9 @@ var (
 func main() {
 	// Define a command-line flag for the port
 	configPath := flag.String("config", "config.yaml", "config file name")
-	listenStr := flag.String("listen", ":5800", "listen ip/port")
+	listenStr := flag.String("listen", ":5800", "listen ip/port for ClaraCore web interface")
 	showVersion := flag.Bool("version", false, "show version of build")
-	watchConfig := flag.Bool("watch-config", false, "Automatically reload config file on change")
+	watchConfig := flag.Bool("watch-config", true, "Automatically reload config file on change (default: true)")
 	modelsFolder := flag.String("models-folder", "", "automatically detect GGUF models in folder and generate config")
 	autoDraft := flag.Bool("auto-draft", false, "enable automatic draft model pairing for speculative decoding")
 	enableJinja := flag.Bool("jinja", true, "enable Jinja templating support for models (default: true)")
@@ -85,8 +85,13 @@ func main() {
 			fmt.Printf("Auto-setup failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Auto-setup completed successfully!")
-		os.Exit(0)
+		fmt.Println("✅ Auto-setup completed successfully!")
+		fmt.Println("🚀 Starting ClaraCore server with the generated configuration...")
+		fmt.Println("📁 Config watching is enabled - any changes to config.yaml will trigger automatic reloads")
+		fmt.Printf("🌐 Server will be available at: http://localhost%s\n", *listenStr)
+		fmt.Printf("🎛️  Web interface: http://localhost%s/ui/\n", *listenStr)
+		fmt.Println("💡 You can now edit config.yaml manually or use the web interface - changes will auto-reload!")
+		// Continue to start the server instead of exiting
 	}
 
 	config, err := proxy.LoadConfig(*configPath)
@@ -131,10 +136,10 @@ func main() {
 				return
 			}
 
-			fmt.Println("Configuration Changed")
+			fmt.Println("📝 Configuration file changed - reloading...")
 			currentPM.Shutdown()
 			srv.Handler = proxy.New(config)
-			fmt.Println("Configuration Reloaded")
+			fmt.Println("✅ Configuration reloaded successfully")
 
 			// wait a few seconds and tell any UI to reload
 			time.AfterFunc(3*time.Second, func() {
@@ -168,7 +173,7 @@ func main() {
 			}
 		})()
 
-		fmt.Println("Watching Configuration for changes")
+		fmt.Printf("📁 Watching %s for changes - server will auto-reload when config changes\n", *configPath)
 		go func() {
 			absConfigPath, err := filepath.Abs(*configPath)
 			if err != nil {
