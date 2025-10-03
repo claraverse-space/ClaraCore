@@ -226,49 +226,14 @@ def get_git_commit() -> str:
     except:
         return "unknown"
 
-def get_git_tag_info(version: str) -> Tuple[str, str]:
-    """Get git tag information"""
-    try:
-        # Get commits since last tag
-        result = subprocess.run(
-            ["git", "log", "--oneline", f"{version}..HEAD"],
-            capture_output=True,
-            text=True
-        )
-        
-        if result.returncode == 0 and result.stdout.strip():
-            commits = result.stdout.strip().split('\n')
-            return f"{len(commits)} commits since {version}", result.stdout.strip()
-        else:
-            # Get recent commits
-            result = subprocess.run(
-                ["git", "log", "--oneline", "-10"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return "Recent changes", result.stdout.strip()
-    except:
-        return "No git history available", ""
-
 def generate_release_notes(version: str, binaries: List[Dict]) -> str:
-    """Generate comprehensive release notes"""
+    """Generate clean and concise release notes"""
     commit_hash = get_git_commit()
     build_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    changes_title, changes_log = get_git_tag_info(version)
     
     notes = f"""# ClaraCore {version}
 
 AI-powered model inference server with automatic setup and OpenAI-compatible API.
-
-## 🚀 What's New
-
-- High-performance GGUF model inference
-- OpenAI-compatible API endpoints
-- Automatic backend detection (CUDA/Vulkan/ROCm/Metal/CPU)
-- Real-time setup wizard and configuration
-- Memory optimization and model management
-- Cross-platform service installation
 
 ## 📦 Downloads
 
@@ -340,14 +305,6 @@ All binaries include SHA256 checksums for verification:
 - **Build Time**: {build_time}
 - **Git Commit**: {commit_hash}
 - **Go Version**: {get_go_version()}
-
-## 🐛 Changes
-
-{changes_title}:
-
-```
-{changes_log}
-```
 
 ## 🤝 Support
 

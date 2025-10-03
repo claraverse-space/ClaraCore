@@ -122,8 +122,8 @@ func addApiHandlers(pm *ProxyManager) {
 		apiGroup.POST("/config/regenerate-from-db", pm.apiRegenerateConfigFromDatabase) // Regenerate YAML from JSON database
 
 		// Binary management endpoints
-		apiGroup.GET("/binary/status", pm.apiGetBinaryStatus)       // Get current binary information
-		apiGroup.POST("/binary/update", pm.apiUpdateBinary)         // Update binary to latest version
+		apiGroup.GET("/binary/status", pm.apiGetBinaryStatus)          // Get current binary information
+		apiGroup.POST("/binary/update", pm.apiUpdateBinary)            // Update binary to latest version
 		apiGroup.POST("/binary/update/force", pm.apiForceUpdateBinary) // Force update binary (even if same version)
 	}
 }
@@ -2407,7 +2407,7 @@ func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig
 	// Ensure basic config sections exist
 	if config["healthCheckTimeout"] == nil {
 		config["healthCheckTimeout"] = 300
-	}	curl -X POST http://localhost:5800/api/binary/update/force
+	}
 	if config["logLevel"] == nil {
 		config["logLevel"] = "info"
 	}
@@ -2437,12 +2437,12 @@ func (pm *ProxyManager) addModelToConfig(configPath, modelID string, modelConfig
 		modelsMap = make(map[string]interface{})
 		config["models"] = modelsMap
 	}
-	
+
 	// Ensure model config has TTL (Time To Live) - default 300 seconds
 	if _, hasTTL := modelConfig["ttl"]; !hasTTL {
 		modelConfig["ttl"] = 300
 	}
-	
+
 	modelsMap[modelID] = modelConfig
 
 	// Add to appropriate group (large-models by default)
@@ -3024,7 +3024,7 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 // apiGetBinaryStatus returns information about the current llama-server binary
 func (pm *ProxyManager) apiGetBinaryStatus(c *gin.Context) {
 	extractDir := filepath.Join("binaries", "llama-server")
-	
+
 	// Check if binary exists
 	serverPath, err := autosetup.FindLlamaServer(extractDir)
 	if err != nil {
@@ -3039,10 +3039,10 @@ func (pm *ProxyManager) apiGetBinaryStatus(c *gin.Context) {
 	metadata, err := autosetup.LoadBinaryMetadata(extractDir)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"exists":    true,
-			"path":      serverPath,
+			"exists":      true,
+			"path":        serverPath,
 			"hasMetadata": false,
-			"error":     "Metadata not found",
+			"error":       "Metadata not found",
 		})
 		return
 	}
@@ -3084,9 +3084,9 @@ func (pm *ProxyManager) apiGetBinaryStatus(c *gin.Context) {
 func (pm *ProxyManager) apiUpdateBinary(c *gin.Context) {
 	// Get force parameter
 	forceUpdate := c.Query("force") == "true"
-	
+
 	extractDir := filepath.Join("binaries", "llama-server")
-	
+
 	// Check current binary if not forcing
 	if !forceUpdate {
 		metadata, err := autosetup.LoadBinaryMetadata(extractDir)
@@ -3132,12 +3132,12 @@ func (pm *ProxyManager) apiUpdateBinary(c *gin.Context) {
 	pm.proxyLogger.Infof("Successfully updated binary to version %s (%s)", binary.Version, binary.Type)
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":     "updated",
-		"message":    "Binary updated successfully",
-		"version":    binary.Version,
-		"type":       binary.Type,
-		"path":       binary.Path,
-		"wasForced":  forceUpdate,
+		"status":    "updated",
+		"message":   "Binary updated successfully",
+		"version":   binary.Version,
+		"type":      binary.Type,
+		"path":      binary.Path,
+		"wasForced": forceUpdate,
 	})
 }
 
