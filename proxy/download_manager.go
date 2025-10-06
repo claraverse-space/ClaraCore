@@ -96,7 +96,7 @@ func (dm *DownloadManager) startPeriodicCleanup() {
 }
 
 // StartDownload initiates a new download
-func (dm *DownloadManager) StartDownload(modelID, filename, url, hfApiKey string) (string, error) {
+func (dm *DownloadManager) StartDownload(modelID, filename, url, hfApiKey, destinationPath string) (string, error) {
 	// Validate inputs
 	if filename == "" || filename == "undefined" {
 		return "", fmt.Errorf("invalid filename: %s", filename)
@@ -104,14 +104,21 @@ func (dm *DownloadManager) StartDownload(modelID, filename, url, hfApiKey string
 
 	downloadID := fmt.Sprintf("%s-%s-%d", modelID, filename, time.Now().Unix())
 
+	// Determine download directory
+	downloadDir := dm.downloadDir
+	if destinationPath != "" {
+		// Use custom destination path if provided
+		downloadDir = destinationPath
+	}
+
 	// Ensure download directory exists
-	if err := os.MkdirAll(dm.downloadDir, 0755); err != nil {
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create download directory: %v", err)
 	}
 
 	// Clean filename for filesystem
 	cleanFilename := dm.sanitizeFilename(filename)
-	filePath := filepath.Join(dm.downloadDir, cleanFilename)
+	filePath := filepath.Join(downloadDir, cleanFilename)
 
 	downloadInfo := &DownloadInfo{
 		ID:        downloadID,
@@ -139,6 +146,54 @@ func (dm *DownloadManager) StartDownload(modelID, filename, url, hfApiKey string
 
 	dm.logger.Infof("Started download: %s -> %s", url, filePath)
 	return downloadID, nil
+}
+
+// StartMultiPartDownload initiates multiple downloads for a multi-part model
+func (dm *DownloadManager) StartMultiPartDownload(modelID, quantization string, filePaths []string, hfApiKey, destinationPath string) ([]string, error) {
+	if len(filePaths) == 0 {
+		return nil, fmt.Errorf("no files provided for multi-part download")
+	}
+
+	// Determine download directory
+	downloadDir := dm.downloadDir
+	if destinationPath != "" {
+		downloadDir = destinationPath
+	}
+
+	// For multi-part downloads, create a subdirectory for the quantization
+	quantDir := filepath.Join(downloadDir, quantization)
+	if err := os.MkdirAll(quantDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create quantization directory: %v", err)
+	}
+
+	downloadIDs := make([]string, 0, len(filePaths))
+
+	// Start download for each part
+	for _, filePath := range filePaths {
+		// Extract filename from path (e.g., "Q4_K_M/file-00001-of-00003.gguf" -> "file-00001-of-00003.gguf")
+		parts := strings.Split(filePath, "/")
+		filename := parts[len(parts)-1]
+
+		// Construct HuggingFace URL
+		url := fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", modelID, filePath)
+
+		// Use the quantization directory as destination
+		downloadID, err := dm.StartDownload(modelID, filename, url, hfApiKey, quantDir)
+		if err != nil {
+			dm.logger.Errorf("Failed to start download for %s: %v", filename, err)
+			// Continue with other files even if one fails
+			continue
+		}
+
+		downloadIDs = append(downloadIDs, downloadID)
+	}
+
+	if len(downloadIDs) == 0 {
+		return nil, fmt.Errorf("failed to start any downloads")
+	}
+
+	dm.logger.Infof("Started multi-part download: %d files for %s/%s", len(downloadIDs), modelID, quantization)
+	return downloadIDs, nil
 }
 
 // downloadWorker handles the actual download process with robust retry mechanism

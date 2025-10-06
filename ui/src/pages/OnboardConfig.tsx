@@ -648,7 +648,7 @@ const OnboardConfig: React.FC = () => {
                   showNotification('info', 'Switched to multi-folder mode. Add more folders now!');
                 }}
                 icon={<FolderIcon size={16} />}
-                className="text-brand-600 border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-900/20"
+                className="text-brand-600 border-brand-300 hover: dark:hover:bg-brand-900/20"
               >
                 + Add More Folders
               </Button>

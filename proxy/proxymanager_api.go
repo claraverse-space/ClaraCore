@@ -92,6 +92,7 @@ func addApiHandlers(pm *ProxyManager) {
 		apiGroup.GET("/models/downloads/:id", pm.apiGetDownloadStatus)
 		apiGroup.POST("/models/downloads/:id/pause", pm.apiPauseDownload)
 		apiGroup.POST("/models/downloads/:id/resume", pm.apiResumeDownload)
+		apiGroup.GET("/models/download-destinations", pm.apiGetDownloadDestinations) // NEW: Get available download destinations
 
 		// System settings persistence
 		apiGroup.GET("/settings/system", pm.apiGetSystemSettings)
@@ -624,10 +625,14 @@ func (pm *ProxyManager) apiSetHFApiKey(c *gin.Context) {
 
 func (pm *ProxyManager) apiDownloadModel(c *gin.Context) {
 	var req struct {
-		URL      string `json:"url"`
-		ModelId  string `json:"modelId"`
-		Filename string `json:"filename"`
-		HfApiKey string `json:"hfApiKey"`
+		URL             string   `json:"url"`
+		ModelId         string   `json:"modelId"`
+		Filename        string   `json:"filename"`
+		HfApiKey        string   `json:"hfApiKey"`
+		DestinationPath string   `json:"destinationPath,omitempty"` // Optional: custom download path
+		Files           []string `json:"files,omitempty"`           // Optional: multiple files for multi-part downloads
+		IsMultiPart     bool     `json:"isMultiPart,omitempty"`     // Flag for multi-part downloads
+		Quantization    string   `json:"quantization,omitempty"`    // Quantization type for display
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -635,12 +640,31 @@ func (pm *ProxyManager) apiDownloadModel(c *gin.Context) {
 		return
 	}
 
+	// Handle multi-part downloads
+	if req.IsMultiPart && len(req.Files) > 0 {
+		downloadIDs, err := pm.downloadManager.StartMultiPartDownload(req.ModelId, req.Quantization, req.Files, req.HfApiKey, req.DestinationPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"downloadIds":  downloadIDs,
+			"status":       "multi-part download started",
+			"modelId":      req.ModelId,
+			"quantization": req.Quantization,
+			"partCount":    len(req.Files),
+		})
+		return
+	}
+
+	// Handle single file download (existing behavior)
 	if req.URL == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "URL is required"})
 		return
 	}
 
-	downloadID, err := pm.downloadManager.StartDownload(req.ModelId, req.Filename, req.URL, req.HfApiKey)
+	downloadID, err := pm.downloadManager.StartDownload(req.ModelId, req.Filename, req.URL, req.HfApiKey, req.DestinationPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2715,6 +2739,71 @@ func (pm *ProxyManager) apiRemoveModelFolders(c *gin.Context) {
 		"removedFolders": removedFolders,
 		"remainingCount": len(newFolders),
 	})
+}
+
+// apiGetDownloadDestinations returns available download destinations including database folders and default download folder
+func (pm *ProxyManager) apiGetDownloadDestinations(c *gin.Context) {
+	var destinations []gin.H
+
+	// Add default download folder with live model count
+	defaultDir := "./downloads"
+	if absPath, err := filepath.Abs(defaultDir); err == nil {
+		modelCount := pm.countModelsInFolder(absPath)
+		destinations = append(destinations, gin.H{
+			"path":        absPath,
+			"name":        "Default Downloads",
+			"type":        "default",
+			"enabled":     true,
+			"modelCount":  modelCount,
+			"description": fmt.Sprintf("Default ClaraCore download folder (%d models)", modelCount),
+		})
+	}
+
+	// Load model folder database and add enabled folders with live model counts
+	db, err := pm.loadModelFolderDatabase()
+	if err == nil && len(db.Folders) > 0 {
+		for _, folder := range db.Folders {
+			if folder.Enabled {
+				// Get live model count
+				liveModelCount := pm.countModelsInFolder(folder.Path)
+
+				destinations = append(destinations, gin.H{
+					"path":        folder.Path,
+					"name":        filepath.Base(folder.Path),
+					"type":        "folder",
+					"enabled":     folder.Enabled,
+					"modelCount":  liveModelCount,
+					"lastScanned": folder.LastScanned,
+					"description": fmt.Sprintf("Model folder (%d models)", liveModelCount),
+				})
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"destinations": destinations,
+		"count":        len(destinations),
+	})
+}
+
+// countModelsInFolder counts GGUF files in a given folder
+func (pm *ProxyManager) countModelsInFolder(folderPath string) int {
+	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
+		return 0
+	}
+
+	count := 0
+	filepath.Walk(folderPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Continue walking even if there's an error
+		}
+		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".gguf") {
+			count++
+		}
+		return nil
+	})
+
+	return count
 }
 
 func (pm *ProxyManager) apiCleanupDuplicateModels(c *gin.Context) {
