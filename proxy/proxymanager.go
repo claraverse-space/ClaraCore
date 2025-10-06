@@ -361,6 +361,9 @@ func (pm *ProxyManager) setupGinEngine() {
 
 	pm.ginEngine.GET("/v1/models", auth, pm.listModelsHandler)
 
+	// Info endpoint to show model-to-port mappings
+	pm.ginEngine.GET("/info", auth, pm.infoHandler)
+
 	// in proxymanager_loghandlers.go
 	pm.ginEngine.GET("/logs", pm.sendLogsHandlers)
 	pm.ginEngine.GET("/logs/stream", pm.streamLogsHandler)
@@ -860,6 +863,57 @@ func (pm *ProxyManager) listRunningProcessesHandler(context *gin.Context) {
 	}
 
 	context.JSON(http.StatusOK, response) // Always return 200 OK
+}
+
+func (pm *ProxyManager) infoHandler(c *gin.Context) {
+	c.Header("Content-Type", "application/json")
+	modelInfo := make([]gin.H, 0)
+
+	for modelID, modelConfig := range pm.config.Models {
+		// Extract port from proxy URL if available
+		port := ""
+		if modelConfig.Proxy != "" {
+			// Parse the proxy URL to extract port
+			if strings.Contains(modelConfig.Proxy, ":") {
+				parts := strings.Split(modelConfig.Proxy, ":")
+				if len(parts) >= 3 {
+					port = parts[len(parts)-1] // Get the last part (port)
+				}
+			}
+		}
+
+		// Check if model is currently running
+		isRunning := false
+		processGroup := pm.findGroupByModelName(modelID)
+		if processGroup != nil {
+			if process, exists := processGroup.processes[modelID]; exists {
+				isRunning = process.CurrentState() == StateReady
+			}
+		}
+
+		modelInfo = append(modelInfo, gin.H{
+			"model":       modelID,
+			"port":        port,
+			"proxy":       modelConfig.Proxy,
+			"running":     isRunning,
+			"name":        modelConfig.Name,
+			"description": modelConfig.Description,
+		})
+	}
+
+	// Sort by model ID for consistent output
+	sort.Slice(modelInfo, func(i, j int) bool {
+		mi, _ := modelInfo[i]["model"].(string)
+		mj, _ := modelInfo[j]["model"].(string)
+		return mi < mj
+	})
+
+	response := gin.H{
+		"models": modelInfo,
+		"total":  len(modelInfo),
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (pm *ProxyManager) findGroupByModelName(modelName string) *ProcessGroup {
