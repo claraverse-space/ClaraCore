@@ -17,7 +17,7 @@ source ~/.bashrc
 curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/troubleshoot.ps1 | powershell
 ```
 
-**Need help?** See our [Setup Guide](docs/SETUP.md) or [Container Guide](docs/CONTAINER_SETUP.md)
+**Need help?** See our [Setup Guide](docs/SETUP.md) or [Container Guide](docker/CONTAINER_SETUP.md)
 
 ## 🙏 Credits & Acknowledgments)
 [![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org/)
@@ -28,6 +28,8 @@ curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scr
 ClaraCore extends [llama-swap](https://github.com/mostlygeek/llama-swap) with intelligent automation, bringing zero-configuration setup to llama.cpp deployments.
 
 ## 🔥 Quick Install
+
+### Native Installation
 
 **Linux/macOS (Recommended):**
 ```bash
@@ -44,6 +46,20 @@ irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/in
 claracore --models-folder /path/to/your/gguf/models
 # Visit: http://localhost:5800/ui/setup
 ```
+
+### 🐳 Docker (CUDA/ROCm)
+
+**CUDA (NVIDIA):**
+```bash
+docker run -d --gpus all -p 5800:5800 -v ./models:/models claracore:cuda --models-folder /models
+```
+
+**ROCm (AMD):**
+```bash
+docker run -d --device=/dev/kfd --device=/dev/dri -p 5800:5800 -v ./models:/models claracore:rocm --models-folder /models
+```
+
+📦 **Optimized containers**: 2-3GB vs 8-12GB full SDKs. See [Container Guide](docker/CONTAINER_SETUP.md)
 
 ✨ **Features include:** Auto-setup, hardware detection, binary management, and production configs!
 

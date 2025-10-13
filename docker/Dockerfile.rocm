@@ -1,0 +1,39 @@
+# ClaraCore ROCm Docker Container
+# Optimized for size - only includes ROCm runtime, not the full SDK
+FROM rocm/rocm-terminal:6.2.4-ubuntu22.04 as runtime
+
+# Install minimal dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    librocm-smi64-1 \
+    rocm-device-libs \
+    hip-runtime-amd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy the pre-built Linux binary
+COPY dist/claracore-linux-amd64 /app/claracore
+RUN chmod +x /app/claracore
+
+# Create directories for models and config
+RUN mkdir -p /models /app/binaries /app/downloads
+
+# Expose the default port
+EXPOSE 5800
+
+# Environment variables
+ENV GIN_MODE=release
+ENV HSA_OVERRIDE_GFX_VERSION=10.3.0
+ENV ROC_ENABLE_PRE_VEGA=1
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5800/api/health || exit 1
+
+# Run ClaraCore
+# Users can mount their models folder with: -v /path/to/models:/models
+ENTRYPOINT ["/app/claracore"]
+CMD ["--listen", ":5800", "--config", "/app/config.yaml"]

@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  claracore-cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+    image: claracore:cuda
+    container_name: claracore-cuda
+    ports:
+      - "5800:5800"
+    volumes:
+      # Mount your models folder here
+      - ./models:/models
+      # Persist config and downloads
+      - ./config.yaml:/app/config.yaml
+      - ./downloads:/app/downloads
+      - ./binaries:/app/binaries
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    command: ["--listen", ":5800", "--models-folder", "/models", "--backend", "cuda"]

@@ -1,0 +1,66 @@
+# Auto-generated Clara Core configuration (SMART GPU ALLOCATION)
+# Generated from models in: /models
+# Binary: binaries/llama-server/build/bin/llama-server (cuda)
+# System: linux/amd64
+# Hardware monitoring: STATIC (total memory)
+# Total GPU VRAM: 24.0 GB
+# Algorithm: Hybrid VRAM+RAM allocation with intelligent layer distribution
+
+healthCheckTimeout: 300
+logLevel: info
+startPort: 8100
+
+macros:
+  "llama-server-base": >
+    binaries/llama-server/build/bin/llama-server
+    --host 127.0.0.1
+    --port ${PORT}
+    --metrics
+    --flash-attn auto
+    --no-warmup
+    --dry-penalty-last-n 0
+    --batch-size 2048
+    --ubatch-size 512
+
+  "llama-embed-base": >
+    binaries/llama-server/build/bin/llama-server
+    --host 127.0.0.1
+    --port ${PORT}
+    --embedding
+
+models:
+  "qwen-qwen3-30b-a3b-instruct-2507-3b":
+    name: "Qwen_Qwen3-30B-A3B-Instruct-2507-Q5_K_M"
+    description: "Model size: 3B - Quantization: Q5_K_M - Instruction-tuned"
+    cmd: |
+      ${llama-server-base}
+      --model /models/Qwen/Qwen_Qwen3-30B-A3B-Instruct-2507-Q5_K_M.gguf
+      --ctx-size 16384
+      -ngl 999
+      --cache-type-k q4_0
+      --cache-type-v q4_0
+      --jinja
+      --batch-size 2048
+      --ubatch-size 512
+      --keep 4096
+      --temp 0.7
+      --repeat-penalty 1.05
+      --repeat-last-n 256
+      --top-p 0.9
+      --top-k 40
+      --min-p 0.1
+    proxy: "http://127.0.0.1:${PORT}"
+    ttl: 300
+    env:
+      - "CUDA_VISIBLE_DEVICES=0"
+      - "LD_LIBRARY_PATH=/app/binaries/llama-server/build/bin:$LD_LIBRARY_PATH"
+
+
+groups:
+  "large-models":
+    swap: true
+    exclusive: true
+    startPort: 8200
+    members:
+      - "qwen-qwen3-30b-a3b-instruct-2507-3b"
+

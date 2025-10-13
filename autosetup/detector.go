@@ -244,36 +244,69 @@ func parseGGUFFilename(fullPath, filename string) ModelInfo {
 		return model
 	}
 
-	// Try to read GGUF metadata for better detection
+	// Read GGUF metadata for embedding detection
+	lowerPath := strings.ToLower(fullPath)
+
+	// First, try basic metadata for context/layers info
 	if ggufMeta, err := ReadGGUFMetadata(fullPath); err == nil {
-		// Extract information from GGUF metadata
 		if ggufMeta.ContextLength > 0 {
 			model.ContextLength = int(ggufMeta.ContextLength)
 		}
 		if ggufMeta.BlockCount > 0 {
 			model.NumLayers = int(ggufMeta.BlockCount)
 		}
-
-		// Calculate embedding size from attention dimensions
 		if ggufMeta.KeyLength > 0 && ggufMeta.HeadCountKV > 0 {
 			model.EmbeddingSize = int(ggufMeta.KeyLength * ggufMeta.HeadCountKV)
 		}
-
-		// Check for embedding-specific architectures
-		arch := strings.ToLower(ggufMeta.Architecture)
-		if arch == "bert" || arch == "nomic-bert" || strings.Contains(arch, "embed") {
-			model.IsEmbedding = true
-		}
 	}
 
-	// Fallback: Check filename/path for embedding indicators
-	lowerPath := strings.ToLower(fullPath)
-	if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") ||
-		strings.Contains(lowerPath, "embed") || strings.Contains(lowerPath, "embedding") ||
-		strings.Contains(lower, "mxbai") || // mxbai models are embeddings
-		strings.Contains(lower, "bge-") || // BGE embedding models
-		strings.Contains(lower, "e5-") { // E5 embedding models
-		model.IsEmbedding = true
+	// Now read full metadata for embedding detection
+	if metadata, err := ReadAllGGUFKeys(fullPath); err == nil {
+		arch := ""
+		if val, exists := metadata["general.architecture"]; exists {
+			if str, ok := val.(string); ok {
+				arch = strings.ToLower(str)
+			}
+		}
+
+		// PRIORITY 1: Name-based check (HIGHEST PRIORITY - trust explicit naming)
+		if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") ||
+			strings.Contains(lowerPath, "embed") || strings.Contains(lowerPath, "embedding") ||
+			strings.Contains(lower, "minilm") ||
+			strings.Contains(lower, "mxbai") ||
+			strings.Contains(lower, "bge-") ||
+			strings.Contains(lower, "e5-") {
+			model.IsEmbedding = true
+		} else {
+			// PRIORITY 2: Check pooling_type (VERY RELIABLE for models without explicit names)
+			poolingType := ""
+			poolingKey := fmt.Sprintf("%s.pooling_type", arch)
+			if val, exists := metadata[poolingKey]; exists {
+				if str, ok := val.(string); ok {
+					poolingType = strings.ToLower(str)
+				}
+			}
+
+			if poolingType != "" && poolingType != "none" {
+				model.IsEmbedding = true
+			} else if arch == "bert" || arch == "roberta" || arch == "nomic-bert" || arch == "jina-bert" {
+				// PRIORITY 3: BERT architectures are embeddings
+				model.IsEmbedding = true
+			} else if arch == "qwen2vl" || arch == "llava" || strings.Contains(arch, "vision") {
+				// PRIORITY 4: Exclude Vision-Language models (only if name didn't indicate embedding)
+				model.IsEmbedding = false
+			}
+		}
+	} else {
+		// Fallback if metadata reading fails: use filename/path only
+		if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") ||
+			strings.Contains(lowerPath, "embed") || strings.Contains(lowerPath, "embedding") ||
+			strings.Contains(lower, "minilm") ||
+			strings.Contains(lower, "mxbai") ||
+			strings.Contains(lower, "bge-") ||
+			strings.Contains(lower, "e5-") {
+			model.IsEmbedding = true
+		}
 	}
 
 	// Detect if it's an instruct/chat model

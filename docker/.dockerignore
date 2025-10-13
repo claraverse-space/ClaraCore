@@ -1,0 +1,9 @@
+# Ignore everything except what we need
+*
+
+# Only include the Linux binary
+!dist/claracore-linux-amd64
+
+# Documentation
+!README.md
+!LICENSE.md

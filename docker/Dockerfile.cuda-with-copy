@@ -1,0 +1,39 @@
+# ClaraCore CUDA Docker Container with Model Copy on First Boot
+# This variant copies specific models to a Docker volume on first run for fast I/O
+FROM nvidia/cuda:12.6.3-runtime-ubuntu22.04 as runtime
+
+# Install minimal dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy the entrypoint script first
+COPY docker/entrypoint-copy-models.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Copy the pre-built Linux binary
+COPY dist/claracore-linux-amd64 /app/claracore
+RUN chmod +x /app/claracore
+
+# Create directories for models and config
+RUN mkdir -p /models /app/binaries /app/downloads /source
+
+# Expose the default port
+EXPOSE 5800
+
+# Environment variables
+ENV GIN_MODE=release
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5800/api/health || exit 1
+
+# Use custom entrypoint that handles model copying
+ENTRYPOINT ["/bin/sh", "/app/entrypoint.sh"]
+CMD ["--listen", ":5800", "--models-folder", "/models", "--backend", "cuda"]

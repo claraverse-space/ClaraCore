@@ -1,0 +1,18 @@
+services:
+  claracore:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: claracore:latest
+    container_name: claracore
+    ports:
+      - "5801:5801"
+    volumes:
+      # Mount your models folder here
+      - ./models:/models
+      # Persist config and downloads (as directories, not files)
+      - ./config:/app/config
+      - ./downloads:/app/downloads
+      - ./binaries:/app/binaries
+    restart: unless-stopped
+    command: ["--listen", ":5801", "--models-folder", "/models", "--config", "/app/config/config.yaml"]

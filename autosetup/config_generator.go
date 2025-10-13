@@ -857,7 +857,7 @@ func (scg *ConfigGenerator) isEmbeddingModel(model ModelInfo) bool {
 		}
 	}
 
-	return detectEmbeddingFromMetadata(metadata, architecture)
+	return detectEmbeddingFromMetadata(metadata, architecture, model.Name)
 }
 
 // detectPoolingTypeByName detects the pooling type based on model family

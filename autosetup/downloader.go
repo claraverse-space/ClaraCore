@@ -80,36 +80,36 @@ const (
 // GetLatestReleaseVersion fetches the latest llama.cpp release version from GitHub
 func GetLatestReleaseVersion() (string, error) {
 	fmt.Printf("🔍 Checking for latest llama.cpp release...\n")
-	
+
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-	
+
 	resp, err := client.Get(LLAMA_CPP_GITHUB_API)
 	if err != nil {
 		fmt.Printf("⚠️  Failed to check latest release, using fallback version %s\n", LLAMA_CPP_CURRENT_VERSION)
 		return LLAMA_CPP_CURRENT_VERSION, nil
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("⚠️  GitHub API returned %d, using fallback version %s\n", resp.StatusCode, LLAMA_CPP_CURRENT_VERSION)
 		return LLAMA_CPP_CURRENT_VERSION, nil
 	}
-	
+
 	var release GitHubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		fmt.Printf("⚠️  Failed to parse release info, using fallback version %s\n", LLAMA_CPP_CURRENT_VERSION)
 		return LLAMA_CPP_CURRENT_VERSION, nil
 	}
-	
+
 	// Validate the tag name format (should be like "b6527" or "v1.0.0")
 	version := release.TagName
 	if version == "" {
 		fmt.Printf("⚠️  Empty version tag, using fallback version %s\n", LLAMA_CPP_CURRENT_VERSION)
 		return LLAMA_CPP_CURRENT_VERSION, nil
 	}
-	
+
 	fmt.Printf("✅ Latest release found: %s\n", version)
 	return version, nil
 }
@@ -241,11 +241,14 @@ func GetOptimalBinaryURL(system SystemInfo, forceBackend string, version string)
 	case "linux":
 		switch binaryType {
 		case "cuda":
-			filename = fmt.Sprintf("llama-%s-bin-ubuntu-vulkan-x64.zip", version)
+			// Use CPU binary which includes all backends (CUDA, Vulkan, ROCm, CPU)
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
 		case "rocm":
-			filename = fmt.Sprintf("llama-%s-bin-ubuntu-rocm-x64.zip", version)
+			// Use CPU binary which includes all backends
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
 		case "vulkan":
-			filename = fmt.Sprintf("llama-%s-bin-ubuntu-vulkan-x64.zip", version)
+			// Use CPU binary which includes all backends
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
 		case "cpu":
 			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
 		default:
@@ -2286,8 +2289,8 @@ func DebugEmbeddingDetection(models []ModelInfo) {
 		fmt.Printf("      Has RoPE: %t\n", hasRope)
 		fmt.Printf("      Has Head Count: %t\n", hasHeadCount)
 
-		// Apply embedding detection logic
-		isEmbedding := detectEmbeddingFromMetadata(metadata, architecture)
+		// Apply embedding detection logic (pass filename too for better detection)
+		isEmbedding := detectEmbeddingFromMetadata(metadata, architecture, model.Name)
 		currentlyDetectedAsEmbedding := strings.Contains(strings.ToLower(model.Name), "embed")
 
 		fmt.Printf("   🎯 Detection Results:\n")
@@ -2324,64 +2327,71 @@ func DebugEmbeddingDetection(models []ModelInfo) {
 }
 
 // detectEmbeddingFromMetadata uses comprehensive GGUF metadata to detect embedding models
-func detectEmbeddingFromMetadata(metadata map[string]interface{}, architecture string) bool {
-	// 1. Architecture check - dead giveaway
-	switch strings.ToLower(architecture) {
+func detectEmbeddingFromMetadata(metadata map[string]interface{}, architecture string, filename string) bool {
+	// Get model name from metadata AND filename for checks
+	metadataName := getStringValue(metadata, "general.name")
+	archLower := strings.ToLower(architecture)
+
+	// Check BOTH metadata name AND filename
+	lowerMetadataName := strings.ToLower(metadataName)
+	lowerFilename := strings.ToLower(filename)
+
+	// PRIORITY 1: Name-based check (HIGHEST PRIORITY - trust explicit naming)
+	// Check BOTH metadata name AND filename - if either explicitly says "embed" or "embedding", trust it!
+	if strings.Contains(lowerMetadataName, "embed") ||
+		strings.Contains(lowerMetadataName, "embedding") ||
+		strings.Contains(lowerFilename, "embed") ||
+		strings.Contains(lowerFilename, "embedding") ||
+		strings.HasPrefix(lowerMetadataName, "e5-") ||
+		strings.HasPrefix(lowerFilename, "e5-") ||
+		strings.HasPrefix(lowerMetadataName, "bge-") ||
+		strings.HasPrefix(lowerFilename, "bge-") ||
+		strings.HasPrefix(lowerMetadataName, "gte-") ||
+		strings.HasPrefix(lowerFilename, "gte-") ||
+		strings.Contains(lowerMetadataName, "minilm") ||
+		strings.Contains(lowerFilename, "minilm") ||
+		strings.Contains(lowerMetadataName, "mxbai") ||
+		strings.Contains(lowerFilename, "mxbai") {
+		return true
+	}
+
+	// PRIORITY 2: Check pooling_type metadata (VERY RELIABLE for models without explicit names)
+	// Embedding models have pooling_type set to: mean, cls, last, rank
+	// Language models have NO pooling_type or pooling_type = "none"
+	poolingType := getStringValue(metadata, fmt.Sprintf("%s.pooling_type", architecture))
+	if poolingType != "" && poolingType != "none" {
+		// If pooling_type exists and is not "none", it's definitely an embedding model
+		return true
+	}
+
+	// PRIORITY 3: Architecture check - BERT-based models are embeddings
+	switch archLower {
 	case "bert", "roberta", "nomic-bert", "jina-bert":
 		return true
-	case "llama", "mistral", "qwen", "gemma", "gemma3", "qwen2", "qwen3", "glm4moe", "seed_oss", "gpt-oss":
+	case "llama", "mistral", "gemma", "gemma3", "glm4moe", "seed_oss", "gpt-oss":
+		// These are typically generative models
 		return false
 	}
 
-	// 2. Pooling type check - smoking gun
-	poolingType := getStringValue(metadata, fmt.Sprintf("%s.pooling_type", architecture))
-	if poolingType != "" {
-		// If pooling_type exists, it's definitely an embedding model
-		return true
+	// PRIORITY 4: Exclude Vision-Language models (only if name didn't indicate embedding)
+	// This comes AFTER name check so models explicitly named "embedding" still pass through
+	if archLower == "qwen2vl" || archLower == "llava" || strings.Contains(archLower, "vision") {
+		return false
 	}
 
-	// 3. Context length patterns
-	contextLength := getIntValue(metadata, fmt.Sprintf("%s.context_length", architecture))
-	if contextLength > 0 {
-		if contextLength <= 8192 {
-			// Typical embedding model context length
-			// But need more evidence since some chat models also have small context
-		} else if contextLength >= 32768 {
-			// Definitely a chat model
-			return false
-		}
-	}
-
-	// 4. Embedding dimension patterns
-	embeddingLength := getIntValue(metadata, fmt.Sprintf("%s.embedding_length", architecture))
-	if embeddingLength > 0 && embeddingLength <= 1024 {
-		// Small embedding dimensions typical of embedding models
-		// But check for other evidence
-	}
-
-	// 5. Missing chat model keys
-	hasRope := hasKey(metadata, fmt.Sprintf("%s.rope", architecture))
-	hasHeadCount := hasKey(metadata, fmt.Sprintf("%s.head_count", architecture))
-
-	// Chat models typically have these, embedding models don't
-	if !hasRope && !hasHeadCount && embeddingLength <= 1024 {
-		return true
-	}
-
-	// 6. Tokenizer model check
+	// PRIORITY 4: Tokenizer model check - BERT tokenizers indicate embeddings
 	tokenizerModel := getStringValue(metadata, "tokenizer.ggml.model")
 	if strings.Contains(strings.ToLower(tokenizerModel), "bert") {
 		return true
 	}
 
-	// 7. Name-based fallback (least reliable)
-	modelName := getStringValue(metadata, "general.name")
-	lowerName := strings.ToLower(modelName)
-	if strings.Contains(lowerName, "embed") ||
-		strings.Contains(lowerName, "embedding") ||
-		strings.HasPrefix(lowerName, "e5") ||
-		strings.HasPrefix(lowerName, "bge") ||
-		strings.HasPrefix(lowerName, "gte") {
+	// PRIORITY 5: Missing chat model keys + small embedding dimensions
+	embeddingLength := getIntValue(metadata, fmt.Sprintf("%s.embedding_length", architecture))
+	hasRope := hasKey(metadata, fmt.Sprintf("%s.rope", architecture))
+	hasHeadCount := hasKey(metadata, fmt.Sprintf("%s.head_count", architecture))
+
+	// Chat models typically have RoPE and head_count, embedding models often don't
+	if !hasRope && !hasHeadCount && embeddingLength > 0 && embeddingLength <= 1024 {
 		return true
 	}
 
