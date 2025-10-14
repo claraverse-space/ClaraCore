@@ -2746,18 +2746,26 @@ func (pm *ProxyManager) apiGetDownloadDestinations(c *gin.Context) {
 	var destinations []gin.H
 
 	// Add default download folder with live model count
+	// Ensure the downloads directory exists
 	defaultDir := "./downloads"
-	if absPath, err := filepath.Abs(defaultDir); err == nil {
-		modelCount := pm.countModelsInFolder(absPath)
-		destinations = append(destinations, gin.H{
-			"path":        absPath,
-			"name":        "Default Downloads",
-			"type":        "default",
-			"enabled":     true,
-			"modelCount":  modelCount,
-			"description": fmt.Sprintf("Default ClaraCore download folder (%d models)", modelCount),
-		})
+	os.MkdirAll(defaultDir, 0755) // Create if it doesn't exist
+
+	absPath, err := filepath.Abs(defaultDir)
+	if err != nil {
+		// Fallback to relative path if absolute path fails
+		absPath = defaultDir
+		pm.proxyLogger.Warnf("Failed to get absolute path for downloads folder: %v", err)
 	}
+
+	modelCount := pm.countModelsInFolder(absPath)
+	destinations = append(destinations, gin.H{
+		"path":        absPath,
+		"name":        "Default Downloads",
+		"type":        "default",
+		"enabled":     true,
+		"modelCount":  modelCount,
+		"description": fmt.Sprintf("Default ClaraCore download folder (%d models)", modelCount),
+	})
 
 	// Load model folder database and add enabled folders with live model counts
 	db, err := pm.loadModelFolderDatabase()

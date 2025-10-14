@@ -25,7 +25,7 @@ interface DownloadDestination {
 interface DownloadDestinationModalProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (destinationPath: string) => void;
+  onSelect: (destinationPath?: string) => void;
   modelName: string;
   filename: string;
 }
@@ -53,18 +53,43 @@ export const DownloadDestinationModal: React.FC<DownloadDestinationModalProps> =
   const fetchDestinations = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/models/download-destinations');
+      // Add 1-second timeout to the fetch request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1000);
+
+      const response = await fetch('/api/models/download-destinations', {
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
       if (response.ok) {
         const data = await response.json();
         setDestinations(data.destinations || []);
-        
+
         // Auto-select the first destination if available
         if (data.destinations && data.destinations.length > 0) {
           setSelectedDestination(data.destinations[0].path);
+        } else {
+          // If no destinations returned, the backend will use default downloads folder
+          // Set empty string to indicate using backend default
+          setSelectedDestination('');
         }
+      } else {
+        // If API fails, still allow download with empty destination (backend will use default)
+        console.warn('Failed to fetch destinations, will use default downloads folder');
+        setDestinations([]);
+        setSelectedDestination('');
       }
-    } catch (error) {
-      console.error('Failed to fetch download destinations:', error);
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        console.warn('Fetch destinations timed out after 1 second, will use default downloads folder');
+      } else {
+        console.error('Failed to fetch download destinations:', error);
+      }
+      // On timeout or error, allow download with empty destination (backend will use default)
+      setDestinations([]);
+      setSelectedDestination('');
     } finally {
       setLoading(false);
     }
@@ -72,10 +97,9 @@ export const DownloadDestinationModal: React.FC<DownloadDestinationModalProps> =
 
   const handleSelect = () => {
     const finalPath = showCustomPath ? customPath : selectedDestination;
-    if (finalPath) {
-      onSelect(finalPath);
-      onClose();
-    }
+    // Allow empty finalPath (will use backend default downloads folder)
+    onSelect(finalPath || undefined);
+    onClose();
   };
 
   const handleClose = () => {
@@ -116,6 +140,18 @@ export const DownloadDestinationModal: React.FC<DownloadDestinationModalProps> =
             </div>
           ) : (
             <div className="space-y-2">
+              {/* Show message if no destinations available */}
+              {destinations.length === 0 && (
+                <div className="p-4 bg-surface-secondary rounded-lg text-center">
+                  <p className="text-sm text-text-secondary mb-2">
+                    No download destinations configured yet
+                  </p>
+                  <p className="text-xs text-text-tertiary">
+                    File will be downloaded to the default downloads folder
+                  </p>
+                </div>
+              )}
+
               {/* Existing Destinations */}
               {destinations.map((destination) => (
                 <motion.div
@@ -236,7 +272,7 @@ export const DownloadDestinationModal: React.FC<DownloadDestinationModalProps> =
           <Button
             variant="primary"
             onClick={handleSelect}
-            disabled={!selectedDestination && !customPath}
+            disabled={showCustomPath && !customPath}
             className="flex items-center gap-2"
           >
             <DownloadIcon className="w-4 h-4" />
