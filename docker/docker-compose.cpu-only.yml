@@ -1,0 +1,25 @@
+# CPU-Only Docker Compose
+# For systems without GPU or when you want to explicitly use CPU
+#
+# Quick start:
+#   docker compose -f docker-compose.cpu-only.yml up
+
+services:
+  claracore:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ollama-style
+    image: claracore:universal
+    container_name: claracore-cpu
+    ports:
+      - "5800:5800"
+    volumes:
+      - ./models:/models
+      - ./config:/app/config
+      - ./downloads:/app/downloads
+      - ./binaries:/app/binaries
+    environment:
+      # Force CPU backend
+      - CLARACORE_BACKEND=cpu
+      - GIN_MODE=release
+    restart: unless-stopped

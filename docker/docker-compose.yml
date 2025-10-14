@@ -1,18 +1,63 @@
+# Universal Docker Compose - Works on ANY hardware
+# Automatically detects: CUDA, ROCm, Vulkan, or CPU
+#
+# Quick start:
+#   docker compose up
+
 services:
   claracore:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: claracore:latest
+    image: claracore:universal
     container_name: claracore
     ports:
-      - "5801:5801"
+      - "5800:5800"
     volumes:
-      # Mount your models folder here
-      - ./models:/models
-      # Persist config and downloads (as directories, not files)
-      - ./config:/app/config
-      - ./downloads:/app/downloads
-      - ./binaries:/app/binaries
+      # Use Docker volumes for MUCH better performance (especially on Windows)
+      - claracore_models:/models
+      - claracore_config:/app/config
+      - claracore_downloads:/app/downloads
+      - claracore_binaries:/app/binaries
+    environment:
+      # Optional: Force a specific backend (cuda, rocm, vulkan, cpu)
+      # Leave commented for automatic detection
+      # - CLARACORE_BACKEND=cuda
+
+      # NVIDIA GPU support
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+      # AMD ROCm support
+      - HSA_OVERRIDE_GFX_VERSION=10.3.0
+      - ROC_ENABLE_PRE_VEGA=1
+
+    # GPU device mappings (optional, helps with detection)
+    # Uncomment the devices section if you need it:
+    # devices:
+    #   - /dev/dri:/dev/dri  # For Vulkan/AMD/Intel
+
+    # For NVIDIA GPU support with newer Docker Compose
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
     restart: unless-stopped
-    command: ["--listen", ":5801", "--models-folder", "/models", "--config", "/app/config/config.yaml"]
+
+    # Optional: Uncomment to see more detailed logs
+    # command: ["--listen", ":5800", "--models-folder", "/models", "--config", "/app/config/config.yaml"]
+
+# Docker volumes for fast performance (much faster than bind mounts on Windows!)
+volumes:
+  claracore_models:
+    driver: local
+  claracore_config:
+    driver: local
+  claracore_downloads:
+    driver: local
+  claracore_binaries:
+    driver: local

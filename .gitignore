@@ -37,3 +37,4 @@ __pycache__/
 env/
 venv/
 ENV/
+clara-tray/*

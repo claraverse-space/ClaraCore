@@ -1,0 +1,32 @@
+# Vulkan Docker Compose (Explicit)
+# For systems with Vulkan-capable GPUs (AMD, Intel, or NVIDIA)
+# Works with most modern GPUs without special drivers
+#
+# Quick start:
+#   docker compose -f docker-compose.vulkan-explicit.yml up
+
+services:
+  claracore:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ollama-style
+    image: claracore:universal
+    container_name: claracore-vulkan
+    ports:
+      - "5800:5800"
+    volumes:
+      - ./models:/models
+      - ./config:/app/config
+      - ./downloads:/app/downloads
+      - ./binaries:/app/binaries
+    environment:
+      # Force Vulkan backend
+      - CLARACORE_BACKEND=vulkan
+      - GIN_MODE=release
+    devices:
+      # GPU device access for Vulkan
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    restart: unless-stopped

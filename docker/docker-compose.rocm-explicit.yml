@@ -1,0 +1,36 @@
+# AMD ROCm Docker Compose (Explicit)
+# For systems with AMD GPUs when you want to force ROCm
+# Requires: ROCm drivers installed on host
+#
+# Quick start:
+#   docker compose -f docker-compose.rocm-explicit.yml up
+
+services:
+  claracore:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ollama-style
+    image: claracore:universal
+    container_name: claracore-rocm
+    ports:
+      - "5800:5800"
+    volumes:
+      - ./models:/models
+      - ./config:/app/config
+      - ./downloads:/app/downloads
+      - ./binaries:/app/binaries
+    environment:
+      # Force ROCm backend
+      - CLARACORE_BACKEND=rocm
+      - HSA_OVERRIDE_GFX_VERSION=10.3.0
+      - ROC_ENABLE_PRE_VEGA=1
+      - HIP_VISIBLE_DEVICES=0
+      - GIN_MODE=release
+    devices:
+      # AMD GPU devices
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    restart: unless-stopped
