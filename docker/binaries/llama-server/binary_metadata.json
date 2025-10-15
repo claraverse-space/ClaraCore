@@ -1,5 +1,0 @@
-{
-  "type": "cuda",
-  "version": "b6757",
-  "path": "binaries/llama-server/build/bin/llama-server"
-}
