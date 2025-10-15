@@ -11,17 +11,43 @@ Clean Docker setup for ClaraCore with NVIDIA GPU acceleration using llama.cpp's 
 
 ## Quick Start
 
+### Option 1: Pull Pre-built Image (Recommended)
+
 ```bash
-cd docker
+# Pull the image from Docker Hub
+docker pull clara17verse/claracore:cuda
+
+# Run with docker-compose
+cd docker-cuda
 docker-compose up -d
 ```
 
-That's it! ClaraCore will:
-- Download llama-server binaries automatically
-- Detect your NVIDIA GPU
-- Start with full CUDA acceleration
+### Option 2: Run Directly with Docker
 
-Access at: **http://localhost:5800/ui/**
+```bash
+docker run -d \
+  --name claracore-cuda \
+  --gpus all \
+  -p 5890:5890 \
+  -v claracore-cuda-downloads:/app/downloads \
+  clara17verse/claracore:cuda
+```
+
+### Option 3: Run with Custom Model Folder
+
+```bash
+docker run -d \
+  --name claracore-cuda \
+  --gpus all \
+  -p 5890:5890 \
+  -v claracore-cuda-downloads:/app/downloads \
+  -v /path/to/your/models:/app/models:ro \
+  clara17verse/claracore:cuda
+```
+
+**Access ClaraCore:** http://localhost:5890/ui/
+
+✅ **Your models are saved** in Docker volume `claracore-cuda-downloads`
 
 ## View Logs
 

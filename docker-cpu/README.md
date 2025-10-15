@@ -11,17 +11,41 @@ No GPU required! This version runs on any CPU.
 
 ## Quick Start
 
+### Option 1: Pull Pre-built Image (Recommended)
+
 ```bash
+# Pull the image from Docker Hub
+docker pull clara17verse/claracore:cpu
+
+# Run with docker-compose
 cd docker-cpu
 docker-compose up -d
 ```
 
-That's it! ClaraCore will:
-- Download llama-server binaries automatically
-- Run CPU-optimized inference
-- Auto-detect CPU cores and optimize threads
+### Option 2: Run Directly with Docker
 
-Access at: **http://localhost:5890/ui/**
+```bash
+docker run -d \
+  --name claracore-cpu \
+  -p 5890:5890 \
+  -v claracore-cpu-downloads:/app/downloads \
+  clara17verse/claracore:cpu
+```
+
+### Option 3: Run with Custom Model Folder
+
+```bash
+docker run -d \
+  --name claracore-cpu \
+  -p 5890:5890 \
+  -v claracore-cpu-downloads:/app/downloads \
+  -v /path/to/your/models:/app/models:ro \
+  clara17verse/claracore:cpu
+```
+
+**Access ClaraCore:** http://localhost:5890/ui/
+
+✅ **Your models are saved** in Docker volume `claracore-cpu-downloads`
 
 ## View Logs
 

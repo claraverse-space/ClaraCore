@@ -23,17 +23,49 @@ For unofficial support on other AMD GPUs (RX 5000, RX 500, etc.), see "GPU Overr
 
 ## Quick Start
 
+### Option 1: Pull Pre-built Image (Recommended)
+
 ```bash
+# Pull the image from Docker Hub
+docker pull clara17verse/claracore:rocm
+
+# Run with docker-compose
 cd docker-rocm
 docker-compose up -d
 ```
 
-That's it! ClaraCore will:
-- Download llama-server binaries automatically
-- Detect your AMD GPU
-- Start with full ROCm acceleration
+### Option 2: Run Directly with Docker
 
-Access at: **http://localhost:5890/ui/**
+```bash
+docker run -d \
+  --name claracore-rocm \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add video \
+  --group-add render \
+  -p 5890:5890 \
+  -v claracore-rocm-downloads:/app/downloads \
+  clara17verse/claracore:rocm
+```
+
+### Option 3: Run with Custom Model Folder
+
+```bash
+docker run -d \
+  --name claracore-rocm \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add video \
+  --group-add render \
+  -p 5890:5890 \
+  -v claracore-rocm-downloads:/app/downloads \
+  -v /path/to/your/models:/app/models:ro \
+  clara17verse/claracore:rocm
+```
+
+**Access ClaraCore:** http://localhost:5890/ui/
+
+✅ **Your models are saved** in Docker volume `claracore-rocm-downloads`
 
 ## View Logs
 

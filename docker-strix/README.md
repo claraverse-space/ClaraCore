@@ -40,23 +40,47 @@ sudo reboot
 
 ## Quick Start
 
-### Using Pre-built Image (Recommended)
+### Option 1: Pull Pre-built Image (Recommended)
 
 ```bash
+# Pull the image from Docker Hub
 docker pull clara17verse/claracore:strix
+
+# Run with docker-compose
 cd docker-strix
 docker-compose up -d
 ```
 
-### Building from Source
+### Option 2: Run Directly with Docker
 
 ```bash
-cd docker-strix
-docker-compose build
-docker-compose up -d
+docker run -d \
+  --name claracore-strix \
+  --device=/dev/dri \
+  --group-add video \
+  --security-opt seccomp=unconfined \
+  -p 5890:5890 \
+  -v claracore-strix-downloads:/app/downloads \
+  clara17verse/claracore:strix
+```
+
+### Option 3: Run with Custom Model Folder
+
+```bash
+docker run -d \
+  --name claracore-strix \
+  --device=/dev/dri \
+  --group-add video \
+  --security-opt seccomp=unconfined \
+  -p 5890:5890 \
+  -v claracore-strix-downloads:/app/downloads \
+  -v /path/to/your/models:/app/models:ro \
+  clara17verse/claracore:strix
 ```
 
 **Access ClaraCore:** http://localhost:5890/ui/
+
+✅ **Your models are saved** in Docker volume `claracore-strix-downloads`
 
 ## Docker Commands
 
