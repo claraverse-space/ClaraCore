@@ -11,11 +11,21 @@ export PATH="$HOME/.local/bin:$PATH"
 source ~/.bashrc
 ```
 
-**Windows security blocking**
+**🛡️ Windows Security Notice**
+ClaraCore may be flagged by antivirus software - **this is a false positive**. [Complete guide to antivirus warnings](docs/ANTIVIRUS_FALSE_POSITIVES.md) | [Why is this flagged?](SECURITY_VERIFICATION.md)
+
 ```powershell
-# Run troubleshooter:
+# Quick fix - Add Windows Defender exclusion:
+Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\ClaraCore"
+
+# Or unblock the file:
+Unblock-File "$env:LOCALAPPDATA\ClaraCore\claracore.exe"
+
+# Or run troubleshooter:
 curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/troubleshoot.ps1 | powershell
 ```
+
+**✅ Verify it's safe:** Check SHA256 hash against [official releases](https://github.com/claraverse-space/ClaraCore/releases) or [build from source](SECURITY_VERIFICATION.md).
 
 **Need help?** See our [Setup Guide](docs/SETUP.md) or [Container Guide](docker/CONTAINER_SETUP.md)
 

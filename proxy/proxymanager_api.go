@@ -1372,9 +1372,16 @@ func (pm *ProxyManager) apiAppendModelToConfig(c *gin.Context) {
 	}
 
 	// Generate SMART configuration for the new model
-	modelConfig, err := pm.generateSmartModelConfig(*targetModel, options)
+	modelConfigWrapper, err := pm.generateSmartModelConfig(*targetModel, options)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Extract the actual model config from the wrapper
+	modelConfig, ok := modelConfigWrapper["config"].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid model config format"})
 		return
 	}
 
@@ -2954,6 +2961,28 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 			MinContext:       16384,
 			PreferredContext: 32768,
 		}
+	}
+
+	// Load saved system settings and merge with request options
+	// This ensures user's manual hardware selections persist across reconfigurations
+	savedSettings, err := pm.loadSystemSettings()
+	if err == nil && savedSettings != nil {
+		// User's saved settings take priority - they manually configured these
+		if savedSettings.Backend != "" {
+			req.Options.ForceBackend = savedSettings.Backend
+		}
+		if savedSettings.VRAMGB > 0 {
+			req.Options.ForceVRAM = savedSettings.VRAMGB
+		}
+		if savedSettings.RAMGB > 0 {
+			req.Options.ForceRAM = savedSettings.RAMGB
+		}
+		if savedSettings.PreferredContext > 0 {
+			req.Options.PreferredContext = savedSettings.PreferredContext
+		}
+		// Apply other saved preferences
+		req.Options.EnableJinja = savedSettings.EnableJinja
+		req.Options.ThroughputFirst = savedSettings.ThroughputFirst
 	}
 
 	// Load folder database

@@ -374,6 +374,31 @@ const OnboardConfig: React.FC = () => {
         clearInterval(pollProgressInterval);
       };
 
+      // Save system settings to persistent storage first
+      // This ensures user's manual hardware selections persist across Force Reconfigure
+      try {
+        const settingsResponse = await fetch('/api/settings/system', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            backend: systemConfig.backend,
+            vramGB: systemConfig.vramGB,
+            ramGB: systemConfig.ramGB,
+            preferredContext: systemConfig.preferredContext,
+            throughputFirst: systemConfig.throughputFirst,
+            enableJinja: true,
+          })
+        });
+        
+        if (!settingsResponse.ok) {
+          console.warn('Failed to save system settings:', await settingsResponse.text());
+          // Continue anyway - settings save is not critical to config generation
+        }
+      } catch (settingsError) {
+        console.warn('Error saving system settings:', settingsError);
+        // Continue anyway
+      }
+
       // Use the new database-driven config generation
       const response = await fetch('/api/config/generate-all', {
         method: 'POST',
@@ -550,7 +575,7 @@ const OnboardConfig: React.FC = () => {
     },
     {
       title: "Step 2: Where are your models? 📁",
-      description: "Point us to the folder containing your GGUF model files",
+      description: "Point us to the folder containing your GGUF model files (Takes a bit to scan if too many files)",
       component: (
         <div className="py-6">
           {/* Database info panel */}
@@ -914,7 +939,7 @@ const OnboardConfig: React.FC = () => {
                         value={systemConfig.backend}
                         onChange={(e) => {
                           const backend = e.target.value as 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
-                          
+
                           // Platform-aware warnings
                           const isAppleSilicon = (systemDetection?.primaryGPU?.brand === 'apple') || (/Mac/i.test(navigator.platform));
                           if (isAppleSilicon && ['rocm', 'vulkan', 'cuda'].includes(backend)) {
@@ -931,29 +956,29 @@ const OnboardConfig: React.FC = () => {
                         <option value="cuda" disabled={systemConfig.gpuType !== 'nvidia'}>
                           CUDA (NVIDIA only) {systemConfig.gpuType !== 'nvidia' ? '- Not available for your GPU' : '- Recommended for NVIDIA'}
                         </option>
-                        
+
                         {/* ROCm - AMD only */}
                         <option value="rocm" disabled={systemConfig.gpuType !== 'amd'}>
                           ROCm (AMD only) {systemConfig.gpuType !== 'amd' ? '- Not available for your GPU' : '- Recommended for AMD'}
                         </option>
-                        
+
                         {/* Vulkan - Universal but not Apple */}
                         <option value="vulkan" disabled={systemConfig.gpuType === 'apple'}>
                           Vulkan (Cross-platform) {systemConfig.gpuType === 'apple' ? '- Not available on Apple Silicon' : '- Works on NVIDIA/AMD/Intel'}
                         </option>
-                        
+
                         {/* Metal - Apple only */}
                         <option value="metal" disabled={systemConfig.gpuType !== 'apple'}>
                           Metal (Apple only) {systemConfig.gpuType !== 'apple' ? '- Only for Apple Silicon' : '- Recommended for Apple'}
                         </option>
-                        
+
                         {/* CPU - Always available */}
                         <option value="cpu">
                           CPU (No GPU acceleration) - Works everywhere but slower
                         </option>
                       </select>
                     </div>
-                    
+
                     {backendNotice && (
                       <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
                         <div className="text-xs text-amber-700 dark:text-amber-300">

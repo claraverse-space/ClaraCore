@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   SearchIcon,
@@ -95,6 +96,7 @@ const ModelDownloaderPage: React.FC = () => {
     isMultiPart?: boolean;
     parts?: Array<{ path: string; size: number }>;
   } | null>(null);
+  const [configuringModels, setConfiguringModels] = useState<Set<string>>(new Set());
 
   // Filters
   const filters = [
@@ -196,10 +198,11 @@ const ModelDownloaderPage: React.FC = () => {
                 if (completedDownload.filename && completedDownload.filename.toLowerCase().endsWith('.gguf')) {
                   // Use the actual file path from the download info (respects custom destination)
                   const filePath = completedDownload.filePath || `./downloads/${completedDownload.filename}`;
+                  const downloadId = completedDownload.id;
                   
                   // Add model to config after a short delay to ensure file is fully written
                   setTimeout(() => {
-                    addModelToConfig(filePath);
+                    addModelToConfig(filePath, downloadId);
                   }, 2000);
                 }
               }
@@ -504,46 +507,52 @@ const ModelDownloaderPage: React.FC = () => {
   // Cancel download
   const cancelDownload = async (downloadId: string) => {
     try {
-      await fetch('/api/models/download/cancel', {
+      // Immediately update UI to show cancelling state
+      setDownloads(prev => prev.map(d => 
+        d.id === downloadId 
+          ? { ...d, status: 'cancelled' as const }
+          : d
+      ));
+
+      const response = await fetch('/api/models/download/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ downloadId }),
       });
-      // The UI will be updated via real-time events
-      console.log('Download cancelled:', downloadId);
+      
+      if (!response.ok) {
+        console.error('Failed to cancel download:', await response.text());
+        // Revert on failure
+        setDownloads(prev => prev.map(d => 
+          d.id === downloadId 
+            ? { ...d, status: 'downloading' as const }
+            : d
+        ));
+      } else {
+        console.log('Download cancelled:', downloadId);
+        // Remove from list after a delay
+        setTimeout(() => {
+          setDownloads(prev => prev.filter(d => d.id !== downloadId));
+        }, 3000);
+      }
     } catch (error) {
       console.error('Failed to cancel download:', error);
+      // Revert on error
+      setDownloads(prev => prev.map(d => 
+        d.id === downloadId 
+          ? { ...d, status: 'downloading' as const }
+          : d
+      ));
     }
   };
 
-  // Pause download
-  const pauseDownload = async (downloadId: string) => {
-    try {
-      await fetch(`/api/models/downloads/${downloadId}/pause`, {
-        method: 'POST',
-      });
-      console.log('Download paused:', downloadId);
-    } catch (error) {
-      console.error('Failed to pause download:', error);
-    }
-  };
-
-  // Resume download
-  const resumeDownload = async (downloadId: string) => {
-    try {
-      await fetch(`/api/models/downloads/${downloadId}/resume`, {
-        method: 'POST',
-      });
-      console.log('Download resumed:', downloadId);
-    } catch (error) {
-      console.error('Failed to resume download:', error);
-    }
-  };
-
-  // Add downloaded model to config
-  const addModelToConfig = async (filePath: string) => {
+  // Add downloaded model to config automatically
+  const addModelToConfig = async (filePath: string, downloadId: string) => {
     try {
       console.log('Adding model to config:', filePath);
+      
+      // Mark this model as being configured
+      setConfiguringModels(prev => new Set(prev).add(downloadId));
       
       const response = await fetch('/api/config/append-model', {
         method: 'POST',
@@ -563,16 +572,30 @@ const ModelDownloaderPage: React.FC = () => {
         const result = await response.json();
         console.log('Model added to config:', result);
         
-        // Show success notification (you might want to add a toast/notification system)
-        alert(`✅ Model "${result.modelInfo.name}" has been added to your configuration and is ready to use!`);
+        // Keep the configuring state for a moment to show success
+        setTimeout(() => {
+          setConfiguringModels(prev => {
+            const next = new Set(prev);
+            next.delete(downloadId);
+            return next;
+          });
+        }, 2000);
       } else {
         const error = await response.text();
         console.error('Failed to add model to config:', error);
-        alert(`❌ Failed to add model to configuration: ${error}`);
+        setConfiguringModels(prev => {
+          const next = new Set(prev);
+          next.delete(downloadId);
+          return next;
+        });
       }
     } catch (error) {
       console.error('Failed to add model to config:', error);
-      alert(`❌ Failed to add model to configuration: ${error}`);
+      setConfiguringModels(prev => {
+        const next = new Set(prev);
+        next.delete(downloadId);
+        return next;
+      });
     }
   };
 
@@ -687,39 +710,19 @@ const ModelDownloaderPage: React.FC = () => {
                     {downloads.map((download) => (
                       <div key={`${download.modelId}-${download.filename}`} className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-text-primary truncate">
-                            {download.filename}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            {download.status === 'completed' && download.filename.toLowerCase().endsWith('.gguf') && (
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => addModelToConfig(download.filePath || `./downloads/${download.filename}`)}
-                                className="text-xs"
-                              >
-                                📋 Add to Config
-                              </Button>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {download.status === 'completed' && !configuringModels.has(download.id) && (
+                              <span className="text-lg">✅</span>
                             )}
-                            {download.status === 'downloading' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => pauseDownload(download.id)}
-                              >
-                                ⏸️
-                              </Button>
+                            {configuringModels.has(download.id) && (
+                              <span className="text-lg animate-spin">⚙️</span>
                             )}
-                            {download.status === 'paused' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => resumeDownload(download.id)}
-                              >
-                                ▶️
-                              </Button>
-                            )}
-                            {download.status !== 'completed' && (
+                            <span className="text-sm font-medium text-text-primary truncate">
+                              {download.filename}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {download.status !== 'completed' && download.status !== 'cancelled' && download.status !== 'failed' && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -730,10 +733,44 @@ const ModelDownloaderPage: React.FC = () => {
                             )}
                           </div>
                         </div>
+                        {configuringModels.has(download.id) && (
+                          <div className="mt-2 p-3 bg-brand-500/10 rounded-lg">
+                            <p className="text-xs text-brand-400">
+                              ⚙️ Please wait, the model is being configured... It will be ready to use shortly!
+                            </p>
+                          </div>
+                        )}
+                        {download.status === 'completed' && !configuringModels.has(download.id) && (
+                          <div className="mt-2 p-3 bg-success-500/10 rounded-lg">
+                            <p className="text-xs text-success-400">
+                              ✅ Model configured and ready to use! Check the <Link to="/models" className="underline font-medium hover:text-success-300">Models</Link> page.
+                            </p>
+                          </div>
+                        )}
+                        {download.status === 'cancelled' && (
+                          <div className="mt-2 p-3 bg-error-500/10 rounded-lg">
+                            <p className="text-xs text-error-400">
+                              ❌ Download cancelled
+                            </p>
+                          </div>
+                        )}
+                        {download.status === 'failed' && (
+                          <div className="mt-2 p-3 bg-error-500/10 rounded-lg">
+                            <p className="text-xs text-error-400">
+                              ❌ Download failed{download.error ? `: ${download.error}` : ''}
+                            </p>
+                          </div>
+                        )}
                         <div className="w-full bg-surface-secondary rounded-full h-2">
                           <div
                             className={`h-2 rounded-full transition-all ${
-                              download.progress < 0 || isNaN(download.progress) 
+                              download.status === 'cancelled' || download.status === 'failed'
+                                ? 'bg-error-500'
+                                : download.status === 'paused'
+                                ? 'bg-warning-500'
+                                : download.status === 'completed'
+                                ? 'bg-success-500'
+                                : download.progress < 0 || isNaN(download.progress) 
                                 ? 'bg-brand-500 animate-pulse' 
                                 : 'bg-brand-500'
                             }`}

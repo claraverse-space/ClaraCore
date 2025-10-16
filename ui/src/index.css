@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global Border Override - Remove ALL borders */
+* {
+  border: none !important;
+  border-width: 0 !important;
+}
+
 /* ClaraCore Design System - Unified Dark Theme */
 :root {
   /* Brand Colors - Sakura Theme */

@@ -75,11 +75,17 @@ export function Header() {
     try {
       setIsReconfiguring(true);
       setShowRestartMenu(false);
+      
+      // Force Reconfigure: Rescans all tracked folders and regenerates config.yaml
+      // Backend automatically loads saved system settings from settings.json
+      // This ensures user's manual hardware selections (backend, VRAM, RAM) persist
+      // across reconfigurations, overriding automatic detection
       const response = await fetch('/api/config/regenerate-from-db', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           options: {
+            // Only provide defaults; backend will override with saved user settings
             enableJinja: true,
             throughputFirst: true,
             minContext: 16384,
@@ -160,7 +166,7 @@ export function Header() {
         <nav className="flex items-center gap-1">
           {/* Primary Workflow - Core Features */}
           <NavLink to="/setup" className={navLinkClass}>
-            Setup
+            Setup - (hardware and models)
           </NavLink>
           <NavLink to="/models" className={navLinkClass}>
             Models
@@ -203,7 +209,7 @@ export function Header() {
                 className={`w-4 h-4 ${(isRestarting || isReconfiguring) ? 'animate-spin' : ''}`} 
               />
               {screenWidth !== "xs" && (
-                <span>{isRestarting ? "Restarting..." : (isReconfiguring ? "Reconfiguring..." : "Restart")}</span>
+                <span>{isRestarting ? "Restarting..." : (isReconfiguring ? "Reconfiguring..." : "Restart/Reconfigure")}</span>
               )}
               {!isRestarting && (
                 <ChevronDown className="w-3 h-3" />
@@ -240,7 +246,7 @@ export function Header() {
                         <RotateCcw className="w-4 h-4 text-orange-400" />
                         <div>
                           <div className="font-medium text-white">Hard Restart</div>
-                          <div className="text-xs text-gray-400">Restart entire server process</div>
+                            <div className="text-xs text-gray-400">Restart server (may kill process if not in Docker)</div>
                         </div>
                       </div>
                     </button>
