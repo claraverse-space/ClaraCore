@@ -328,34 +328,24 @@ func selfHealReconfigure(configPath string) bool {
 		}
 	}
 
-	// Scan folders for models
-	var allModels []autosetup.ModelInfo
-	for _, p := range folders {
-		models, err := autosetup.DetectModelsWithOptions(p, opts)
-		if err != nil {
-			fmt.Printf("Self-heal: scan failed for %s: %v\n", p, err)
-			continue
-		}
-		allModels = append(allModels, models...)
-	}
-	if len(allModels) == 0 {
-		fmt.Println("Self-heal: no models found in tracked folders")
-		return false
-	}
+	// Use the appropriate setup function based on folder count
+	// This avoids redundant scanning and binary downloads
+	fmt.Printf("Self-heal: regenerating config from %d folder(s)\n", len(folders))
 
-	system := autosetup.DetectSystem()
-	_ = autosetup.EnhanceSystemInfo(&system)
-	binariesDir := filepath.Join(".", "binaries")
-	bin, err := autosetup.DownloadBinary(binariesDir, system, opts.ForceBackend)
-	if err != nil {
-		fmt.Printf("Self-heal: unable to ensure binary: %v\n", err)
-		return false
-	}
-	gen := autosetup.NewConfigGenerator(folders[0], bin.Path, configPath, opts)
-	gen.SetSystemInfo(&system)
-	gen.SetAvailableVRAM(system.TotalVRAMGB)
-	if err := gen.GenerateConfig(allModels); err != nil {
-		fmt.Printf("Self-heal: generation failed: %v\n", err)
+	if len(folders) > 1 {
+		// Multiple folders - use multi-folder setup (it will scan all folders)
+		if err := autosetup.AutoSetupMultiFoldersWithOptions(folders, opts); err != nil {
+			fmt.Printf("Self-heal: multi-folder generation failed: %v\n", err)
+			return false
+		}
+	} else if len(folders) == 1 {
+		// Single folder - use single-folder setup (it will scan the folder)
+		if err := autosetup.AutoSetupWithOptions(folders[0], opts); err != nil {
+			fmt.Printf("Self-heal: generation failed: %v\n", err)
+			return false
+		}
+	} else {
+		fmt.Println("Self-heal: no folders to regenerate from")
 		return false
 	}
 	// Notify for live reload if server already running

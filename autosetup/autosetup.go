@@ -423,15 +423,15 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 	}
 
 	// Use config generator with smart GPU allocation
-	// For multi-folder, use the first valid folder as the primary folder for config generation
+	// Use multi-folder config generator to properly track all model folders
 	configPath := "config.yaml"
-	generator := NewConfigGenerator(validFolders[0], binary.Path, configPath, options)
+	generator := NewConfigGeneratorMultiFolder(validFolders, binary.Path, configPath, options)
 	generator.SetAvailableVRAM(totalVRAM)
 	generator.SetBinaryType(binary.Type)
 	generator.SetSystemInfo(&system)             // Pass system info for optimal parameters
 	generator.SetMMProjMatches(allMMProjMatches) // Pass all mmproj matches to config generator
 
-	fmt.Printf("⚙️  Generating configuration (SMART GPU ALLOCATION: fit max layers in VRAM)...\n")
+	fmt.Printf("⚙️  Generating configuration from %d folders (SMART GPU ALLOCATION: fit max layers in VRAM)...\n", len(validFolders))
 	err = generator.GenerateConfig(allModels) // Use ALL models from ALL folders
 	if err != nil {
 		return fmt.Errorf("failed to generate configuration: %v", err)

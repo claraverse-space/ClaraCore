@@ -10,7 +10,8 @@ import (
 
 // ConfigGenerator generates optimized configurations with intelligent GPU allocation
 type ConfigGenerator struct {
-	ModelsPath    string
+	ModelsPath    string   // Primary models path (for backward compatibility)
+	ModelsPaths   []string // Multiple model paths (for multi-folder support)
 	BinaryPath    string
 	BinaryType    string
 	OutputPath    string
@@ -25,6 +26,23 @@ type ConfigGenerator struct {
 func NewConfigGenerator(modelsPath, binaryPath, outputPath string, options SetupOptions) *ConfigGenerator {
 	return &ConfigGenerator{
 		ModelsPath:   modelsPath,
+		ModelsPaths:  []string{modelsPath}, // Initialize with single path for backward compatibility
+		BinaryPath:   binaryPath,
+		OutputPath:   outputPath,
+		Options:      options,
+		usedModelIDs: make(map[string]int),
+	}
+}
+
+// NewConfigGeneratorMultiFolder creates a new config generator with multiple model folders
+func NewConfigGeneratorMultiFolder(modelsPaths []string, binaryPath, outputPath string, options SetupOptions) *ConfigGenerator {
+	primaryPath := ""
+	if len(modelsPaths) > 0 {
+		primaryPath = modelsPaths[0]
+	}
+	return &ConfigGenerator{
+		ModelsPath:   primaryPath,  // Use first path as primary for compatibility
+		ModelsPaths:  modelsPaths,  // Store all paths
 		BinaryPath:   binaryPath,
 		OutputPath:   outputPath,
 		Options:      options,
@@ -142,7 +160,17 @@ func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
 // writeHeader writes the configuration header
 func (scg *ConfigGenerator) writeHeader(config *strings.Builder) {
 	config.WriteString("# Auto-generated Clara Core configuration (SMART GPU ALLOCATION)\n")
-	config.WriteString(fmt.Sprintf("# Generated from models in: %s\n", scg.ModelsPath))
+
+	// Show all model folders if multiple paths are configured
+	if len(scg.ModelsPaths) > 1 {
+		config.WriteString(fmt.Sprintf("# Generated from models in %d folders:\n", len(scg.ModelsPaths)))
+		for i, path := range scg.ModelsPaths {
+			config.WriteString(fmt.Sprintf("#   %d. %s\n", i+1, path))
+		}
+	} else {
+		config.WriteString(fmt.Sprintf("# Generated from models in: %s\n", scg.ModelsPath))
+	}
+
 	config.WriteString(fmt.Sprintf("# Binary: %s (%s)\n", scg.BinaryPath, scg.BinaryType))
 	config.WriteString(fmt.Sprintf("# System: %s/%s\n", runtime.GOOS, runtime.GOARCH))
 

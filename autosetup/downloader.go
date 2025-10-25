@@ -3,6 +3,7 @@ package autosetup
 import (
 	"archive/zip"
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -151,6 +152,52 @@ func LoadBinaryMetadata(extractDir string) (*BinaryMetadata, error) {
 	}
 
 	return &metadata, nil
+}
+
+// Utility functions for command checking and logging
+
+// commandExists checks if a command is available in PATH
+func commandExists(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
+}
+
+// shouldUseEmoji returns whether to use emoji in output based on environment
+func shouldUseEmoji() bool {
+	// Check NO_EMOJI environment variable
+	if os.Getenv("NO_EMOJI") != "" || os.Getenv("CLARACORE_NO_EMOJI") != "" {
+		return false
+	}
+
+	// Disable emoji in CI/CD environments
+	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+		return false
+	}
+
+	return true
+}
+
+// formatLogPrefix returns appropriate prefix based on emoji setting
+func formatLogPrefix(emojiPrefix, textPrefix string) string {
+	if shouldUseEmoji() {
+		return emojiPrefix
+	}
+	return textPrefix
+}
+
+// runCommandWithTimeout runs a command with a timeout
+func runCommandWithTimeout(name string, timeout time.Duration, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	output, err := cmd.Output()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("command timed out after %v", timeout)
+	}
+
+	return output, err
 }
 
 // DetectSystem detects the current system capabilities
@@ -803,6 +850,8 @@ func detectCUDA() bool {
 }
 
 func detectROCm() bool {
+	detectionLog := []string{}
+
 	switch runtime.GOOS {
 	case "windows":
 		// Check Windows ROCm installation paths
@@ -812,87 +861,177 @@ func detectROCm() bool {
 			"C:\\Program Files\\AMD\\ROCm\\5.5\\bin\\rocm-smi.exe",
 			"C:\\AMD\\ROCm\\bin\\rocm-smi.exe",
 		}
+
+		detectionLog = append(detectionLog, "🔍 ROCm Detection: Checking Windows paths...")
+
 		for _, path := range paths {
 			if _, err := os.Stat(path); err == nil {
+				detectionLog = append(detectionLog, fmt.Sprintf("   ✓ Found rocm-smi at: %s", path))
 				// Found rocm-smi, try to query for devices
 				cmd := exec.Command(path, "--showid")
 				output, err := cmd.Output()
-				if err == nil && len(output) > 0 {
-					return strings.Contains(string(output), "GPU")
+				if err != nil {
+					detectionLog = append(detectionLog, fmt.Sprintf("   ⚠ rocm-smi command failed: %v", err))
+					// Don't return false immediately - try fallback methods
+					continue
 				}
-				return false
+				if len(output) > 0 && strings.Contains(string(output), "GPU") {
+					detectionLog = append(detectionLog, "   ✅ ROCm GPU devices detected!")
+					fmt.Println(strings.Join(detectionLog, "\n"))
+					return true
+				}
+				detectionLog = append(detectionLog, "   ⚠ rocm-smi found but no GPU devices detected")
 			}
 		}
 
-		// Check for AMD GPU with ROCm driver
+		// Fallback 1: Check for AMD GPU with ROCm driver
+		detectionLog = append(detectionLog, "   🔄 Trying fallback: Checking for AMD GPU...")
 		cmd := exec.Command("wmic", "path", "win32_VideoController", "get", "name")
 		output, err := cmd.Output()
 		if err == nil && strings.Contains(strings.ToLower(string(output)), "amd") {
+			detectionLog = append(detectionLog, "   ✓ AMD GPU found")
 			// Check for ROCm runtime
 			if _, err := os.Stat("C:\\Windows\\System32\\amdhip64.dll"); err == nil {
+				detectionLog = append(detectionLog, "   ✅ ROCm runtime (amdhip64.dll) detected!")
+				fmt.Println(strings.Join(detectionLog, "\n"))
 				return true
 			}
+			detectionLog = append(detectionLog, "   ⚠ AMD GPU found but ROCm runtime not detected")
 		}
 
-	case "linux":
-		// Check for ROCm installation on Linux
-		paths := []string{
-			"/opt/rocm/bin/rocm-smi",
-			"/usr/bin/rocm-smi",
-			"/opt/rocm",
-		}
-
-		for _, path := range paths {
-			if _, err := os.Stat(path); err == nil {
-				// Try to query ROCm devices
-				if strings.HasSuffix(path, "rocm-smi") {
-					cmd := exec.Command(path, "--showid")
-					output, err := cmd.Output()
-					if err == nil && len(output) > 0 {
-						return strings.Contains(string(output), "GPU")
-					}
-				}
-				return true
-			}
-		}
-
-		// Check for AMD GPU with ROCm driver
-		cmd := exec.Command("lspci", "-nn")
-		output, err := cmd.Output()
-		if err == nil {
-			outputStr := strings.ToLower(string(output))
-			if strings.Contains(outputStr, "amd") && strings.Contains(outputStr, "display") {
-				// Check for ROCm runtime
-				if _, err := os.Stat("/usr/lib/x86_64-linux-gnu/libamdhip64.so"); err == nil {
-					return true
-				}
-			}
-		}
-
-	case "darwin":
-		// ROCm not supported on macOS
-		return false
-	}
-
-	return false
-}
-
-func detectVulkan() bool {
-	switch runtime.GOOS {
-	case "windows":
-		// Check for vulkan-1.dll in system32
-		if _, err := os.Stat("C:\\Windows\\System32\\vulkan-1.dll"); err == nil {
-			// Try to verify Vulkan devices exist
-			cmd := exec.Command("vulkaninfo", "--summary")
-			output, err := cmd.Output()
-			if err == nil && strings.Contains(string(output), "deviceType") {
-				return true
-			}
-			// Vulkan library exists even if vulkaninfo fails
+		// Fallback 2: Check for HIP environment variables
+		if os.Getenv("HIP_PATH") != "" || os.Getenv("ROCM_PATH") != "" {
+			detectionLog = append(detectionLog, "   ✅ ROCm environment variables detected!")
+			fmt.Println(strings.Join(detectionLog, "\n"))
 			return true
 		}
 
 	case "linux":
+		// Check for ROCm installation on Linux
+		detectionLog = append(detectionLog, "🔍 ROCm Detection: Checking Linux paths...")
+
+		paths := []string{
+			"/opt/rocm/bin/rocm-smi",
+			"/usr/bin/rocm-smi",
+		}
+
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				detectionLog = append(detectionLog, fmt.Sprintf("   ✓ Found rocm-smi at: %s", path))
+				// Try to query ROCm devices
+				cmd := exec.Command(path, "--showid")
+				output, err := cmd.Output()
+				if err != nil {
+					detectionLog = append(detectionLog, fmt.Sprintf("   ⚠ rocm-smi command failed: %v", err))
+					// Don't return false - try fallback methods
+					continue
+				}
+				if len(output) > 0 && strings.Contains(string(output), "GPU") {
+					detectionLog = append(detectionLog, "   ✅ ROCm GPU devices detected!")
+					fmt.Println(strings.Join(detectionLog, "\n"))
+					return true
+				}
+				detectionLog = append(detectionLog, "   ⚠ rocm-smi found but no GPU devices detected")
+			}
+		}
+
+		// Check if /opt/rocm directory exists (indicates ROCm installation)
+		if _, err := os.Stat("/opt/rocm"); err == nil {
+			detectionLog = append(detectionLog, "   ✓ ROCm installation directory found")
+		}
+
+		// Fallback 1: Check for AMD GPU with ROCm driver
+		detectionLog = append(detectionLog, "   🔄 Trying fallback: Checking for AMD GPU...")
+		cmd := exec.Command("lspci", "-nn")
+		output, err := cmd.Output()
+		if err == nil {
+			outputStr := strings.ToLower(string(output))
+			if strings.Contains(outputStr, "amd") && (strings.Contains(outputStr, "display") || strings.Contains(outputStr, "vga")) {
+				detectionLog = append(detectionLog, "   ✓ AMD GPU found")
+				// Check for ROCm runtime libraries
+				rocmLibPaths := []string{
+					"/usr/lib/x86_64-linux-gnu/libamdhip64.so",
+					"/opt/rocm/lib/libamdhip64.so",
+					"/usr/lib64/libamdhip64.so",
+				}
+				for _, libPath := range rocmLibPaths {
+					if _, err := os.Stat(libPath); err == nil {
+						detectionLog = append(detectionLog, fmt.Sprintf("   ✅ ROCm runtime found at: %s", libPath))
+						fmt.Println(strings.Join(detectionLog, "\n"))
+						return true
+					}
+				}
+				detectionLog = append(detectionLog, "   ⚠ AMD GPU found but ROCm runtime not detected")
+			}
+		} else {
+			detectionLog = append(detectionLog, fmt.Sprintf("   ⚠ lspci command failed: %v", err))
+		}
+
+		// Fallback 2: Check for HIP environment variables
+		if os.Getenv("HIP_PATH") != "" || os.Getenv("ROCM_PATH") != "" {
+			detectionLog = append(detectionLog, "   ✅ ROCm environment variables detected!")
+			fmt.Println(strings.Join(detectionLog, "\n"))
+			return true
+		}
+
+	case "darwin":
+		// ROCm not supported on macOS
+		detectionLog = append(detectionLog, "🔍 ROCm Detection: Not supported on macOS")
+		return false
+	}
+
+	detectionLog = append(detectionLog, "   ❌ ROCm not detected")
+	fmt.Println(strings.Join(detectionLog, "\n"))
+	return false
+}
+
+func detectVulkan() bool {
+	detectionLog := []string{}
+
+	switch runtime.GOOS {
+	case "windows":
+		detectionLog = append(detectionLog, formatLogPrefix("🔍", "[DETECT]")+" Vulkan Detection: Checking Windows paths...")
+
+		// Check for vulkan-1.dll in system32
+		if _, err := os.Stat("C:\\Windows\\System32\\vulkan-1.dll"); err == nil {
+			detectionLog = append(detectionLog, "   "+formatLogPrefix("✓", "[OK]")+" Found vulkan-1.dll in System32")
+
+			// Try to verify Vulkan devices exist (ONLY if vulkaninfo is available)
+			if commandExists("vulkaninfo") {
+				cmd := exec.Command("vulkaninfo", "--summary")
+				output, err := cmd.Output()
+				if err == nil && strings.Contains(string(output), "deviceType") {
+					detectionLog = append(detectionLog, "   "+formatLogPrefix("✅", "[SUCCESS]")+" Vulkan devices verified via vulkaninfo!")
+					fmt.Println(strings.Join(detectionLog, "\n"))
+					return true
+				}
+				if err != nil {
+					detectionLog = append(detectionLog, fmt.Sprintf("   "+formatLogPrefix("⚠", "[WARN]")+" vulkaninfo command failed: %v", err))
+					// Don't assume Vulkan works if verification failed
+					detectionLog = append(detectionLog, "   "+formatLogPrefix("❌", "[FAIL]")+" Cannot verify Vulkan GPU support")
+					fmt.Println(strings.Join(detectionLog, "\n"))
+					return false
+				}
+			} else {
+				detectionLog = append(detectionLog, "   "+formatLogPrefix("⚠", "[WARN]")+" vulkaninfo not available, cannot verify GPU support")
+				// Be conservative: library exists but can't verify actual GPU support
+				detectionLog = append(detectionLog, "   "+formatLogPrefix("ℹ", "[INFO]")+" Vulkan library found but GPU support unverified - assuming available")
+				fmt.Println(strings.Join(detectionLog, "\n"))
+				return true
+			}
+		}
+
+		// Fallback: Check for Vulkan SDK installation
+		vulkanSDKPath := os.Getenv("VULKAN_SDK")
+		if vulkanSDKPath != "" {
+			detectionLog = append(detectionLog, fmt.Sprintf("   "+formatLogPrefix("✅", "[SUCCESS]")+" Vulkan SDK environment variable detected: %s", vulkanSDKPath))
+			fmt.Println(strings.Join(detectionLog, "\n"))
+			return true
+		}
+
+	case "linux":
+		detectionLog = append(detectionLog, "🔍 Vulkan Detection: Checking Linux paths...")
+
 		// Check for libvulkan.so on Linux
 		vulkanPaths := []string{
 			"/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
@@ -904,25 +1043,49 @@ func detectVulkan() bool {
 
 		for _, path := range vulkanPaths {
 			if _, err := os.Stat(path); err == nil {
+				detectionLog = append(detectionLog, fmt.Sprintf("   ✓ Found libvulkan at: %s", path))
 				// Try to verify Vulkan devices exist
 				cmd := exec.Command("vulkaninfo", "--summary")
 				output, err := cmd.Output()
 				if err == nil && strings.Contains(string(output), "deviceType") {
+					detectionLog = append(detectionLog, "   ✅ Vulkan devices verified via vulkaninfo!")
+					fmt.Println(strings.Join(detectionLog, "\n"))
 					return true
 				}
+				if err != nil {
+					detectionLog = append(detectionLog, fmt.Sprintf("   ⚠ vulkaninfo command failed: %v (but library exists)", err))
+				}
 				// Vulkan library exists even if vulkaninfo fails
+				detectionLog = append(detectionLog, "   ✅ Vulkan library detected (assuming devices available)")
+				fmt.Println(strings.Join(detectionLog, "\n"))
 				return true
 			}
 		}
 
-		// Check for Vulkan using ldconfig
+		// Fallback 1: Check for Vulkan using ldconfig
+		detectionLog = append(detectionLog, "   🔄 Trying fallback: Checking ldconfig...")
 		cmd := exec.Command("ldconfig", "-p")
 		output, err := cmd.Output()
 		if err == nil && strings.Contains(string(output), "libvulkan.so") {
+			detectionLog = append(detectionLog, "   ✅ Vulkan library found via ldconfig!")
+			fmt.Println(strings.Join(detectionLog, "\n"))
+			return true
+		}
+		if err != nil {
+			detectionLog = append(detectionLog, fmt.Sprintf("   ⚠ ldconfig command failed: %v", err))
+		}
+
+		// Fallback 2: Check for Vulkan SDK installation
+		vulkanSDKPath := os.Getenv("VULKAN_SDK")
+		if vulkanSDKPath != "" {
+			detectionLog = append(detectionLog, fmt.Sprintf("   ✅ Vulkan SDK environment variable detected: %s", vulkanSDKPath))
+			fmt.Println(strings.Join(detectionLog, "\n"))
 			return true
 		}
 
 	case "darwin":
+		detectionLog = append(detectionLog, "🔍 Vulkan Detection: Checking macOS (MoltenVK)...")
+
 		// Check for MoltenVK on macOS (Vulkan → Metal translation layer)
 		moltenVKPaths := []string{
 			"/usr/local/lib/libvulkan.1.dylib",
@@ -933,24 +1096,50 @@ func detectVulkan() bool {
 
 		for _, path := range moltenVKPaths {
 			if _, err := os.Stat(path); err == nil {
+				detectionLog = append(detectionLog, fmt.Sprintf("   ✅ MoltenVK found at: %s", path))
+				fmt.Println(strings.Join(detectionLog, "\n"))
 				return true
 			}
 		}
 
-		// Check if MoltenVK is installed via Homebrew
+		// Fallback 1: Check if MoltenVK is installed via Homebrew
+		detectionLog = append(detectionLog, "   🔄 Trying fallback: Checking Homebrew...")
 		cmd := exec.Command("brew", "list", "molten-vk")
 		if err := cmd.Run(); err == nil {
+			detectionLog = append(detectionLog, "   ✅ MoltenVK installed via Homebrew!")
+			fmt.Println(strings.Join(detectionLog, "\n"))
+			return true
+		}
+
+		// Fallback 2: Check for Vulkan SDK
+		vulkanSDKPath := os.Getenv("VULKAN_SDK")
+		if vulkanSDKPath != "" {
+			detectionLog = append(detectionLog, fmt.Sprintf("   ✅ Vulkan SDK environment variable detected: %s", vulkanSDKPath))
+			fmt.Println(strings.Join(detectionLog, "\n"))
 			return true
 		}
 	}
 
+	detectionLog = append(detectionLog, "   ❌ Vulkan not detected")
+	fmt.Println(strings.Join(detectionLog, "\n"))
 	return false
 }
 
 func detectMetal() bool {
+	detectionLog := []string{}
+
 	// Metal is only available on macOS
 	if runtime.GOOS != "darwin" {
 		return false
+	}
+
+	detectionLog = append(detectionLog, formatLogPrefix("🔍", "[DETECT]")+" Metal Detection: Checking macOS...")
+
+	// For Apple Silicon, Metal is always available
+	if runtime.GOARCH == "arm64" {
+		detectionLog = append(detectionLog, "   "+formatLogPrefix("✅", "[SUCCESS]")+" Apple Silicon detected - Metal always available!")
+		fmt.Println(strings.Join(detectionLog, "\n"))
+		return true
 	}
 
 	// Check if Metal framework exists
@@ -959,31 +1148,80 @@ func detectMetal() bool {
 		"/System/Library/PrivateFrameworks/Metal.framework",
 	}
 
+	frameworkFound := false
 	for _, path := range metalFrameworkPaths {
 		if _, err := os.Stat(path); err == nil {
-			// Metal framework exists, verify GPU support
-			cmd := exec.Command("system_profiler", "SPDisplaysDataType")
-			output, err := cmd.Output()
-			if err == nil {
-				outputStr := strings.ToLower(string(output))
-				// Check for Apple Silicon or modern Intel GPUs with Metal support
-				if strings.Contains(outputStr, "apple") ||
-					strings.Contains(outputStr, "metal") ||
-					strings.Contains(outputStr, "intel iris") ||
-					strings.Contains(outputStr, "amd radeon") {
-					return true
+			detectionLog = append(detectionLog, fmt.Sprintf("   "+formatLogPrefix("✓", "[OK]")+" Found Metal framework at: %s", path))
+			frameworkFound = true
+
+			// Metal framework exists, try to verify GPU support with timeout
+			if commandExists("system_profiler") {
+				detectionLog = append(detectionLog, "   "+formatLogPrefix("🔄", "[INFO]")+" Verifying GPU support (this may take a few seconds)...")
+				output, err := runCommandWithTimeout("system_profiler", 15*time.Second, "SPDisplaysDataType")
+				if err != nil {
+					detectionLog = append(detectionLog, fmt.Sprintf("   "+formatLogPrefix("⚠", "[WARN]")+" system_profiler failed: %v", err))
+				} else {
+					outputStr := strings.ToLower(string(output))
+					// Check for Apple Silicon or modern Intel GPUs with Metal support
+					if strings.Contains(outputStr, "apple") ||
+						strings.Contains(outputStr, "metal") ||
+						strings.Contains(outputStr, "intel iris") ||
+						strings.Contains(outputStr, "amd radeon") {
+						detectionLog = append(detectionLog, "   "+formatLogPrefix("✅", "[SUCCESS]")+" Metal-compatible GPU verified via system_profiler!")
+						fmt.Println(strings.Join(detectionLog, "\n"))
+						return true
+					}
+					detectionLog = append(detectionLog, "   "+formatLogPrefix("⚠", "[WARN]")+" system_profiler didn't show Metal support explicitly")
 				}
 			}
-			// Framework exists, assume Metal support
+
+			// Check macOS version for Intel Macs
+			if commandExists("sw_vers") {
+				output, err := runCommandWithTimeout("sw_vers", 5*time.Second, "-productVersion")
+				if err == nil {
+					version := strings.TrimSpace(string(output))
+					detectionLog = append(detectionLog, fmt.Sprintf("   "+formatLogPrefix("ℹ", "[INFO]")+" macOS version: %s", version))
+
+					// Metal requires macOS 10.11 (El Capitan) or later
+					// Parse version and check
+					versionParts := strings.Split(version, ".")
+					if len(versionParts) >= 2 {
+						majorMinor := versionParts[0] + "." + versionParts[1]
+						// Simple version check: 10.11+ or 11.0+
+						if strings.HasPrefix(version, "10.") {
+							// Check if 10.11 or later
+							if majorMinor >= "10.11" {
+								detectionLog = append(detectionLog, "   "+formatLogPrefix("✅", "[SUCCESS]")+" macOS version supports Metal (10.11+)")
+								fmt.Println(strings.Join(detectionLog, "\n"))
+								return true
+							} else {
+								detectionLog = append(detectionLog, "   "+formatLogPrefix("❌", "[FAIL]")+" macOS too old for Metal (requires 10.11+)")
+								fmt.Println(strings.Join(detectionLog, "\n"))
+								return false
+							}
+						} else {
+							// macOS 11+ always has Metal
+							detectionLog = append(detectionLog, "   "+formatLogPrefix("✅", "[SUCCESS]")+" Modern macOS with Metal support")
+							fmt.Println(strings.Join(detectionLog, "\n"))
+							return true
+						}
+					}
+				}
+			}
+
+			// Framework exists, conservatively assume Metal support for modern macOS
+			detectionLog = append(detectionLog, "   "+formatLogPrefix("✅", "[SUCCESS]")+" Metal framework detected (assuming GPU support)")
+			fmt.Println(strings.Join(detectionLog, "\n"))
 			return true
 		}
 	}
 
-	// For Apple Silicon, Metal is always available
-	if runtime.GOARCH == "arm64" {
-		return true
+	if !frameworkFound {
+		detectionLog = append(detectionLog, "   "+formatLogPrefix("⚠", "[WARN]")+" Metal framework not found")
 	}
 
+	detectionLog = append(detectionLog, "   "+formatLogPrefix("❌", "[FAIL]")+" Metal not detected")
+	fmt.Println(strings.Join(detectionLog, "\n"))
 	return false
 }
 
