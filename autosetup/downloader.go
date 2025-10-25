@@ -305,6 +305,9 @@ func GetOptimalBinaryURL(system SystemInfo, forceBackend string, version string)
 		switch binaryType {
 		case "metal":
 			filename = fmt.Sprintf("llama-%s-bin-macos-arm64.zip", version)
+		case "mlx":
+			// MLX uses the same binary as Metal on Apple Silicon
+			filename = fmt.Sprintf("llama-%s-bin-macos-arm64.zip", version)
 		case "cpu":
 			if system.Architecture == "arm64" {
 				filename = fmt.Sprintf("llama-%s-bin-macos-arm64.zip", version)
