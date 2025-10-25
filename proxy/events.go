@@ -9,6 +9,7 @@ const LogDataEventID = 0x04
 const TokenMetricsEventID = 0x05
 const ModelPreloadedEventID = 0x06
 const DownloadProgressEventID = 0x07
+const ConfigGenerationProgressEventID = 0x08
 
 type ProcessStateChangeEvent struct {
 	ProcessName string
@@ -58,4 +59,17 @@ type ModelPreloadedEvent struct {
 
 func (e ModelPreloadedEvent) Type() uint32 {
 	return ModelPreloadedEventID
+}
+
+// ConfigGenerationProgressEvent is fired when config generation progress changes
+type ConfigGenerationProgressEvent struct {
+	Stage              string  `json:"stage"`
+	CurrentModel       string  `json:"currentModel"`
+	Current            int     `json:"current"`
+	Total              int     `json:"total"`
+	PercentageComplete float64 `json:"percentageComplete"`
+}
+
+func (e ConfigGenerationProgressEvent) Type() uint32 {
+	return ConfigGenerationProgressEventID
 }

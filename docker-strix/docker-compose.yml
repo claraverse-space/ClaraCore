@@ -1,0 +1,62 @@
+name: claracore
+
+services:
+  claracore:
+    build:
+      context: ..
+      dockerfile: docker-strix/Dockerfile.strix
+    container_name: claracore-strix
+    image: claracore:strix
+    restart: unless-stopped
+    ports:
+      - "5890:5890"
+    volumes:
+      # Persistent volume for downloaded models
+      - claracore-strix-downloads:/app/downloads
+      
+      # Optional: Bind mount your own model folders
+      # Uncomment and customize the paths below to use your existing models
+      # - /path/to/your/models:/app/models:ro          # Read-only access
+      # - /mnt/storage/llm-models:/app/external:ro     # Another folder
+      # - ~/ai-models:/app/my-models:ro                # Home directory models
+      
+    devices:
+      # Grant access to AMD Strix Halo APU
+      - /dev/kfd
+      - /dev/dri
+    environment:
+      # ROCm environment variables for Strix Halo
+      - HSA_OVERRIDE_GFX_VERSION=11.5.0  # Strix Halo GFX version
+      - ROCM_VISIBLE_DEVICES=all
+      - HIP_VISIBLE_DEVICES=0
+    security_opt:
+      - seccomp:unconfined
+    group_add:
+      - video
+      - render
+
+volumes:
+  # Persistent storage for downloaded models only
+  # This volume persists even after 'docker-compose down'
+  # To delete: docker-compose down -v (WARNING: deletes all downloaded models!)
+  claracore-strix-downloads:
+    name: claracore-strix-downloads
+
+# ============================================================
+# 📁 BINDING YOUR OWN MODEL FOLDERS
+# ============================================================
+# To use your existing model folders, uncomment the volume binds above
+# and replace the paths with your actual directories:
+#
+# Examples:
+#   Linux:   - /mnt/data/models:/app/models:ro
+#   Windows: - C:\Users\YourName\Models:/app/models:ro
+#   macOS:   - /Users/yourname/ai-models:/app/models:ro
+#
+# Tips:
+#   - Use :ro (read-only) to prevent accidental modifications
+#   - You can mount multiple folders to different paths
+#   - After adding folders, go to Setup and scan them
+#   - Paths inside container: /app/models, /app/external, etc.
+#
+# ============================================================

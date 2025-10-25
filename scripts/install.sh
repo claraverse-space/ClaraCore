@@ -1,213 +1,398 @@
-#!/bin/sh
-# This script installs llama-swap on Linux.
-# It detects the current operating system architecture and installs the appropriate version of llama-swap.
+#!/bin/bash
 
-set -eu
+# ClaraCore Installation Script
+# Supports Linux and macOS with automatic service setup
 
-LLAMA_SWAP_DEFAULT_ADDRESS=${LLAMA_SWAP_DEFAULT_ADDRESS:-"127.0.0.1:8080"}
+set -e
 
-red="$( (/usr/bin/tput bold || :; /usr/bin/tput setaf 1 || :) 2>&-)"
-plain="$( (/usr/bin/tput sgr0 || :) 2>&-)"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-status() { echo ">>> $*" >&2; }
-error() { echo "${red}ERROR:${plain} $*"; exit 1; }
-warning() { echo "${red}WARNING:${plain} $*"; }
+# Configuration
+    REPO="claraverse-space/ClaraCore"
+INSTALL_DIR="/usr/local/bin"
+CONFIG_DIR="$HOME/.config/claracore"
+SERVICE_NAME="claracore"
 
-available() { command -v "$1" >/dev/null; }
-require() {
-    _MISSING=''
-    for TOOL in "$@"; do
-        if ! available "$TOOL"; then
-            _MISSING="$_MISSING $TOOL"
-        fi
-    done
-
-    echo "$_MISSING"
-}
-
-SUDO=
-if [ "$(id -u)" -ne 0 ]; then
-    if ! available sudo; then
-        error "This script requires superuser permissions. Please re-run as root."
-    fi
-
-    SUDO="sudo"
-fi
-
-NEEDS=$(require tee tar python3 mktemp)
-if [ -n "$NEEDS" ]; then
-    status "ERROR: The following tools are required but missing:"
-    for NEED in $NEEDS; do
-        echo "  - $NEED"
-    done
-    exit 1
-fi
-
-[ "$(uname -s)" = "Linux" ] || error 'This script is intended to run on Linux only.'
-
-ARCH=$(uname -m)
-case "$ARCH" in
-    x86_64) ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) error "Unsupported architecture: $ARCH" ;;
-esac
-
-IS_WSL2=false
-
-KERN=$(uname -r)
-case "$KERN" in
-    *icrosoft*WSL2 | *icrosoft*wsl2) IS_WSL2=true;;
-    *icrosoft) error "Microsoft WSL1 is not currently supported. Please use WSL2 with 'wsl --set-version <distro> 2'" ;;
-    *) ;;
-esac
-
-download_binary() {
-    ASSET_NAME="linux_$ARCH"
-
-    TMPDIR=$(mktemp -d)
-    trap 'rm -rf "${TMPDIR}"' EXIT INT TERM HUP
-    PYTHON_SCRIPT=$(cat <<EOF
-import os
-import json
-import sys
-import urllib.request
-
-ASSET_NAME = "${ASSET_NAME}"
-
-with urllib.request.urlopen("https://api.github.com/repos/mostlygeek/llama-swap/releases/latest") as resp:
-    data = json.load(resp)
-    for asset in data.get("assets", []):
-        if ASSET_NAME in asset.get("name", ""):
-            url = asset["browser_download_url"]
-            break
-    else:
-        print("ERROR: Matching asset not found.", file=sys.stderr)
-        exit(1)
-
-print("Downloading:", url, file=sys.stderr)
-output_path = os.path.join("${TMPDIR}", "llama-swap.tar.gz")
-urllib.request.urlretrieve(url, output_path)
-print(output_path)
-EOF
-)
-
-    TARFILE=$(python3 -c "$PYTHON_SCRIPT")
-    if [ ! -f "$TARFILE" ]; then
-        error "Failed to download binary."
-    fi
-
-    status "Extracting to /usr/local/bin"
-    $SUDO tar -xzf "$TARFILE" -C /usr/local/bin llama-swap
-}
-download_binary
-
-configure_systemd() {
-    if ! id llama-swap >/dev/null 2>&1; then
-        status "Creating llama-swap user..."
-        $SUDO useradd -r -s /bin/false -U -m -d /usr/share/llama-swap llama-swap
-    fi
-    if getent group render >/dev/null 2>&1; then
-        status "Adding llama-swap user to render group..."
-        $SUDO usermod -a -G render llama-swap
-    fi
-    if getent group video >/dev/null 2>&1; then
-        status "Adding llama-swap user to video group..."
-        $SUDO usermod -a -G video llama-swap
-    fi
-    if getent group docker >/dev/null 2>&1; then
-        status "Adding llama-swap user to docker group..."
-        $SUDO usermod -a -G docker llama-swap
-    fi
-
-    status "Adding current user to llama-swap group..."
-    $SUDO usermod -a -G llama-swap "$(whoami)"
-
-    if [ ! -f "/usr/share/llama-swap/config.yaml" ]; then
-        status "Creating default config.yaml..."
-        cat <<EOF | $SUDO -u llama-swap tee /usr/share/llama-swap/config.yaml >/dev/null
-# default 15s likely to fail for default models due to downloading models
-healthCheckTimeout: 60
-
-models:
-  "qwen2.5":
-    cmd: |
-      docker run
-        --rm
-        -p \${PORT}:8080
-        --name qwen2.5
-      ghcr.io/ggml-org/llama.cpp:server
-        -hf bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M
-    cmdStop: docker stop qwen2.5
-
-  "smollm2":
-    cmd: |
-      docker run
-        --rm
-        -p \${PORT}:8080
-        --name smollm2
-      ghcr.io/ggml-org/llama.cpp:server
-        -hf bartowski/SmolLM2-135M-Instruct-GGUF:Q4_K_M
-    cmdStop: docker stop smollm2
-EOF
-    fi
-
-    status "Creating llama-swap systemd service..."
-    cat <<EOF | $SUDO tee /etc/systemd/system/llama-swap.service >/dev/null
-[Unit]
-Description=llama-swap
-After=network.target
-
-[Service]
-User=llama-swap
-Group=llama-swap
-
-# set this to match your environment
-ExecStart=/usr/local/bin/llama-swap --config /usr/share/llama-swap/config.yaml --watch-config -listen ${LLAMA_SWAP_DEFAULT_ADDRESS}
-
-Restart=on-failure
-RestartSec=3
-StartLimitBurst=3
-StartLimitInterval=30
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    SYSTEMCTL_RUNNING="$(systemctl is-system-running || true)"
-    case $SYSTEMCTL_RUNNING in
-        running|degraded)
-            status "Enabling and starting llama-swap service..."
-            $SUDO systemctl daemon-reload
-            $SUDO systemctl enable llama-swap
-
-            start_service() { $SUDO systemctl restart llama-swap; }
-            trap start_service EXIT
+# Platform detection
+detect_platform() {
+    case "$(uname -s)" in
+        Linux*)     
+            PLATFORM="linux"
+            ARCH=$(uname -m)
+            case $ARCH in
+                x86_64) ARCH="amd64" ;;
+                aarch64|arm64) ARCH="arm64" ;;
+                armv7l) ARCH="arm" ;;
+                *) echo -e "${RED}Unsupported architecture: $ARCH${NC}"; exit 1 ;;
+            esac
             ;;
-        *)
-            warning "systemd is not running"
-            if [ "$IS_WSL2" = true ]; then
-                warning "see https://learn.microsoft.com/en-us/windows/wsl/systemd#how-to-enable-systemd to enable it"
-            fi
+        Darwin*)    
+            PLATFORM="darwin"
+            ARCH=$(uname -m)
+            case $ARCH in
+                x86_64) ARCH="amd64" ;;
+                arm64) ARCH="arm64" ;;
+                *) echo -e "${RED}Unsupported architecture: $ARCH${NC}"; exit 1 ;;
+            esac
+            ;;
+        *)          
+            echo -e "${RED}Unsupported platform: $(uname -s)${NC}"
+            exit 1
             ;;
     esac
+    echo -e "${BLUE}Detected platform: $PLATFORM-$ARCH${NC}"
 }
 
-if available systemctl; then
-    configure_systemd
-fi
-
-install_success() {
-    status "The llama-swap API is now available at http://${LLAMA_SWAP_DEFAULT_ADDRESS}"
-    status 'Customize the config file at /usr/share/llama-swap/config.yaml.'
-    status 'Install complete.'
-}
-
-# WSL2 only supports GPUs via nvidia passthrough
-# so check for nvidia-smi to determine if GPU is available
-if [ "$IS_WSL2" = true ]; then
-    if available nvidia-smi && [ -n "$(nvidia-smi | grep -o "CUDA Version: [0-9]*\.[0-9]*")" ]; then
-        status "Nvidia GPU detected."
+# Check if running as root for system-wide install
+check_permissions() {
+    if [[ $EUID -eq 0 ]]; then
+        INSTALL_DIR="/usr/local/bin"
+        SYSTEMD_DIR="/etc/systemd/system"
+        LAUNCHD_DIR="/Library/LaunchDaemons"
+        SYSTEM_INSTALL=true
+    else
+        INSTALL_DIR="$HOME/.local/bin"
+        SYSTEMD_DIR="$HOME/.config/systemd/user"
+        LAUNCHD_DIR="$HOME/Library/LaunchAgents"
+        SYSTEM_INSTALL=false
     fi
-    exit 0
-fi
+    
+    # Ensure directories exist
+    mkdir -p "$INSTALL_DIR"
+    mkdir -p "$CONFIG_DIR"
+    
+    if [[ "$PLATFORM" == "linux" ]]; then
+        mkdir -p "$SYSTEMD_DIR"
+    elif [[ "$PLATFORM" == "darwin" ]]; then
+        mkdir -p "$LAUNCHD_DIR"
+    fi
+}
 
-install_success
+# Get latest release info
+get_latest_release() {
+    echo -e "${BLUE}Fetching latest release information...${NC}"
+    
+    if command -v curl >/dev/null 2>&1; then
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    elif command -v wget >/dev/null 2>&1; then
+        LATEST_RELEASE=$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    else
+        echo -e "${RED}Error: curl or wget is required${NC}"
+        exit 1
+    fi
+    
+    if [[ -z "$LATEST_RELEASE" ]]; then
+        echo -e "${RED}Error: Could not fetch latest release${NC}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}Latest release: $LATEST_RELEASE${NC}"
+}
+
+# Download and install binary
+download_binary() {
+    BINARY_NAME="claracore-$PLATFORM-$ARCH"
+    if [[ "$PLATFORM" == "darwin" ]]; then
+        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_RELEASE/$BINARY_NAME"
+    else
+        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_RELEASE/$BINARY_NAME"
+    fi
+    
+    echo -e "${BLUE}Downloading ClaraCore binary...${NC}"
+    echo -e "${YELLOW}URL: $DOWNLOAD_URL${NC}"
+    
+    TEMP_FILE=$(mktemp)
+    
+    if command -v curl >/dev/null 2>&1; then
+        curl -L -o "$TEMP_FILE" "$DOWNLOAD_URL"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -O "$TEMP_FILE" "$DOWNLOAD_URL"
+    fi
+    
+    if [[ ! -f "$TEMP_FILE" ]] || [[ ! -s "$TEMP_FILE" ]]; then
+        echo -e "${RED}Error: Failed to download binary${NC}"
+        exit 1
+    fi
+    
+    # Install binary
+    echo -e "${BLUE}Installing binary to $INSTALL_DIR/claracore...${NC}"
+    chmod +x "$TEMP_FILE"
+    
+    if [[ "$SYSTEM_INSTALL" == true ]]; then
+        mv "$TEMP_FILE" "$INSTALL_DIR/claracore"
+    else
+        mv "$TEMP_FILE" "$INSTALL_DIR/claracore"
+        # Add to PATH if not already there
+        if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+            echo -e "${BLUE}Adding ~/.local/bin to PATH...${NC}"
+            
+            # Add to shell configuration files
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc" 2>/dev/null || true
+            
+            # Also try common profile files
+            [[ -f "$HOME/.profile" ]] && echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
+            
+            # Export for current session
+            export PATH="$HOME/.local/bin:$PATH"
+            
+            # Try to source bashrc for current session if running interactively
+            if [[ -t 0 ]] && [[ -f "$HOME/.bashrc" ]]; then
+                echo -e "${BLUE}Updating current session...${NC}"
+                source "$HOME/.bashrc" 2>/dev/null || true
+            fi
+            
+            echo -e "${GREEN}PATH updated. You may need to restart your terminal or run: source ~/.bashrc${NC}"
+        else
+            echo -e "${GREEN}~/.local/bin already in PATH${NC}"
+        fi
+    fi
+    
+    echo -e "${GREEN}Binary installed successfully${NC}"
+    
+    # Test if binary works and is in PATH
+    if command -v claracore >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ claracore command is accessible${NC}"
+    else
+        echo -e "${YELLOW}⚠ claracore not yet in PATH for this session${NC}"
+    fi
+}
+
+# Create default configuration
+create_config() {
+    echo -e "${BLUE}Creating default configuration...${NC}"
+    
+    cat > "$CONFIG_DIR/config.yaml" << 'EOF'
+# ClaraCore Configuration
+# This file is auto-generated. You can modify it or regenerate via the web UI.
+
+host: "127.0.0.1"
+port: 5800
+cors: true
+api_key: ""
+
+# Models will be auto-discovered and configured
+models: []
+
+# Model groups for memory management
+groups: {}
+EOF
+
+    cat > "$CONFIG_DIR/settings.json" << 'EOF'
+{
+  "gpuType": "auto",
+  "backend": "auto",
+  "vramGB": 0,
+  "ramGB": 0,
+  "preferredContext": 8192,
+  "throughputFirst": true,
+  "enableJinja": true,
+  "requireApiKey": false,
+  "apiKey": ""
+}
+EOF
+
+    echo -e "${GREEN}Default configuration created in $CONFIG_DIR${NC}"
+}
+
+# Setup Linux systemd service
+setup_linux_service() {
+    # Check if systemd is available
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo -e "${YELLOW}Systemd not available - skipping service setup${NC}"
+        echo -e "${YELLOW}You can manually start ClaraCore with: claracore --config $CONFIG_DIR/config.yaml${NC}"
+        return 0
+    fi
+    
+    # Test if systemd is running
+    if ! systemctl is-system-running >/dev/null 2>&1; then
+        echo -e "${YELLOW}Systemd not running (possibly in container/WSL) - skipping service setup${NC}"
+        echo -e "${YELLOW}You can manually start ClaraCore with: claracore --config $CONFIG_DIR/config.yaml${NC}"
+        return 0
+    fi
+    
+    echo -e "${BLUE}Setting up systemd service...${NC}"
+    
+    SERVICE_FILE="$SYSTEMD_DIR/$SERVICE_NAME.service"
+    
+    cat > "$SERVICE_FILE" << EOF
+[Unit]
+Description=ClaraCore AI Inference Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$CONFIG_DIR
+ExecStart=$INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml
+Restart=always
+RestartSec=3
+Environment=HOME=$HOME
+Environment=USER=$USER
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=$CONFIG_DIR $HOME/models
+
+[Install]
+WantedBy=default.target
+EOF
+
+    if [[ "$SYSTEM_INSTALL" == true ]]; then
+        if systemctl daemon-reload 2>/dev/null && systemctl enable "$SERVICE_NAME" 2>/dev/null; then
+            echo -e "${GREEN}System service enabled. Start with: sudo systemctl start $SERVICE_NAME${NC}"
+        else
+            echo -e "${YELLOW}Failed to enable system service. You may need to run with sudo or start manually.${NC}"
+            echo -e "${YELLOW}Manual start: sudo $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+        fi
+    else
+        if systemctl --user daemon-reload 2>/dev/null && systemctl --user enable "$SERVICE_NAME" 2>/dev/null; then
+            echo -e "${GREEN}User service enabled. Start with: systemctl --user start $SERVICE_NAME${NC}"
+        else
+            echo -e "${YELLOW}Failed to enable user service. Starting manually may be required.${NC}"
+            echo -e "${YELLOW}Manual start: $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+        fi
+    fi
+}
+
+# Setup macOS LaunchAgent/Daemon
+setup_macos_service() {
+    echo -e "${BLUE}Setting up macOS Launch Agent...${NC}"
+    
+    if [[ "$SYSTEM_INSTALL" == true ]]; then
+        PLIST_FILE="$LAUNCHD_DIR/com.claracore.server.plist"
+        LABEL="com.claracore.server"
+    else
+        PLIST_FILE="$LAUNCHD_DIR/com.claracore.server.plist"
+        LABEL="com.claracore.server"
+    fi
+    
+    cat > "$PLIST_FILE" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$INSTALL_DIR/claracore</string>
+        <string>--config</string>
+        <string>$CONFIG_DIR/config.yaml</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$CONFIG_DIR</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$CONFIG_DIR/claracore.log</string>
+    <key>StandardErrorPath</key>
+    <string>$CONFIG_DIR/claracore.error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>$HOME</string>
+        <key>USER</key>
+        <string>$USER</string>
+    </dict>
+</dict>
+</plist>
+EOF
+
+    if [[ "$SYSTEM_INSTALL" == true ]]; then
+        launchctl load "$PLIST_FILE"
+        echo -e "${GREEN}System daemon loaded. ClaraCore will start automatically.${NC}"
+    else
+        launchctl load "$PLIST_FILE"
+        echo -e "${GREEN}User agent loaded. ClaraCore will start automatically when you log in.${NC}"
+    fi
+}
+
+# Main installation flow
+main() {
+    echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║        ClaraCore Installer           ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+    echo
+    
+    detect_platform
+    check_permissions
+    get_latest_release
+    download_binary
+    create_config
+    
+    # Setup autostart service
+    if [[ "$PLATFORM" == "linux" ]]; then
+        setup_linux_service
+    elif [[ "$PLATFORM" == "darwin" ]]; then
+        setup_macos_service
+    fi
+    
+    echo
+    echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║     Installation Completed!         ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
+    echo
+    
+    # Check if claracore is now accessible
+    if command -v claracore >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ claracore command is ready to use!${NC}"
+    else
+        echo -e "${YELLOW}⚠ To use 'claracore' command, restart your terminal or run:${NC}"
+        echo -e "   ${BLUE}source ~/.bashrc${NC}"
+        echo -e "   ${BLUE}# or${NC}"
+        echo -e "   ${BLUE}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
+        echo
+    fi
+    
+    echo -e "${YELLOW}Next steps:${NC}"
+    echo -e "1. Configure your models folder:"
+    echo -e "   ${BLUE}claracore --models-folder /path/to/your/models${NC}"
+    echo
+    echo -e "2. Or start with the web interface:"
+    echo -e "   ${BLUE}claracore${NC}"
+    echo -e "   Then visit: ${BLUE}http://localhost:5800/ui/setup${NC}"
+    echo
+    echo -e "3. Service management:"
+    if [[ "$PLATFORM" == "linux" ]]; then
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+            if [[ "$SYSTEM_INSTALL" == true ]]; then
+                echo -e "   Start:   ${BLUE}sudo systemctl start $SERVICE_NAME${NC}"
+                echo -e "   Stop:    ${BLUE}sudo systemctl stop $SERVICE_NAME${NC}"
+                echo -e "   Status:  ${BLUE}sudo systemctl status $SERVICE_NAME${NC}"
+            else
+                echo -e "   Start:   ${BLUE}systemctl --user start $SERVICE_NAME${NC}"
+                echo -e "   Stop:    ${BLUE}systemctl --user stop $SERVICE_NAME${NC}"
+                echo -e "   Status:  ${BLUE}systemctl --user status $SERVICE_NAME${NC}"
+            fi
+        else
+            echo -e "   ${YELLOW}Systemd not available - manual start required:${NC}"
+            echo -e "   Start:   ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
+        fi
+    elif [[ "$PLATFORM" == "darwin" ]]; then
+        echo -e "   Start:   ${BLUE}launchctl start $LABEL${NC}"
+        echo -e "   Stop:    ${BLUE}launchctl stop $LABEL${NC}"
+        echo -e "   Unload:  ${BLUE}launchctl unload $PLIST_FILE${NC}"
+    fi
+    echo
+    echo -e "4. Configuration files:"
+    echo -e "   Config:    ${BLUE}$CONFIG_DIR/config.yaml${NC}"
+    echo -e "   Settings:  ${BLUE}$CONFIG_DIR/settings.json${NC}"
+    echo
+    echo -e "${GREEN}Documentation: https://github.com/$REPO/tree/main/docs${NC}"
+    echo -e "${GREEN}Support: https://github.com/$REPO/issues${NC}"
+}
+
+# Run main installation
+main "$@"

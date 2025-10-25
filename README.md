@@ -4,13 +4,74 @@
 
 # ClaraCore 🚀
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+```bash
+# Add to PATH and reload shell:
+export PATH="$HOME/.local/bin:$PATH"
+source ~/.bashrc
+```
+
+**🛡️ Windows Security Notice**
+ClaraCore may be flagged by antivirus software - **this is a false positive**. [Complete guide to antivirus warnings](docs/ANTIVIRUS_FALSE_POSITIVES.md) | [Why is this flagged?](SECURITY_VERIFICATION.md)
+
+```powershell
+# Quick fix - Add Windows Defender exclusion:
+Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\ClaraCore"
+
+# Or unblock the file:
+Unblock-File "$env:LOCALAPPDATA\ClaraCore\claracore.exe"
+
+# Or run troubleshooter:
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/troubleshoot.ps1 | powershell
+```
+
+**✅ Verify it's safe:** Check SHA256 hash against [official releases](https://github.com/claraverse-space/ClaraCore/releases) or [build from source](SECURITY_VERIFICATION.md).
+
+**Need help?** See our [Setup Guide](docs/SETUP.md) or [Container Guide](docker/CONTAINER_SETUP.md)
+
+## 🙏 Credits & Acknowledgments)
 [![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/prave/ClaraCore)
 
 > **Auto-setup for llama.cpp** - Point it at your GGUF models folder and get a complete AI inference server in seconds.
 
 ClaraCore extends [llama-swap](https://github.com/mostlygeek/llama-swap) with intelligent automation, bringing zero-configuration setup to llama.cpp deployments.
+
+## 🔥 Quick Install
+
+### Native Installation
+
+**Linux/macOS (Recommended):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
+```
+
+**Windows:**
+```powershell
+irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1 | iex
+```
+
+**Then start immediately:**
+```bash
+claracore --models-folder /path/to/your/gguf/models
+# Visit: http://localhost:5800/ui/setup
+```
+
+### 🐳 Docker (CUDA/ROCm)
+
+**CUDA (NVIDIA):**
+```bash
+docker run -d --gpus all -p 5800:5800 -v ./models:/models claracore:cuda --models-folder /models
+```
+
+**ROCm (AMD):**
+```bash
+docker run -d --device=/dev/kfd --device=/dev/dri -p 5800:5800 -v ./models:/models claracore:rocm --models-folder /models
+```
+
+📦 **Optimized containers**: 2-3GB vs 8-12GB full SDKs. See [Container Guide](docker/CONTAINER_SETUP.md)
+
+✨ **Features include:** Auto-setup, hardware detection, binary management, and production configs!
 
 ## ✨ What's New in ClaraCore
 
@@ -26,7 +87,7 @@ While maintaining 100% compatibility with llama-swap, ClaraCore adds:
 
 ```bash
 # One command setup - that's it!
-./claracore --models-folder /path/to/your/gguf/models
+./claracore --models-folder /path/to/your/gguf/models --backend vulkan
 
 # ClaraCore will:
 # 1. Scan for GGUF files
@@ -38,27 +99,50 @@ While maintaining 100% compatibility with llama-swap, ClaraCore adds:
 
 ## 📦 Installation
 
-### Download Binaries
+### Automated Installer (Recommended)
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
+```
+
+**Windows:**
+```powershell
+irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1 | iex
+```
+
+The installer will:
+- Download the latest binary for your platform
+- Set up configuration files
+- Add to system PATH
+- Configure auto-start service (systemd/launchd/Windows Service)
+
+### Manual Download
 
 ```bash
 # Windows
-curl -L -o claracore.exe https://github.com/prave/ClaraCore/releases/latest/download/claracore-windows-amd64.exe
+curl -L -o claracore.exe https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-windows-amd64.exe
 
 # Linux
-curl -L -o claracore https://github.com/prave/ClaraCore/releases/latest/download/claracore-linux-amd64
+curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-linux-amd64
 chmod +x claracore
 
-# macOS
-curl -L -o claracore https://github.com/prave/ClaraCore/releases/latest/download/claracore-darwin-amd64
+# macOS Intel
+curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-darwin-amd64
+chmod +x claracore
+
+# macOS Apple Silicon
+curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-darwin-arm64
 chmod +x claracore
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/prave/ClaraCore.git
+git clone https://github.com/claraverse-space/ClaraCore.git
 cd ClaraCore
-go build -o claracore .
+python build.py  # Builds UI + Go backend with version info
+# or: go build -o claracore .
 ```
 
 ## 🎛️ Core Features
@@ -133,7 +217,46 @@ groups:
     members: ["llama-3-70b", "qwen-72b"]
 ```
 
-## 🙏 Credits & Acknowledgments
+## � Documentation
+
+### API Reference
+- **[Complete API Documentation](docs/API_COMPREHENSIVE.md)** - Full API reference with examples
+- **[Quick API Reference](docs/API.md)** - Concise API overview
+
+### Key Features
+- **OpenAI-Compatible Endpoints**: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models`
+- **Configuration Management**: `/api/config/*` - Manage models and settings
+- **Model Downloads**: `/api/models/download` - Download from Hugging Face
+- **System Detection**: `/api/system/detection` - Hardware and backend detection
+- **Real-time Events**: `/api/events` - SSE stream for live updates
+
+### Common Operations
+
+```bash
+# Get all available models
+curl http://localhost:5800/v1/models
+
+# Update model parameters with restart prompt
+curl -X POST http://localhost:5800/api/config/model/llama-3-8b \
+  -H "Content-Type: application/json" \
+  -d '{"temperature": 0.8, "max_tokens": 1024}'
+
+# Smart configuration regeneration
+curl -X POST http://localhost:5800/api/config/regenerate-from-db \
+  -H "Content-Type: application/json" \
+  -d '{"options": {"forceBackend": "vulkan", "preferredContext": 8192}}'
+
+# Monitor setup progress
+curl http://localhost:5800/api/setup/progress
+```
+
+### Web Interface
+- **Setup Wizard**: `http://localhost:5800/ui/setup` - Initial configuration
+- **Model Management**: `http://localhost:5800/ui/models` - Chat and model controls  
+- **Configuration**: `http://localhost:5800/ui/configuration` - Edit settings
+- **Downloads**: `http://localhost:5800/ui/downloads` - Model download manager
+
+## �🙏 Credits & Acknowledgments
 
 **ClaraCore is built on [llama-swap](https://github.com/mostlygeek/llama-swap) by [@mostlygeek](https://github.com/mostlygeek)** 
 
@@ -154,7 +277,25 @@ We welcome contributions! Whether it's bug fixes, new features, or documentation
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## � Release Management
+
+For maintainers creating releases:
+
+```bash
+# Quick release (interactive)
+./release.bat        # Windows
+./release.sh         # Linux/macOS
+
+# Manual release
+python release.py --version v0.1.1 --token-file .github_token
+
+# Draft release for testing
+python release.py --version v0.1.1 --token-file .github_token --draft
+```
+
+See [RELEASE_MANAGEMENT.md](RELEASE_MANAGEMENT.md) for detailed release procedures.
+
+## �📄 License
 
 MIT License - Same as llama-swap. See [LICENSE](LICENSE) for details.
 

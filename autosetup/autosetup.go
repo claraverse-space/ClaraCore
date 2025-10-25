@@ -36,15 +36,20 @@ func AutoSetup(modelsFolder string) error {
 
 // AutoSetupWithOptions performs automatic model detection and configuration with custom options
 func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
-	fmt.Println("🚀 Starting llama-swap auto-setup...")
+	fmt.Println("🚀 Starting ClaraCore auto-setup...")
 
-	// Validate models folder
+	// Validate and create models folder if needed
 	if modelsFolder == "" {
 		return fmt.Errorf("models folder path is required")
 	}
 
 	if _, err := os.Stat(modelsFolder); os.IsNotExist(err) {
-		return fmt.Errorf("models folder does not exist: %s", modelsFolder)
+		fmt.Printf("📁 Models folder does not exist, creating: %s\n", modelsFolder)
+		err = os.MkdirAll(modelsFolder, 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create models folder %s: %v", modelsFolder, err)
+		}
+		fmt.Printf("✅ Created models folder: %s\n", modelsFolder)
 	}
 
 	fmt.Printf("📁 Scanning models in: %s\n", modelsFolder)
@@ -56,7 +61,22 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 	}
 
 	if len(models) == 0 {
-		return fmt.Errorf("no GGUF models found in: %s", modelsFolder)
+		fmt.Printf("⚠️  No GGUF models found in: %s\n", modelsFolder)
+		fmt.Printf("💡 You can:\n")
+		fmt.Printf("   1. Add .gguf model files to: %s\n", modelsFolder)
+		fmt.Printf("   2. Use the web interface to download models: http://localhost:5800/ui/setup\n")
+		fmt.Printf("   3. Use huggingface-cli to download models:\n")
+		fmt.Printf("      huggingface-cli download <model-name> --include '*.gguf' --local-dir %s\n", modelsFolder)
+		fmt.Printf("\n📝 Creating basic configuration file for when you add models...\n")
+		
+		// Create a basic config with just the folder path for future use
+		err = createBasicConfig(modelsFolder)
+		if err != nil {
+			return fmt.Errorf("failed to create basic configuration: %v", err)
+		}
+		
+		fmt.Printf("✅ Basic configuration created. Add models to %s and restart ClaraCore.\n", modelsFolder)
+		return nil
 	}
 
 	fmt.Printf("✅ Found %d GGUF models:\n", len(models))
@@ -155,7 +175,7 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 
 	// Create binaries directory
 	binariesDir := filepath.Join(".", "binaries")
-	binary, err := DownloadBinary(binariesDir, system)
+	binary, err := DownloadBinary(binariesDir, system, options.ForceBackend)
 	if err != nil {
 		return fmt.Errorf("failed to download binary: %v", err)
 	}
@@ -245,7 +265,7 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 
 // AutoSetupMultiFoldersWithOptions performs automatic model detection and configuration from multiple folders
 func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptions) error {
-	fmt.Println("🚀 Starting llama-swap multi-folder auto-setup...")
+	fmt.Println("🚀 Starting ClaraCore multi-folder auto-setup...")
 
 	// Validate folders
 	if len(modelsFolders) == 0 {
@@ -276,10 +296,10 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 	// Detect models from all folders
 	var allModels []ModelInfo
 	var allMMProjMatches []MMProjMatch
-	
+
 	for _, folder := range validFolders {
 		fmt.Printf("\n🔍 Scanning folder: %s\n", folder)
-		
+
 		// Detect models with options
 		models, err := DetectModelsWithOptions(folder, options)
 		if err != nil {
@@ -358,7 +378,7 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 
 	// Create binaries directory
 	binariesDir := filepath.Join(".", "binaries")
-	binary, err := DownloadBinary(binariesDir, system)
+	binary, err := DownloadBinary(binariesDir, system, options.ForceBackend)
 	if err != nil {
 		return fmt.Errorf("failed to download binary: %v", err)
 	}
@@ -403,15 +423,15 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 	}
 
 	// Use config generator with smart GPU allocation
-	// For multi-folder, use the first valid folder as the primary folder for config generation
+	// Use multi-folder config generator to properly track all model folders
 	configPath := "config.yaml"
-	generator := NewConfigGenerator(validFolders[0], binary.Path, configPath, options)
+	generator := NewConfigGeneratorMultiFolder(validFolders, binary.Path, configPath, options)
 	generator.SetAvailableVRAM(totalVRAM)
 	generator.SetBinaryType(binary.Type)
-	generator.SetSystemInfo(&system)              // Pass system info for optimal parameters
-	generator.SetMMProjMatches(allMMProjMatches)  // Pass all mmproj matches to config generator
+	generator.SetSystemInfo(&system)             // Pass system info for optimal parameters
+	generator.SetMMProjMatches(allMMProjMatches) // Pass all mmproj matches to config generator
 
-	fmt.Printf("⚙️  Generating configuration (SMART GPU ALLOCATION: fit max layers in VRAM)...\n")
+	fmt.Printf("⚙️  Generating configuration from %d folders (SMART GPU ALLOCATION: fit max layers in VRAM)...\n", len(validFolders))
 	err = generator.GenerateConfig(allModels) // Use ALL models from ALL folders
 	if err != nil {
 		return fmt.Errorf("failed to generate configuration: %v", err)
@@ -460,6 +480,37 @@ func ValidateSetup() error {
 	// Check if binaries directory exists
 	if _, err := os.Stat("binaries"); os.IsNotExist(err) {
 		return fmt.Errorf("binaries directory not found - run with --models-folder to auto-download")
+	}
+
+	return nil
+}
+
+// createBasicConfig creates a minimal config.yaml with the models folder path
+func createBasicConfig(modelsFolder string) error {
+	basicConfig := fmt.Sprintf(`# ClaraCore Configuration
+# Generated automatically - add models to %s and regenerate
+
+server:
+  port: 8080
+  max_request_size: 100MB
+
+groups:
+  default:
+    timeout: 30s
+
+models:
+  # Models will be auto-detected when you add .gguf files to %s
+  # Run: ./claracore --models-folder %s
+  # Or use the web interface: http://localhost:5800/ui/setup
+
+# Model folder for scanning
+model_folders:
+  - "%s"
+`, modelsFolder, modelsFolder, modelsFolder, modelsFolder)
+
+	err := os.WriteFile("config.yaml", []byte(basicConfig), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write config.yaml: %v", err)
 	}
 
 	return nil

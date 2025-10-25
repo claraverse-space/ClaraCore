@@ -256,6 +256,21 @@ const OnboardConfig: React.FC = () => {
     }
 
     setIsScanning(true);
+    
+    // Start progress polling for scanning
+    const pollScanProgress = setInterval(async () => {
+      try {
+        const progressResponse = await fetch('/api/setup/progress');
+        if (progressResponse.ok) {
+          const progressData = await progressResponse.json();
+          console.log('Scan progress:', progressData);
+          // You could use this data to show scan progress in the UI
+        }
+      } catch (pollError) {
+        console.warn('Failed to poll scan progress:', pollError);
+      }
+    }, 500);
+    
     try {
       const response = await fetch('/api/config/scan-folder', {
         method: 'POST',
@@ -266,6 +281,8 @@ const OnboardConfig: React.FC = () => {
           addToDatabase: true // Persist to JSON database
         }),
       });
+
+      clearInterval(pollScanProgress);
 
       if (response.ok) {
         const data = await response.json();
@@ -288,6 +305,7 @@ const OnboardConfig: React.FC = () => {
         showNotification('error', 'Failed to scan folder');
       }
     } catch (error) {
+      clearInterval(pollScanProgress);
       showNotification('error', 'Scan error: ' + error);
     } finally {
       setIsScanning(false);
@@ -311,42 +329,78 @@ const OnboardConfig: React.FC = () => {
     try {
       showNotification('info', '🚀 Generating your personalized SMART configuration...');
       
-      // Simulate progress updates during the API call
-      const progressInterval = setInterval(() => {
-        setGenerationProgress(prev => {
-          const elapsed = (new Date().getTime() - startTime.getTime()) / 1000;
-          const avgTimePerModel = elapsed / Math.max(1, prev.current);
-          const remaining = (prev.total - prev.current) * avgTimePerModel;
-          
-          // Simulate progression through models
-          if (prev.current < prev.total) {
-            const nextIndex = Math.min(prev.current + 1, prev.total);
-            const currentModel = scanResults[nextIndex - 1]?.filename || '';
+      // Connect to real-time progress updates via polling
+      // This replaces the old simulated progress with actual backend progress
+      const pollProgressInterval = setInterval(async () => {
+        try {
+          const progressResponse = await fetch('/api/setup/progress');
+          if (progressResponse.ok) {
+            const progressData = await progressResponse.json();
             
-            // Update stage based on progress
-            const stages = [
-              'Analyzing model compatibility...',
-              'Optimizing memory allocation...',
-              'Configuring GPU settings...',
-              'Finalizing configuration...'
-            ];
-            const progress = nextIndex / prev.total;
-            const stageIndex = Math.floor(progress * stages.length);
-            const currentStage = stages[Math.min(stageIndex, stages.length - 1)];
+            const elapsed = (new Date().getTime() - startTime.getTime()) / 1000;
+            const remaining = progressData.progress > 0 && progressData.progress < 100 ? 
+              (elapsed * (100 - progressData.progress)) / progressData.progress : null;
             
-            return {
-              ...prev,
-              current: nextIndex,
-              currentModel,
-              stage: currentStage,
-              estimatedTimeRemaining: remaining > 0 ? Math.ceil(remaining) : null
-            };
+            setGenerationProgress({
+              current: progressData.processed_models || 0,
+              total: progressData.total_models || scanResults.length,
+              currentModel: progressData.current_model || '',
+              stage: progressData.current_step || 'Generating configuration...',
+              startTime,
+              estimatedTimeRemaining: remaining ? Math.ceil(remaining) : null
+            });
+
+            // Check if completed or error
+            if (progressData.completed || progressData.status === 'completed') {
+              clearInterval(pollProgressInterval);
+              setGenerationProgress(prev => ({
+                ...prev,
+                current: prev.total,
+                stage: 'Configuration generated successfully!',
+                estimatedTimeRemaining: 0
+              }));
+            } else if (progressData.error) {
+              clearInterval(pollProgressInterval);
+              throw new Error(progressData.error);
+            }
           }
-          return prev;
-        });
-      }, Math.max(1000, (scanResults.length * 2000) / scanResults.length)); // Adaptive interval
+        } catch (pollError) {
+          console.warn('Failed to poll progress:', pollError);
+        }
+      }, 500); // Poll every 500ms
       
-      // Use the new database-driven config generation
+      // Cleanup function for polling
+      const cleanup = () => {
+        clearInterval(pollProgressInterval);
+      };
+
+      // Save system settings to persistent storage first
+      // This ensures user's manual hardware selections persist across Force Reconfigure
+      try {
+        const settingsResponse = await fetch('/api/settings/system', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            backend: systemConfig.backend,
+            vramGB: systemConfig.vramGB,
+            ramGB: systemConfig.ramGB,
+            preferredContext: systemConfig.preferredContext,
+            throughputFirst: systemConfig.throughputFirst,
+            enableJinja: true,
+          })
+        });
+        
+        if (!settingsResponse.ok) {
+          console.warn('Failed to save system settings:', await settingsResponse.text());
+          // Continue anyway - settings save is not critical to config generation
+        }
+      } catch (settingsError) {
+        console.warn('Error saving system settings:', settingsError);
+        // Continue anyway
+      }
+
+      // Use the database-driven config generation that handles ALL tracked folders
+      // This is the SAME endpoint that "Force Reconfigure" uses
       const response = await fetch('/api/config/regenerate-from-db', {
         method: 'POST',
         headers: {
@@ -358,16 +412,18 @@ const OnboardConfig: React.FC = () => {
             throughputFirst: systemConfig.throughputFirst,
             minContext: Math.min(16384, systemConfig.preferredContext),
             preferredContext: systemConfig.preferredContext,
-            forceBackend: systemConfig.backend,
-            forceVRAM: systemConfig.vramGB,
-            forceRAM: systemConfig.ramGB,
+            forceBackend: systemConfig.backend,      // Force the user-selected backend
+            forceVRAM: systemConfig.vramGB,         // Force the user-selected VRAM
+            forceRAM: systemConfig.ramGB,           // Force the user-selected RAM
           }
         }),
       });
 
-      clearInterval(progressInterval);
+      // Clean up polling
+      cleanup();
 
       if (!response.ok) {
+        cleanup(); // Clean up on error too
         throw new Error('Failed to generate configuration');
       }
 
@@ -519,7 +575,7 @@ const OnboardConfig: React.FC = () => {
     },
     {
       title: "Step 2: Where are your models? 📁",
-      description: "Point us to the folder containing your GGUF model files",
+      description: "Point us to the folder containing your GGUF model files (Takes a bit to scan if too many files)",
       component: (
         <div className="py-6">
           {/* Database info panel */}
@@ -617,7 +673,7 @@ const OnboardConfig: React.FC = () => {
                   showNotification('info', 'Switched to multi-folder mode. Add more folders now!');
                 }}
                 icon={<FolderIcon size={16} />}
-                className="text-brand-600 border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-900/20"
+                className="text-brand-600 border-brand-300 hover: dark:hover:bg-brand-900/20"
               >
                 + Add More Folders
               </Button>
@@ -835,6 +891,7 @@ const OnboardConfig: React.FC = () => {
                         onChange={(e) => {
                           const gpuType = e.target.value as 'nvidia' | 'amd' | 'intel' | 'apple';
                           let backend: 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
+                          // Set default backend based on GPU type, but allow user to change it
                           if (gpuType === 'nvidia') backend = 'cuda';
                           else if (gpuType === 'amd') backend = 'rocm';
                           else if (gpuType === 'apple') backend = 'metal';
@@ -871,9 +928,62 @@ const OnboardConfig: React.FC = () => {
                         <option value="apple">Apple Silicon (M1, M2, M3, M4)</option>
                       </select>
                     </div>
+
+                    {/* Backend Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">
+                        Compute Backend
+                        <span className="text-xs text-text-secondary ml-1">(Choose your GPU acceleration)</span>
+                      </label>
+                      <select
+                        value={systemConfig.backend}
+                        onChange={(e) => {
+                          const backend = e.target.value as 'cuda' | 'rocm' | 'vulkan' | 'metal' | 'mlx' | 'cpu';
+
+                          // Platform-aware warnings
+                          const isAppleSilicon = (systemDetection?.primaryGPU?.brand === 'apple') || (/Mac/i.test(navigator.platform));
+                          if (isAppleSilicon && ['rocm', 'vulkan', 'cuda'].includes(backend)) {
+                            setBackendNotice(`Warning: '${backend}' may not be supported on macOS Apple Silicon. Consider using 'metal' instead.`);
+                          } else {
+                            setBackendNotice(null);
+                          }
+
+                          setSystemConfig(prev => ({ ...prev, backend }));
+                        }}
+                        className="w-full p-3 border border-border-secondary rounded-lg bg-background text-text-primary focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                      >
+                        {/* CUDA - NVIDIA only */}
+                        <option value="cuda" disabled={systemConfig.gpuType !== 'nvidia'}>
+                          CUDA (NVIDIA only) {systemConfig.gpuType !== 'nvidia' ? '- Not available for your GPU' : '- Recommended for NVIDIA'}
+                        </option>
+
+                        {/* ROCm - AMD only */}
+                        <option value="rocm" disabled={systemConfig.gpuType !== 'amd'}>
+                          ROCm (AMD only) {systemConfig.gpuType !== 'amd' ? '- Not available for your GPU' : '- Recommended for AMD'}
+                        </option>
+
+                        {/* Vulkan - Universal but not Apple */}
+                        <option value="vulkan" disabled={systemConfig.gpuType === 'apple'}>
+                          Vulkan (Cross-platform) {systemConfig.gpuType === 'apple' ? '- Not available on Apple Silicon' : '- Works on NVIDIA/AMD/Intel'}
+                        </option>
+
+                        {/* Metal - Apple only */}
+                        <option value="metal" disabled={systemConfig.gpuType !== 'apple'}>
+                          Metal (Apple only) {systemConfig.gpuType !== 'apple' ? '- Only for Apple Silicon' : '- Recommended for Apple'}
+                        </option>
+
+                        {/* CPU - Always available */}
+                        <option value="cpu">
+                          CPU (No GPU acceleration) - Works everywhere but slower
+                        </option>
+                      </select>
+                    </div>
+
                     {backendNotice && (
-                      <div className="mt-2 text-xs text-amber-400">
-                        {backendNotice}
+                      <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <div className="text-xs text-amber-700 dark:text-amber-300">
+                          ⚠️ {backendNotice}
+                        </div>
                       </div>
                     )}
                     

@@ -1,23 +1,23 @@
 package main
 
 import (
-    "context"
-    "encoding/json"
-    "flag"
-    "fmt"
-    "log"
-    "net/http"
-    "os"
-    "os/signal"
-    "path/filepath"
-    "syscall"
-    "time"
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
 
-    "github.com/fsnotify/fsnotify"
-    "github.com/gin-gonic/gin"
-    "github.com/prave/ClaraCore/autosetup"
-    "github.com/prave/ClaraCore/event"
-    "github.com/prave/ClaraCore/proxy"
+	"github.com/fsnotify/fsnotify"
+	"github.com/gin-gonic/gin"
+	"github.com/prave/ClaraCore/autosetup"
+	"github.com/prave/ClaraCore/event"
+	"github.com/prave/ClaraCore/proxy"
 )
 
 var (
@@ -29,9 +29,9 @@ var (
 func main() {
 	// Define a command-line flag for the port
 	configPath := flag.String("config", "config.yaml", "config file name")
-	listenStr := flag.String("listen", ":5800", "listen ip/port")
+	listenStr := flag.String("listen", ":5800", "listen ip/port for ClaraCore web interface")
 	showVersion := flag.Bool("version", false, "show version of build")
-	watchConfig := flag.Bool("watch-config", false, "Automatically reload config file on change")
+	watchConfig := flag.Bool("watch-config", true, "Automatically reload config file on change (default: true)")
 	modelsFolder := flag.String("models-folder", "", "automatically detect GGUF models in folder and generate config")
 	autoDraft := flag.Bool("auto-draft", false, "enable automatic draft model pairing for speculative decoding")
 	enableJinja := flag.Bool("jinja", true, "enable Jinja templating support for models (default: true)")
@@ -50,24 +50,24 @@ func main() {
 		os.Exit(0)
 	}
 
-    // Ensure config file exists; create an empty one if missing
-    if _, statErr := os.Stat(*configPath); statErr != nil {
-        if os.IsNotExist(statErr) {
-            // Create parent directory if necessary
-            if err := os.MkdirAll(filepath.Dir(*configPath), 0755); err != nil {
-                fmt.Printf("Error creating config directory: %v\n", err)
-                os.Exit(1)
-            }
-            if err := os.WriteFile(*configPath, []byte{}, 0644); err != nil {
-                fmt.Printf("Error creating empty config file: %v\n", err)
-                os.Exit(1)
-            }
-            fmt.Printf("Created empty config at %s\n", *configPath)
-        } else {
-            fmt.Printf("Error checking config file: %v\n", statErr)
-            os.Exit(1)
-        }
-    }
+	// Ensure config file exists; create an empty one if missing
+	if _, statErr := os.Stat(*configPath); statErr != nil {
+		if os.IsNotExist(statErr) {
+			// Create parent directory if necessary
+			if err := os.MkdirAll(filepath.Dir(*configPath), 0755); err != nil {
+				fmt.Printf("Error creating config directory: %v\n", err)
+				os.Exit(1)
+			}
+			if err := os.WriteFile(*configPath, []byte{}, 0644); err != nil {
+				fmt.Printf("Error creating empty config file: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Created empty config at %s\n", *configPath)
+		} else {
+			fmt.Printf("Error checking config file: %v\n", statErr)
+			os.Exit(1)
+		}
+	}
 
 	// Handle auto-setup mode
 	if *modelsFolder != "" {
@@ -85,22 +85,27 @@ func main() {
 			fmt.Printf("Auto-setup failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Auto-setup completed successfully!")
-		os.Exit(0)
+		fmt.Println("✅ Auto-setup completed successfully!")
+		fmt.Println("🚀 Starting ClaraCore server with the generated configuration...")
+		fmt.Println("📁 Config watching is enabled - any changes to config.yaml will trigger automatic reloads")
+		fmt.Printf("🌐 Server will be available at: http://localhost%s\n", *listenStr)
+		fmt.Printf("🎛️  Web interface: http://localhost%s/ui/\n", *listenStr)
+		fmt.Println("💡 You can now edit config.yaml manually or use the web interface - changes will auto-reload!")
+		// Continue to start the server instead of exiting
 	}
 
-    config, err := proxy.LoadConfig(*configPath)
-    if err != nil {
-        fmt.Printf("Error loading config: %v\n", err)
-        // Attempt auto-regeneration from DB to self-heal common config errors
-        if selfHealReconfigure(*configPath) {
-            fmt.Println("Self-heal: regenerated configuration from tracked folders. Retrying load...")
-            config, err = proxy.LoadConfig(*configPath)
-        }
-        if err != nil {
-            os.Exit(1)
-        }
-    }
+	config, err := proxy.LoadConfig(*configPath)
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		// Attempt auto-regeneration from DB to self-heal common config errors
+		if selfHealReconfigure(*configPath) {
+			fmt.Println("Self-heal: regenerated configuration from tracked folders. Retrying load...")
+			config, err = proxy.LoadConfig(*configPath)
+		}
+		if err != nil {
+			os.Exit(1)
+		}
+	}
 
 	if len(config.Profiles) > 0 {
 		fmt.Println("WARNING: Profile functionality has been removed in favor of Groups. See the README for more information.")
@@ -131,10 +136,10 @@ func main() {
 				return
 			}
 
-			fmt.Println("Configuration Changed")
+			fmt.Println("📝 Configuration file changed - reloading...")
 			currentPM.Shutdown()
 			srv.Handler = proxy.New(config)
-			fmt.Println("Configuration Reloaded")
+			fmt.Println("✅ Configuration reloaded successfully")
 
 			// wait a few seconds and tell any UI to reload
 			time.AfterFunc(3*time.Second, func() {
@@ -145,14 +150,14 @@ func main() {
 		} else {
 			config, err = proxy.LoadConfig(*configPath)
 			if err != nil {
-                fmt.Printf("Error, unable to load configuration: %v\n", err)
-                if selfHealReconfigure(*configPath) {
-                    fmt.Println("Self-heal: regenerated configuration from tracked folders. Retrying load...")
-                    config, err = proxy.LoadConfig(*configPath)
-                }
-                if err != nil {
-                    os.Exit(1)
-                }
+				fmt.Printf("Error, unable to load configuration: %v\n", err)
+				if selfHealReconfigure(*configPath) {
+					fmt.Println("Self-heal: regenerated configuration from tracked folders. Retrying load...")
+					config, err = proxy.LoadConfig(*configPath)
+				}
+				if err != nil {
+					os.Exit(1)
+				}
 			}
 			srv.Handler = proxy.New(config)
 		}
@@ -168,7 +173,7 @@ func main() {
 			}
 		})()
 
-		fmt.Println("Watching Configuration for changes")
+		fmt.Printf("📁 Watching %s for changes - server will auto-reload when config changes\n", *configPath)
 		go func() {
 			absConfigPath, err := filepath.Abs(*configPath)
 			if err != nil {
@@ -254,91 +259,96 @@ func debounce(interval time.Duration, f func()) func() {
 // selfHealReconfigure regenerates config.yaml from tracked folders using saved settings.
 // Returns true if regeneration succeeded.
 func selfHealReconfigure(configPath string) bool {
-    // Instantiate a temporary ProxyManager-like helper by reusing functions in proxy package via HTTP API is not available here.
-    // So we inline minimal logic: read folder DB, scan and run autosetup generator.
-    // Load folder database
-    dbPath := "model_folders.json"
-    data, err := os.ReadFile(dbPath)
-    if err != nil {
-        fmt.Printf("Self-heal: no folder DB (%s): %v\n", dbPath, err)
-        return false
-    }
-    var db struct {
-        Folders []struct{ Path string; Enabled bool } `json:"folders"`
-    }
-    if err := json.Unmarshal(data, &db); err != nil {
-        fmt.Printf("Self-heal: invalid folder DB: %v\n", err)
-        return false
-    }
-    var folders []string
-    for _, f := range db.Folders {
-        if f.Enabled {
-            folders = append(folders, f.Path)
-        }
-    }
-    if len(folders) == 0 {
-        fmt.Println("Self-heal: no enabled folders; cannot regenerate")
-        return false
-    }
+	// Instantiate a temporary ProxyManager-like helper by reusing functions in proxy package via HTTP API is not available here.
+	// So we inline minimal logic: read folder DB, scan and run autosetup generator.
+	// Load folder database
+	dbPath := "model_folders.json"
+	data, err := os.ReadFile(dbPath)
+	if err != nil {
+		fmt.Printf("Self-heal: no folder DB (%s): %v\n", dbPath, err)
+		return false
+	}
+	var db struct {
+		Folders []struct {
+			Path    string
+			Enabled bool
+		} `json:"folders"`
+	}
+	if err := json.Unmarshal(data, &db); err != nil {
+		fmt.Printf("Self-heal: invalid folder DB: %v\n", err)
+		return false
+	}
+	var folders []string
+	for _, f := range db.Folders {
+		if f.Enabled {
+			folders = append(folders, f.Path)
+		}
+	}
+	if len(folders) == 0 {
+		fmt.Println("Self-heal: no enabled folders; cannot regenerate")
+		return false
+	}
 
-    // Load saved settings if present
-    settingsPath := "settings.json"
-    var opts autosetup.SetupOptions = autosetup.SetupOptions{
-        EnableJinja:      true,
-        ThroughputFirst:  true,
-        MinContext:       16384,
-        PreferredContext: 32768,
-    }
-    if sdata, err := os.ReadFile(settingsPath); err == nil {
-        var s struct{
-            Backend string `json:"backend"`
-            VRAMGB float64 `json:"vramGB"`
-            RAMGB float64 `json:"ramGB"`
-            PreferredContext int `json:"preferredContext"`
-            ThroughputFirst bool `json:"throughputFirst"`
-            EnableJinja bool `json:"enableJinja"`
-        }
-        if json.Unmarshal(sdata, &s) == nil {
-            if s.EnableJinja { opts.EnableJinja = true } else { opts.EnableJinja = false }
-            opts.ThroughputFirst = s.ThroughputFirst
-            if s.PreferredContext > 0 { opts.PreferredContext = s.PreferredContext }
-            if s.RAMGB > 0 { opts.ForceRAM = s.RAMGB }
-            if s.VRAMGB > 0 { opts.ForceVRAM = s.VRAMGB }
-            if s.Backend != "" { opts.ForceBackend = s.Backend }
-        }
-    }
+	// Load saved settings if present
+	settingsPath := "settings.json"
+	var opts autosetup.SetupOptions = autosetup.SetupOptions{
+		EnableJinja:      true,
+		ThroughputFirst:  true,
+		MinContext:       16384,
+		PreferredContext: 32768,
+	}
+	if sdata, err := os.ReadFile(settingsPath); err == nil {
+		var s struct {
+			Backend          string  `json:"backend"`
+			VRAMGB           float64 `json:"vramGB"`
+			RAMGB            float64 `json:"ramGB"`
+			PreferredContext int     `json:"preferredContext"`
+			ThroughputFirst  bool    `json:"throughputFirst"`
+			EnableJinja      bool    `json:"enableJinja"`
+		}
+		if json.Unmarshal(sdata, &s) == nil {
+			if s.EnableJinja {
+				opts.EnableJinja = true
+			} else {
+				opts.EnableJinja = false
+			}
+			opts.ThroughputFirst = s.ThroughputFirst
+			if s.PreferredContext > 0 {
+				opts.PreferredContext = s.PreferredContext
+			}
+			if s.RAMGB > 0 {
+				opts.ForceRAM = s.RAMGB
+			}
+			if s.VRAMGB > 0 {
+				opts.ForceVRAM = s.VRAMGB
+			}
+			if s.Backend != "" {
+				opts.ForceBackend = s.Backend
+			}
+		}
+	}
 
-    // Scan folders for models
-    var allModels []autosetup.ModelInfo
-    for _, p := range folders {
-        models, err := autosetup.DetectModelsWithOptions(p, opts)
-        if err != nil {
-            fmt.Printf("Self-heal: scan failed for %s: %v\n", p, err)
-            continue
-        }
-        allModels = append(allModels, models...)
-    }
-    if len(allModels) == 0 {
-        fmt.Println("Self-heal: no models found in tracked folders")
-        return false
-    }
+	// Use the appropriate setup function based on folder count
+	// This avoids redundant scanning and binary downloads
+	fmt.Printf("Self-heal: regenerating config from %d folder(s)\n", len(folders))
 
-    system := autosetup.DetectSystem()
-    _ = autosetup.EnhanceSystemInfo(&system)
-    binariesDir := filepath.Join(".", "binaries")
-    bin, err := autosetup.DownloadBinary(binariesDir, system)
-    if err != nil {
-        fmt.Printf("Self-heal: unable to ensure binary: %v\n", err)
-        return false
-    }
-    gen := autosetup.NewConfigGenerator(folders[0], bin.Path, configPath, opts)
-    gen.SetSystemInfo(&system)
-    gen.SetAvailableVRAM(system.TotalVRAMGB)
-    if err := gen.GenerateConfig(allModels); err != nil {
-        fmt.Printf("Self-heal: generation failed: %v\n", err)
-        return false
-    }
-    // Notify for live reload if server already running
-    event.Emit(proxy.ConfigFileChangedEvent{ReloadingState: proxy.ReloadingStateStart})
-    return true
+	if len(folders) > 1 {
+		// Multiple folders - use multi-folder setup (it will scan all folders)
+		if err := autosetup.AutoSetupMultiFoldersWithOptions(folders, opts); err != nil {
+			fmt.Printf("Self-heal: multi-folder generation failed: %v\n", err)
+			return false
+		}
+	} else if len(folders) == 1 {
+		// Single folder - use single-folder setup (it will scan the folder)
+		if err := autosetup.AutoSetupWithOptions(folders[0], opts); err != nil {
+			fmt.Printf("Self-heal: generation failed: %v\n", err)
+			return false
+		}
+	} else {
+		fmt.Println("Self-heal: no folders to regenerate from")
+		return false
+	}
+	// Notify for live reload if server already running
+	event.Emit(proxy.ConfigFileChangedEvent{ReloadingState: proxy.ReloadingStateStart})
+	return true
 }

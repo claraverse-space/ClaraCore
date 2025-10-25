@@ -978,3 +978,55 @@ func TestProxyManager_ProxiedStreamingEndpointReturnsNoBufferingHeader(t *testin
 	assert.Equal(t, "no", rec.Header().Get("X-Accel-Buffering"))
 	assert.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
 }
+
+func TestProxyManager_InfoEndpoint(t *testing.T) {
+	config := AddDefaultGroupToConfig(Config{
+		HealthCheckTimeout: 15,
+		Models: map[string]ModelConfig{
+			"model1": {
+				Proxy:       "http://localhost:8001",
+				Name:        "Test Model 1",
+				Description: "A test model",
+			},
+			"model2": {
+				Proxy:       "http://localhost:8002",
+				Name:        "Test Model 2",
+				Description: "Another test model",
+			},
+		},
+		LogLevel: "error",
+	})
+
+	proxy := New(config)
+	defer proxy.StopProcesses(StopWaitForInflightRequest)
+
+	req := httptest.NewRequest("GET", "/info", nil)
+	rec := httptest.NewRecorder()
+
+	proxy.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+	var response map[string]interface{}
+	err := json.Unmarshal(rec.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	// Check response structure
+	assert.Contains(t, response, "models")
+	assert.Contains(t, response, "total")
+	assert.Equal(t, float64(2), response["total"]) // JSON numbers are float64
+
+	models, ok := response["models"].([]interface{})
+	assert.True(t, ok)
+	assert.Len(t, models, 2)
+
+	// Check first model (should be sorted by model ID)
+	model1 := models[0].(map[string]interface{})
+	assert.Equal(t, "model1", model1["model"])
+	assert.Equal(t, "8001", model1["port"])
+	assert.Equal(t, "http://localhost:8001", model1["proxy"])
+	assert.Equal(t, false, model1["running"]) // Not running in test
+	assert.Equal(t, "Test Model 1", model1["name"])
+	assert.Equal(t, "A test model", model1["description"])
+}

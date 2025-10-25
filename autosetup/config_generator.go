@@ -10,7 +10,8 @@ import (
 
 // ConfigGenerator generates optimized configurations with intelligent GPU allocation
 type ConfigGenerator struct {
-	ModelsPath    string
+	ModelsPath    string   // Primary models path (for backward compatibility)
+	ModelsPaths   []string // Multiple model paths (for multi-folder support)
 	BinaryPath    string
 	BinaryType    string
 	OutputPath    string
@@ -25,6 +26,23 @@ type ConfigGenerator struct {
 func NewConfigGenerator(modelsPath, binaryPath, outputPath string, options SetupOptions) *ConfigGenerator {
 	return &ConfigGenerator{
 		ModelsPath:   modelsPath,
+		ModelsPaths:  []string{modelsPath}, // Initialize with single path for backward compatibility
+		BinaryPath:   binaryPath,
+		OutputPath:   outputPath,
+		Options:      options,
+		usedModelIDs: make(map[string]int),
+	}
+}
+
+// NewConfigGeneratorMultiFolder creates a new config generator with multiple model folders
+func NewConfigGeneratorMultiFolder(modelsPaths []string, binaryPath, outputPath string, options SetupOptions) *ConfigGenerator {
+	primaryPath := ""
+	if len(modelsPaths) > 0 {
+		primaryPath = modelsPaths[0]
+	}
+	return &ConfigGenerator{
+		ModelsPath:   primaryPath,  // Use first path as primary for compatibility
+		ModelsPaths:  modelsPaths,  // Store all paths
 		BinaryPath:   binaryPath,
 		OutputPath:   outputPath,
 		Options:      options,
@@ -54,8 +72,13 @@ func (scg *ConfigGenerator) SetSystemInfo(systemInfo *SystemInfo) {
 
 // GenerateConfig generates a simple configuration file
 func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
+	pm := GetProgressManager()
+	pm.UpdateStatus("generating")
+	pm.UpdateStep("Starting configuration generation...")
+
 	// Use real-time hardware monitoring if enabled
 	if scg.Options.EnableRealtime {
+		pm.UpdateStep("Checking real-time hardware info...")
 		fmt.Println("🔄 Real-time hardware monitoring enabled...")
 		realtimeInfo, err := GetRealtimeHardwareInfo()
 		if err != nil {
@@ -76,6 +99,7 @@ func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
 		}
 	}
 
+	pm.UpdateStep("Building configuration structure...")
 	config := strings.Builder{}
 
 	// Write header
@@ -84,35 +108,69 @@ func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
 	// Write macros
 	scg.writeMacros(&config)
 
+	pm.UpdateStep("Processing model configurations...")
 	// Generate model IDs consistently (first pass)
 	modelIDMap := make(map[string]string)
+	validModels := 0
+	for _, model := range models {
+		if !model.IsDraft {
+			validModels++
+		}
+	}
+
+	processed := 0
 	for _, model := range models {
 		if model.IsDraft {
 			continue
 		}
+		processed++
+		pm.UpdateProgress(processed, validModels, model.Name)
 		modelIDMap[model.Path] = scg.generateModelID(model)
 	}
 
+	pm.UpdateStep("Writing model definitions...")
 	// Write models
 	config.WriteString("\nmodels:\n")
+	processed = 0
 	for _, model := range models {
 		if model.IsDraft {
 			continue // Skip draft models
 		}
+		processed++
+		pm.UpdateProgress(processed, validModels, model.Name)
 		scg.writeModel(&config, model, modelIDMap)
 	}
 
+	pm.UpdateStep("Writing model groups...")
 	// Write groups
 	scg.writeGroups(&config, models, modelIDMap)
 
+	pm.UpdateStep("Saving configuration file...")
 	// Save to file
-	return os.WriteFile(scg.OutputPath, []byte(config.String()), 0644)
+	err := os.WriteFile(scg.OutputPath, []byte(config.String()), 0644)
+	if err != nil {
+		pm.SetError(fmt.Sprintf("Failed to save config file: %v", err))
+		return err
+	}
+
+	pm.UpdateStatus("completed")
+	return nil
 }
 
 // writeHeader writes the configuration header
 func (scg *ConfigGenerator) writeHeader(config *strings.Builder) {
 	config.WriteString("# Auto-generated Clara Core configuration (SMART GPU ALLOCATION)\n")
-	config.WriteString(fmt.Sprintf("# Generated from models in: %s\n", scg.ModelsPath))
+
+	// Show all model folders if multiple paths are configured
+	if len(scg.ModelsPaths) > 1 {
+		config.WriteString(fmt.Sprintf("# Generated from models in %d folders:\n", len(scg.ModelsPaths)))
+		for i, path := range scg.ModelsPaths {
+			config.WriteString(fmt.Sprintf("#   %d. %s\n", i+1, path))
+		}
+	} else {
+		config.WriteString(fmt.Sprintf("# Generated from models in: %s\n", scg.ModelsPath))
+	}
+
 	config.WriteString(fmt.Sprintf("# Binary: %s (%s)\n", scg.BinaryPath, scg.BinaryType))
 	config.WriteString(fmt.Sprintf("# System: %s/%s\n", runtime.GOOS, runtime.GOARCH))
 
@@ -135,7 +193,7 @@ func (scg *ConfigGenerator) writeHeader(config *strings.Builder) {
 	config.WriteString("\n")
 	config.WriteString("healthCheckTimeout: 300\n")
 	config.WriteString("logLevel: info\n")
-	config.WriteString("startPort: 5800\n")
+	config.WriteString("startPort: 8100\n")
 }
 
 // writeMacros writes the base macros
@@ -220,6 +278,9 @@ func (scg *ConfigGenerator) writeModel(config *strings.Builder, model ModelInfo,
 
 	// Add proxy
 	config.WriteString("    proxy: \"http://127.0.0.1:${PORT}\"\n")
+	
+	// Add TTL (Time To Live) - default 300 seconds
+	config.WriteString("    ttl: 300\n")
 
 	// Add environment
 	config.WriteString("    env:\n")
@@ -763,7 +824,7 @@ func (scg *ConfigGenerator) writeGroups(config *strings.Builder, models []ModelI
 		config.WriteString("  \"large-models\":\n")
 		config.WriteString("    swap: true\n")
 		config.WriteString("    exclusive: true\n")
-		config.WriteString("    startPort: 5800\n")
+		config.WriteString("    startPort: 8200\n")
 		config.WriteString("    members:\n")
 		for _, model := range largeModels {
 			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))
@@ -776,7 +837,7 @@ func (scg *ConfigGenerator) writeGroups(config *strings.Builder, models []ModelI
 		config.WriteString("    swap: false\n")
 		config.WriteString("    exclusive: false\n")
 		config.WriteString("    persistent: true\n")
-		config.WriteString("    startPort: 6000\n")
+		config.WriteString("    startPort: 8300\n")
 		config.WriteString("    members:\n")
 		for _, model := range smallModels {
 			config.WriteString(fmt.Sprintf("      - \"%s\"\n", model))
@@ -824,7 +885,7 @@ func (scg *ConfigGenerator) isEmbeddingModel(model ModelInfo) bool {
 		}
 	}
 
-	return detectEmbeddingFromMetadata(metadata, architecture)
+	return detectEmbeddingFromMetadata(metadata, architecture, model.Name)
 }
 
 // detectPoolingTypeByName detects the pooling type based on model family

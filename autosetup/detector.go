@@ -9,6 +9,9 @@ import (
 	"sync/atomic"
 )
 
+// ProgressCallback is called during model detection to report progress
+type ProgressCallback func(stage string, currentModel string, current, total int)
+
 // ModelInfo represents information about a detected GGUF model
 type ModelInfo struct {
 	Name          string
@@ -27,6 +30,119 @@ type ModelInfo struct {
 // DetectModels scans a directory for GGUF files and returns model information
 func DetectModels(modelsDir string) ([]ModelInfo, error) {
 	return DetectModelsWithOptions(modelsDir, SetupOptions{EnableParallel: true})
+}
+
+// DetectModelsWithProgress scans a directory for GGUF files with progress reporting
+func DetectModelsWithProgress(modelsDir string, options SetupOptions, progressCallback ProgressCallback) ([]ModelInfo, error) {
+	var allFiles []string
+
+	pm := GetProgressManager()
+	pm.UpdateStatus("scanning")
+	pm.UpdateStep("Collecting model files...")
+
+	// First, collect all GGUF files
+	err := filepath.Walk(modelsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if strings.HasSuffix(strings.ToLower(info.Name()), ".gguf") {
+			allFiles = append(allFiles, path)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		pm.SetError(fmt.Sprintf("failed to scan models directory: %v", err))
+		return nil, fmt.Errorf("failed to scan models directory: %v", err)
+	}
+
+	pm.UpdateStep("Processing model files...")
+	if progressCallback != nil {
+		progressCallback("Scanning models...", "", 0, len(allFiles))
+	}
+
+	if !options.EnableParallel {
+		// Sequential processing with progress
+		var models []ModelInfo
+		for i, path := range allFiles {
+			filename := filepath.Base(path)
+			pm.UpdateProgress(i+1, len(allFiles), filename)
+			if progressCallback != nil {
+				progressCallback("Processing models...", filename, i, len(allFiles))
+			}
+			model := parseGGUFFilename(path, filename)
+			models = append(models, model)
+		}
+		pm.UpdateStatus("completed")
+		if progressCallback != nil {
+			progressCallback("Complete!", "", len(allFiles), len(allFiles))
+		}
+		return models, nil
+	}
+
+	// Parallel processing with progress callbacks
+	fmt.Printf("🔄 Processing %d models in parallel...\n", len(allFiles))
+	models := make([]ModelInfo, len(allFiles))
+	var wg sync.WaitGroup
+	var processed int32
+	semaphore := make(chan struct{}, 10) // Limit to 10 concurrent operations
+
+	// Progress ticker for callbacks
+	progressTicker := make(chan struct{})
+	go func() {
+		for range progressTicker {
+			current := atomic.LoadInt32(&processed)
+			percentage := float64(current) / float64(len(allFiles)) * 100
+			fmt.Printf("\r   📊 Progress: %d/%d (%.1f%%) models processed", current, len(allFiles), percentage)
+
+			// Update progress manager
+			currentModel := ""
+			if current < int32(len(allFiles)) && current >= 0 {
+				currentModel = filepath.Base(allFiles[current])
+			}
+			pm.UpdateProgress(int(current), len(allFiles), currentModel)
+
+			// Call progress callback if provided
+			if progressCallback != nil {
+				progressCallback("Processing models...", currentModel, int(current), len(allFiles))
+			}
+		}
+	}()
+
+	for i, path := range allFiles {
+		wg.Add(1)
+		go func(index int, filePath string) {
+			defer wg.Done()
+			semaphore <- struct{}{}        // Acquire semaphore
+			defer func() { <-semaphore }() // Release semaphore
+
+			filename := filepath.Base(filePath)
+			model := parseGGUFFilename(filePath, filename)
+			models[index] = model
+
+			// Update progress
+			current := atomic.AddInt32(&processed, 1)
+			if current%5 == 0 || current == int32(len(allFiles)) { // Update every 5 models or at end
+				select {
+				case progressTicker <- struct{}{}:
+				default:
+				}
+			}
+		}(i, path)
+	}
+
+	wg.Wait()
+	close(progressTicker)
+
+	pm.UpdateStatus("completed")
+	if progressCallback != nil {
+		progressCallback("Complete!", "", len(allFiles), len(allFiles))
+	}
+
+	fmt.Printf("\r   ✅ Completed: %d/%d (100.0%%) models processed\n", len(allFiles), len(allFiles))
+	return models, nil
 }
 
 // DetectModelsWithOptions scans a directory for GGUF files with parallel processing options
@@ -128,36 +244,69 @@ func parseGGUFFilename(fullPath, filename string) ModelInfo {
 		return model
 	}
 
-	// Try to read GGUF metadata for better detection
+	// Read GGUF metadata for embedding detection
+	lowerPath := strings.ToLower(fullPath)
+
+	// First, try basic metadata for context/layers info
 	if ggufMeta, err := ReadGGUFMetadata(fullPath); err == nil {
-		// Extract information from GGUF metadata
 		if ggufMeta.ContextLength > 0 {
 			model.ContextLength = int(ggufMeta.ContextLength)
 		}
 		if ggufMeta.BlockCount > 0 {
 			model.NumLayers = int(ggufMeta.BlockCount)
 		}
-
-		// Calculate embedding size from attention dimensions
 		if ggufMeta.KeyLength > 0 && ggufMeta.HeadCountKV > 0 {
 			model.EmbeddingSize = int(ggufMeta.KeyLength * ggufMeta.HeadCountKV)
 		}
-
-		// Check for embedding-specific architectures
-		arch := strings.ToLower(ggufMeta.Architecture)
-		if arch == "bert" || arch == "nomic-bert" || strings.Contains(arch, "embed") {
-			model.IsEmbedding = true
-		}
 	}
 
-	// Fallback: Check filename/path for embedding indicators
-	lowerPath := strings.ToLower(fullPath)
-	if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") ||
-		strings.Contains(lowerPath, "embed") || strings.Contains(lowerPath, "embedding") ||
-		strings.Contains(lower, "mxbai") || // mxbai models are embeddings
-		strings.Contains(lower, "bge-") || // BGE embedding models
-		strings.Contains(lower, "e5-") { // E5 embedding models
-		model.IsEmbedding = true
+	// Now read full metadata for embedding detection
+	if metadata, err := ReadAllGGUFKeys(fullPath); err == nil {
+		arch := ""
+		if val, exists := metadata["general.architecture"]; exists {
+			if str, ok := val.(string); ok {
+				arch = strings.ToLower(str)
+			}
+		}
+
+		// PRIORITY 1: Name-based check (HIGHEST PRIORITY - trust explicit naming)
+		if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") ||
+			strings.Contains(lowerPath, "embed") || strings.Contains(lowerPath, "embedding") ||
+			strings.Contains(lower, "minilm") ||
+			strings.Contains(lower, "mxbai") ||
+			strings.Contains(lower, "bge-") ||
+			strings.Contains(lower, "e5-") {
+			model.IsEmbedding = true
+		} else {
+			// PRIORITY 2: Check pooling_type (VERY RELIABLE for models without explicit names)
+			poolingType := ""
+			poolingKey := fmt.Sprintf("%s.pooling_type", arch)
+			if val, exists := metadata[poolingKey]; exists {
+				if str, ok := val.(string); ok {
+					poolingType = strings.ToLower(str)
+				}
+			}
+
+			if poolingType != "" && poolingType != "none" {
+				model.IsEmbedding = true
+			} else if arch == "bert" || arch == "roberta" || arch == "nomic-bert" || arch == "jina-bert" {
+				// PRIORITY 3: BERT architectures are embeddings
+				model.IsEmbedding = true
+			} else if arch == "qwen2vl" || arch == "llava" || strings.Contains(arch, "vision") {
+				// PRIORITY 4: Exclude Vision-Language models (only if name didn't indicate embedding)
+				model.IsEmbedding = false
+			}
+		}
+	} else {
+		// Fallback if metadata reading fails: use filename/path only
+		if strings.Contains(lower, "embed") || strings.Contains(lower, "embedding") ||
+			strings.Contains(lowerPath, "embed") || strings.Contains(lowerPath, "embedding") ||
+			strings.Contains(lower, "minilm") ||
+			strings.Contains(lower, "mxbai") ||
+			strings.Contains(lower, "bge-") ||
+			strings.Contains(lower, "e5-") {
+			model.IsEmbedding = true
+		}
 	}
 
 	// Detect if it's an instruct/chat model

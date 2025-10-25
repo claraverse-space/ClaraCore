@@ -1,0 +1,18 @@
+# Use AMD Strix Halo Vulkan toolbox image for latest APU support
+FROM kyuz0/amd-strix-halo-toolboxes:vulkan-radv
+
+# Set working directory
+WORKDIR /app
+
+# Copy only the ClaraCore binary
+COPY claracore /app/claracore
+
+# Make it executable
+RUN chmod +x /app/claracore
+
+# Expose port
+EXPOSE 5890
+
+# Set the entrypoint
+ENTRYPOINT ["/app/claracore"]
+CMD ["-listen", "0.0.0.0:5890"]

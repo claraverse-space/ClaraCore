@@ -207,7 +207,7 @@ func LoadConfigFromReader(r io.Reader) (Config, error) {
 	// default configuration values
 	config := Config{
 		HealthCheckTimeout: 120,
-		StartPort:          5800,
+		StartPort:          8100,
 		LogLevel:           "info",
 		MetricsMaxInMemory: 1000,
 	}

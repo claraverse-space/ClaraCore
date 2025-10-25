@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   SearchIcon,
@@ -19,6 +20,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../co
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
+import DownloadDestinationModal from '../components/DownloadDestinationModal';
 
 // Types
 interface HFModel {
@@ -27,12 +29,24 @@ interface HFModel {
   downloads: number;
   likes: number;
   updatedAt: string;
+  lastModified?: string;
   tags: string[];
   pipeline_tag?: string;
   siblings?: Array<{
     rfilename: string;
     size?: number;
   }>;
+  gguf?: {
+    total?: number;
+    architecture?: string;
+    context_length?: number;
+    bos_token?: string;
+    eos_token?: string;
+  };
+  cardData?: {
+    license?: string;
+    base_model?: string[];
+  };
 }
 
 interface SystemSpecs {
@@ -50,6 +64,7 @@ interface DownloadProgress {
   modelId: string;
   filename: string;
   url: string;
+  filePath?: string; // Full path to the downloaded file
   progress: number;
   speed: number;
   bytesDownloaded: number;
@@ -69,10 +84,19 @@ const ModelDownloaderPage: React.FC = () => {
   const [models, setModels] = useState<HFModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<HFModel | null>(null);
+  const [loadingModelDetails, setLoadingModelDetails] = useState(false);
   const [downloads, setDownloads] = useState<DownloadProgress[]>([]);
   const [systemSpecs, setSystemSpecs] = useState<SystemSpecs | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  const [showDestinationModal, setShowDestinationModal] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<{
+    model: HFModel; 
+    filename: string; 
+    isMultiPart?: boolean;
+    parts?: Array<{ path: string; size: number }>;
+  } | null>(null);
+  const [configuringModels, setConfiguringModels] = useState<Set<string>>(new Set());
 
   // Filters
   const filters = [
@@ -172,12 +196,13 @@ const ModelDownloaderPage: React.FC = () => {
               if (oldStatus !== 'completed' && newStatus === 'completed') {
                 const completedDownload = updated[index];
                 if (completedDownload.filename && completedDownload.filename.toLowerCase().endsWith('.gguf')) {
-                  // Construct the full path to the downloaded model
-                  const filePath = `./downloads/${completedDownload.filename}`;
+                  // Use the actual file path from the download info (respects custom destination)
+                  const filePath = completedDownload.filePath || `./downloads/${completedDownload.filename}`;
+                  const downloadId = completedDownload.id;
                   
                   // Add model to config after a short delay to ensure file is fully written
                   setTimeout(() => {
-                    addModelToConfig(filePath);
+                    addModelToConfig(filePath, downloadId);
                   }, 2000);
                 }
               }
@@ -198,6 +223,151 @@ const ModelDownloaderPage: React.FC = () => {
       eventSource.close();
     };
   }, []);
+
+  // Fetch detailed model information when a model is selected
+  useEffect(() => {
+    const fetchModelDetails = async () => {
+      if (!selectedModel) return;
+      
+      setLoadingModelDetails(true);
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        
+        if (hfApiKey) {
+          headers['Authorization'] = `Bearer ${hfApiKey}`;
+        }
+
+        // Fetch full model details from HuggingFace API
+        const response = await fetch(
+          `https://huggingface.co/api/models/${selectedModel.id}`,
+          { headers }
+        );
+
+        if (response.ok) {
+          const detailedModel = await response.json();
+          
+          // Fetch file sizes from the repo tree API for GGUF files
+          let siblingsWithSizes = detailedModel.siblings || [];
+          
+          // Get GGUF files that need size information
+          const ggufFiles = siblingsWithSizes.filter((s: any) => 
+            s.rfilename.toLowerCase().endsWith('.gguf')
+          );
+          
+          if (ggufFiles.length > 0) {
+            try {
+              // Fetch the full repository tree which includes file sizes
+              const treeResponse = await fetch(
+                `https://huggingface.co/api/models/${selectedModel.id}/tree/main`,
+                { headers }
+              );
+              
+              if (treeResponse.ok) {
+                const treeData = await treeResponse.json();
+                
+                // Process tree data to handle both single files and directory-based multi-part files
+                const processedFiles: any[] = [];
+                const directoryFiles = new Map<string, any[]>(); // Map of directory -> files
+                const directoriesToFetch: string[] = [];
+                
+                // First pass: identify directories and root-level GGUF files
+                treeData.forEach((item: any) => {
+                  if (item.type === 'directory') {
+                    // Check if this directory might contain GGUF files
+                    // Common quantization directory patterns: Q4_K_M, BF16, IQ4_NL, etc.
+                    directoriesToFetch.push(item.path);
+                  } else if (item.type === 'file' && item.path.toLowerCase().endsWith('.gguf') && item.size) {
+                    // Root-level GGUF file
+                    processedFiles.push({
+                      rfilename: item.path,
+                      size: item.size,
+                      isMultiPart: false
+                    });
+                  }
+                });
+                
+                // Fetch contents of each directory to find GGUF files
+                const directoryPromises = directoriesToFetch.map(async (dirPath) => {
+                  try {
+                    const dirResponse = await fetch(
+                      `https://huggingface.co/api/models/${selectedModel.id}/tree/main/${encodeURIComponent(dirPath)}`,
+                      { headers }
+                    );
+                    
+                    if (dirResponse.ok) {
+                      const dirData = await dirResponse.json();
+                      const ggufFilesInDir: any[] = [];
+                      
+                      dirData.forEach((item: any) => {
+                        if (item.type === 'file' && item.path.toLowerCase().endsWith('.gguf') && item.size) {
+                          ggufFilesInDir.push({
+                            path: item.path,
+                            size: item.size,
+                            filename: item.path.split('/').pop()
+                          });
+                        }
+                      });
+                      
+                      if (ggufFilesInDir.length > 0) {
+                        directoryFiles.set(dirPath, ggufFilesInDir);
+                      }
+                    }
+                  } catch (err) {
+                    console.warn(`Failed to fetch directory ${dirPath}:`, err);
+                  }
+                });
+                
+                // Wait for all directory fetches to complete
+                await Promise.all(directoryPromises);
+                
+                // Process directory-based files (group multi-part files)
+                directoryFiles.forEach((files, directory) => {
+                  // Sort files by name to ensure correct order
+                  files.sort((a, b) => a.filename.localeCompare(b.filename));
+                  
+                  // Calculate total size for all parts
+                  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+                  
+                  processedFiles.push({
+                    rfilename: directory, // Use directory name as the display name
+                    size: totalSize,
+                    isMultiPart: true,
+                    parts: files.map(f => ({ path: f.path, size: f.size })),
+                    partCount: files.length
+                  });
+                });
+                
+                // Update siblings with processed data
+                siblingsWithSizes = processedFiles;
+              }
+            } catch (treeError) {
+              console.warn('Failed to fetch file sizes from tree API:', treeError);
+            }
+          }
+          
+          // Update the selected model with all detailed information
+          setSelectedModel(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              siblings: siblingsWithSizes,
+              gguf: detailedModel.gguf || prev.gguf,
+              cardData: detailedModel.cardData || prev.cardData,
+              lastModified: detailedModel.lastModified || prev.lastModified,
+            };
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch model details:', error);
+      } finally {
+        setLoadingModelDetails(false);
+      }
+    };
+
+    fetchModelDetails();
+  }, [selectedModel?.id, hfApiKey]);
 
   // Save API key
   const saveApiKey = async (key: string) => {
@@ -249,7 +419,7 @@ const ModelDownloaderPage: React.FC = () => {
     }
   };
 
-  // Start download
+  // Start download with destination selection
   const startDownload = async (model: HFModel, filename: string) => {
     // Validate inputs
     if (!filename || filename === 'undefined') {
@@ -258,27 +428,74 @@ const ModelDownloaderPage: React.FC = () => {
       return;
     }
     
-    console.log('Starting download:', { modelId: model.id, filename });
+    // Show destination selection modal
+    setPendingDownload({ model, filename });
+    setShowDestinationModal(true);
+  };
+
+  // Start multi-part download
+  const startMultiPartDownload = async (model: HFModel, quantization: string, parts: Array<{ path: string; size: number }>) => {
+    // Show destination selection modal for multi-part download
+    setPendingDownload({ 
+      model, 
+      filename: quantization, // Use quantization name as display name
+      isMultiPart: true,
+      parts 
+    });
+    setShowDestinationModal(true);
+  };
+
+  // Actual download function after destination is selected
+  const executeDownload = async (destinationPath?: string) => {
+    if (!pendingDownload) return;
+    
+    const { model, filename, isMultiPart, parts } = pendingDownload;
+    
+    console.log('Starting download:', { modelId: model.id, filename, isMultiPart, destinationPath });
     
     try {
-      // Construct HuggingFace download URL
-      const downloadUrl = `https://huggingface.co/${model.id}/resolve/main/${filename}`;
+      let requestBody: any;
       
-      const response = await fetch('/api/models/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Handle multi-part download
+      if (isMultiPart && parts) {
+        requestBody = {
+          modelId: model.id,
+          isMultiPart: true,
+          quantization: filename, // filename contains quantization name for multi-part
+          files: parts.map(p => p.path),
+          hfApiKey,
+        };
+      } else {
+        // Handle single file download
+        const downloadUrl = `https://huggingface.co/${model.id}/resolve/main/${filename}`;
+        requestBody = {
           url: downloadUrl,
           modelId: model.id,
           filename,
           hfApiKey,
-        }),
+        };
+      }
+      
+      // Add destination path if specified
+      if (destinationPath) {
+        requestBody.destinationPath = destinationPath;
+      }
+      
+      const response = await fetch('/api/models/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
         const result = await response.json();
         // The UI will be updated via real-time events, so we don't need to manually add to downloads
         console.log('Download started:', result);
+        
+        // Clear pending download and close both modals
+        setPendingDownload(null);
+        setShowDestinationModal(false);
+        setSelectedModel(null); // Close the HuggingFace model details modal
       } else {
         console.error('Failed to start download:', await response.text());
       }
@@ -290,46 +507,52 @@ const ModelDownloaderPage: React.FC = () => {
   // Cancel download
   const cancelDownload = async (downloadId: string) => {
     try {
-      await fetch('/api/models/download/cancel', {
+      // Immediately update UI to show cancelling state
+      setDownloads(prev => prev.map(d => 
+        d.id === downloadId 
+          ? { ...d, status: 'cancelled' as const }
+          : d
+      ));
+
+      const response = await fetch('/api/models/download/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ downloadId }),
       });
-      // The UI will be updated via real-time events
-      console.log('Download cancelled:', downloadId);
+      
+      if (!response.ok) {
+        console.error('Failed to cancel download:', await response.text());
+        // Revert on failure
+        setDownloads(prev => prev.map(d => 
+          d.id === downloadId 
+            ? { ...d, status: 'downloading' as const }
+            : d
+        ));
+      } else {
+        console.log('Download cancelled:', downloadId);
+        // Remove from list after a delay
+        setTimeout(() => {
+          setDownloads(prev => prev.filter(d => d.id !== downloadId));
+        }, 3000);
+      }
     } catch (error) {
       console.error('Failed to cancel download:', error);
+      // Revert on error
+      setDownloads(prev => prev.map(d => 
+        d.id === downloadId 
+          ? { ...d, status: 'downloading' as const }
+          : d
+      ));
     }
   };
 
-  // Pause download
-  const pauseDownload = async (downloadId: string) => {
-    try {
-      await fetch(`/api/models/downloads/${downloadId}/pause`, {
-        method: 'POST',
-      });
-      console.log('Download paused:', downloadId);
-    } catch (error) {
-      console.error('Failed to pause download:', error);
-    }
-  };
-
-  // Resume download
-  const resumeDownload = async (downloadId: string) => {
-    try {
-      await fetch(`/api/models/downloads/${downloadId}/resume`, {
-        method: 'POST',
-      });
-      console.log('Download resumed:', downloadId);
-    } catch (error) {
-      console.error('Failed to resume download:', error);
-    }
-  };
-
-  // Add downloaded model to config
-  const addModelToConfig = async (filePath: string) => {
+  // Add downloaded model to config automatically
+  const addModelToConfig = async (filePath: string, downloadId: string) => {
     try {
       console.log('Adding model to config:', filePath);
+      
+      // Mark this model as being configured
+      setConfiguringModels(prev => new Set(prev).add(downloadId));
       
       const response = await fetch('/api/config/append-model', {
         method: 'POST',
@@ -349,16 +572,30 @@ const ModelDownloaderPage: React.FC = () => {
         const result = await response.json();
         console.log('Model added to config:', result);
         
-        // Show success notification (you might want to add a toast/notification system)
-        alert(`✅ Model "${result.modelInfo.name}" has been added to your configuration and is ready to use!`);
+        // Keep the configuring state for a moment to show success
+        setTimeout(() => {
+          setConfiguringModels(prev => {
+            const next = new Set(prev);
+            next.delete(downloadId);
+            return next;
+          });
+        }, 2000);
       } else {
         const error = await response.text();
         console.error('Failed to add model to config:', error);
-        alert(`❌ Failed to add model to configuration: ${error}`);
+        setConfiguringModels(prev => {
+          const next = new Set(prev);
+          next.delete(downloadId);
+          return next;
+        });
       }
     } catch (error) {
       console.error('Failed to add model to config:', error);
-      alert(`❌ Failed to add model to configuration: ${error}`);
+      setConfiguringModels(prev => {
+        const next = new Set(prev);
+        next.delete(downloadId);
+        return next;
+      });
     }
   };
 
@@ -473,39 +710,19 @@ const ModelDownloaderPage: React.FC = () => {
                     {downloads.map((download) => (
                       <div key={`${download.modelId}-${download.filename}`} className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-text-primary truncate">
-                            {download.filename}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            {download.status === 'completed' && download.filename.toLowerCase().endsWith('.gguf') && (
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => addModelToConfig(`./downloads/${download.filename}`)}
-                                className="text-xs"
-                              >
-                                📋 Add to Config
-                              </Button>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {download.status === 'completed' && !configuringModels.has(download.id) && (
+                              <span className="text-lg">✅</span>
                             )}
-                            {download.status === 'downloading' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => pauseDownload(download.id)}
-                              >
-                                ⏸️
-                              </Button>
+                            {configuringModels.has(download.id) && (
+                              <span className="text-lg animate-spin">⚙️</span>
                             )}
-                            {download.status === 'paused' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => resumeDownload(download.id)}
-                              >
-                                ▶️
-                              </Button>
-                            )}
-                            {download.status !== 'completed' && (
+                            <span className="text-sm font-medium text-text-primary truncate">
+                              {download.filename}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {download.status !== 'completed' && download.status !== 'cancelled' && download.status !== 'failed' && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -516,10 +733,44 @@ const ModelDownloaderPage: React.FC = () => {
                             )}
                           </div>
                         </div>
+                        {configuringModels.has(download.id) && (
+                          <div className="mt-2 p-3 bg-brand-500/10 rounded-lg">
+                            <p className="text-xs text-brand-400">
+                              ⚙️ Please wait, the model is being configured... It will be ready to use shortly!
+                            </p>
+                          </div>
+                        )}
+                        {download.status === 'completed' && !configuringModels.has(download.id) && (
+                          <div className="mt-2 p-3 bg-success-500/10 rounded-lg">
+                            <p className="text-xs text-success-400">
+                              ✅ Model configured and ready to use! Check the <Link to="/models" className="underline font-medium hover:text-success-300">Models</Link> page.
+                            </p>
+                          </div>
+                        )}
+                        {download.status === 'cancelled' && (
+                          <div className="mt-2 p-3 bg-error-500/10 rounded-lg">
+                            <p className="text-xs text-error-400">
+                              ❌ Download cancelled
+                            </p>
+                          </div>
+                        )}
+                        {download.status === 'failed' && (
+                          <div className="mt-2 p-3 bg-error-500/10 rounded-lg">
+                            <p className="text-xs text-error-400">
+                              ❌ Download failed{download.error ? `: ${download.error}` : ''}
+                            </p>
+                          </div>
+                        )}
                         <div className="w-full bg-surface-secondary rounded-full h-2">
                           <div
                             className={`h-2 rounded-full transition-all ${
-                              download.progress < 0 || isNaN(download.progress) 
+                              download.status === 'cancelled' || download.status === 'failed'
+                                ? 'bg-error-500'
+                                : download.status === 'paused'
+                                ? 'bg-warning-500'
+                                : download.status === 'completed'
+                                ? 'bg-success-500'
+                                : download.progress < 0 || isNaN(download.progress) 
                                 ? 'bg-brand-500 animate-pulse' 
                                 : 'bg-brand-500'
                             }`}
@@ -681,7 +932,11 @@ const ModelDownloaderPage: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-1">
                             <ClockIcon className="w-3 h-3" />
-                            {new Date(model.updatedAt).toLocaleDateString()}
+                            {model.lastModified 
+                              ? new Date(model.lastModified).toLocaleDateString()
+                              : model.updatedAt 
+                                ? new Date(model.updatedAt).toLocaleDateString()
+                                : 'N/A'}
                           </div>
                         </div>
 
@@ -841,44 +1096,148 @@ const ModelDownloaderPage: React.FC = () => {
               </div>
               <div>
                 <span className="text-text-secondary">Updated:</span>
-                <span className="ml-2 text-text-primary">{new Date(selectedModel.updatedAt).toLocaleDateString()}</span>
+                <span className="ml-2 text-text-primary">
+                  {(() => {
+                    const dateStr = selectedModel.lastModified || selectedModel.updatedAt;
+                    if (dateStr && dateStr !== 'Invalid Date') {
+                      try {
+                        return new Date(dateStr).toLocaleDateString(undefined, { 
+                          year: 'numeric', 
+                          month: 'short', 
+                          day: 'numeric' 
+                        });
+                      } catch {
+                        return 'N/A';
+                      }
+                    }
+                    return 'N/A';
+                  })()}
+                </span>
               </div>
               <div>
-                <span className="text-text-secondary">Pipeline:</span>
-                <span className="ml-2 text-text-primary">{selectedModel.pipeline_tag || 'N/A'}</span>
+                <span className="text-text-secondary">License:</span>
+                <span className="ml-2 text-text-primary">{selectedModel.cardData?.license || 'N/A'}</span>
               </div>
             </div>
 
+            {/* GGUF Model Info */}
+            {selectedModel.gguf && (
+              <div className="p-4  dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                <h4 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+                  <DatabaseIcon className="w-4 h-4" />
+                  GGUF Model Information
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  {selectedModel.gguf.architecture && (
+                    <div>
+                      <span className="text-text-secondary">Architecture:</span>
+                      <span className="ml-2 text-text-primary font-medium">{selectedModel.gguf.architecture}</span>
+                    </div>
+                  )}
+                  {selectedModel.gguf.context_length && (
+                    <div>
+                      <span className="text-text-secondary">Context Length:</span>
+                      <span className="ml-2 text-text-primary font-medium">{selectedModel.gguf.context_length.toLocaleString()} tokens</span>
+                    </div>
+                  )}
+                  {selectedModel.gguf.total && (
+                    <div className="col-span-2">
+                      <span className="text-text-secondary">Total Model Size:</span>
+                      <span className="ml-2 text-text-primary font-medium">{formatFileSize(selectedModel.gguf.total)}</span>
+                    </div>
+                  )}
+                  {selectedModel.cardData?.base_model && selectedModel.cardData.base_model.length > 0 && (
+                    <div className="col-span-2">
+                      <span className="text-text-secondary">Base Model:</span>
+                      <span className="ml-2 text-text-primary font-medium">{selectedModel.cardData.base_model[0]}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* System Resources Info */}
+            {systemSpecs && (
+              <div className="p-4  dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <h4 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+                  <CpuIcon className="w-4 h-4" />
+                  Your System Resources
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-text-secondary">RAM:</span>
+                    <span className="ml-2 text-text-primary font-medium">{formatFileSize(systemSpecs.totalRAM)}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-secondary">VRAM:</span>
+                    <span className="ml-2 text-text-primary font-medium">{formatFileSize(systemSpecs.totalVRAM)}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-text-secondary">GPU:</span>
+                    <span className="ml-2 text-text-primary font-medium">{systemSpecs.gpuName || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Files */}
             <div>
-              <h4 className="text-sm font-semibold text-text-primary mb-3">Available GGUF Files</h4>
+              <h4 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+                Available GGUF Files
+                {loadingModelDetails && (
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-brand-500"></div>
+                )}
+              </h4>
               {(() => {
-                // Filter to only show GGUF files since ClaraCore only supports GGUF
-                const ggufFiles = selectedModel.siblings?.filter(file => 
-                  file.rfilename.toLowerCase().endsWith('.gguf')
-                ) || [];
+                // Get all GGUF files (both single and multi-part)
+                const ggufFiles = selectedModel.siblings || [];
                 
                 return ggufFiles.length > 0 ? (
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {ggufFiles.map((file) => (
+                    {ggufFiles.map((file: any) => (
                     <div
                       key={file.rfilename}
-                      className="flex items-center justify-between p-3 bg-surface-secondary rounded-lg"
+                      className="flex items-center justify-between p-3 bg-surface-secondary rounded-lg hover:bg-surface-tertiary transition-colors"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-text-primary truncate">
-                          {file.rfilename}
-                        </p>
-                        {file.size && (
-                          <p className="text-xs text-text-secondary">
-                            {formatFileSize(file.size)}
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-text-primary truncate">
+                            {file.rfilename}
                           </p>
-                        )}
+                          {file.isMultiPart && (
+                            <span className="px-2 py-0.5 text-xs bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-full whitespace-nowrap">
+                              {file.partCount} parts
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-text-secondary mt-1">
+                          {loadingModelDetails ? (
+                            <span className="flex items-center gap-1">
+                              <span className="animate-pulse">Loading size...</span>
+                            </span>
+                          ) : (
+                            <>
+                              {file.size ? formatFileSize(file.size) : 'Size unknown'}
+                              {file.isMultiPart && file.partCount && (
+                                <span className="ml-2 text-text-tertiary">
+                                  ({file.partCount} {file.partCount === 1 ? 'file' : 'files'})
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </p>
                       </div>
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => startDownload(selectedModel, file.rfilename)}
+                        onClick={() => {
+                          // For multi-part files, pass the parts array
+                          if (file.isMultiPart && file.parts) {
+                            startMultiPartDownload(selectedModel, file.rfilename, file.parts);
+                          } else {
+                            startDownload(selectedModel, file.rfilename);
+                          }
+                        }}
                         className="ml-3"
                       >
                         <DownloadIcon className="w-3 h-3 mr-1" />
@@ -911,6 +1270,18 @@ const ModelDownloaderPage: React.FC = () => {
           </div>
         </Modal>
       )}
+
+      {/* Download Destination Modal */}
+      <DownloadDestinationModal
+        open={showDestinationModal}
+        onClose={() => {
+          setShowDestinationModal(false);
+          setPendingDownload(null);
+        }}
+        onSelect={executeDownload}
+        modelName={pendingDownload?.model.id || ''}
+        filename={pendingDownload?.filename || ''}
+      />
     </div>
   );
 };
