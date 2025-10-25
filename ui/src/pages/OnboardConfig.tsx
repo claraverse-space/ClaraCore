@@ -399,14 +399,14 @@ const OnboardConfig: React.FC = () => {
         // Continue anyway
       }
 
-      // Use the new database-driven config generation
-      const response = await fetch('/api/config/generate-all', {
+      // Use the database-driven config generation that handles ALL tracked folders
+      // This is the SAME endpoint that "Force Reconfigure" uses
+      const response = await fetch('/api/config/regenerate-from-db', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          folderPath: folderPaths[0] || '/models', // Use first folder or default
           options: {
             enableJinja: true,
             throughputFirst: systemConfig.throughputFirst,

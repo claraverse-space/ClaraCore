@@ -2964,25 +2964,31 @@ func (pm *ProxyManager) apiRegenerateConfigFromDatabase(c *gin.Context) {
 	}
 
 	// Load saved system settings and merge with request options
-	// This ensures user's manual hardware selections persist across reconfigurations
+	// Request options take priority if explicitly provided (non-zero values)
+	// Otherwise use saved settings as fallback
 	savedSettings, err := pm.loadSystemSettings()
 	if err == nil && savedSettings != nil {
-		// User's saved settings take priority - they manually configured these
-		if savedSettings.Backend != "" {
+		// Only use saved settings if request didn't provide explicit values
+		if req.Options.ForceBackend == "" && savedSettings.Backend != "" {
 			req.Options.ForceBackend = savedSettings.Backend
 		}
-		if savedSettings.VRAMGB > 0 {
+		if req.Options.ForceVRAM == 0 && savedSettings.VRAMGB > 0 {
 			req.Options.ForceVRAM = savedSettings.VRAMGB
 		}
-		if savedSettings.RAMGB > 0 {
+		if req.Options.ForceRAM == 0 && savedSettings.RAMGB > 0 {
 			req.Options.ForceRAM = savedSettings.RAMGB
 		}
-		if savedSettings.PreferredContext > 0 {
+		if req.Options.PreferredContext == 0 && savedSettings.PreferredContext > 0 {
 			req.Options.PreferredContext = savedSettings.PreferredContext
 		}
-		// Apply other saved preferences
-		req.Options.EnableJinja = savedSettings.EnableJinja
-		req.Options.ThroughputFirst = savedSettings.ThroughputFirst
+		// Apply other saved preferences only if not explicitly set in request
+		// Note: boolean values always default to false if not set, so we trust saved settings
+		if !req.Options.EnableJinja && savedSettings.EnableJinja {
+			req.Options.EnableJinja = true
+		}
+		if !req.Options.ThroughputFirst && savedSettings.ThroughputFirst {
+			req.Options.ThroughputFirst = true
+		}
 	}
 
 	// Load folder database
