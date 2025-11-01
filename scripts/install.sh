@@ -305,7 +305,7 @@ EOF
 # Setup macOS LaunchAgent/Daemon
 setup_macos_service() {
     echo -e "${BLUE}Setting up macOS Launch Agent...${NC}"
-    
+
     if [[ "$SYSTEM_INSTALL" == true ]]; then
         PLIST_FILE="$LAUNCHD_DIR/com.claracore.server.plist"
         LABEL="com.claracore.server"
@@ -313,7 +313,7 @@ setup_macos_service() {
         PLIST_FILE="$LAUNCHD_DIR/com.claracore.server.plist"
         LABEL="com.claracore.server"
     fi
-    
+
     cat > "$PLIST_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -348,12 +348,41 @@ setup_macos_service() {
 </plist>
 EOF
 
-    if [[ "$SYSTEM_INSTALL" == true ]]; then
-        launchctl load "$PLIST_FILE"
-        echo -e "${GREEN}System daemon loaded. ClaraCore will start automatically.${NC}"
+    # Check if service is already loaded and unload it first
+    if launchctl list | grep -q "$LABEL" 2>/dev/null; then
+        echo -e "${YELLOW}Service already loaded, unloading first...${NC}"
+        launchctl unload "$PLIST_FILE" 2>/dev/null || true
+    fi
+
+    # Load the service
+    echo -e "${BLUE}Loading ClaraCore service...${NC}"
+    if launchctl load "$PLIST_FILE" 2>/dev/null; then
+        echo -e "${GREEN}✓ Service loaded successfully${NC}"
+
+        # Wait a moment for service to initialize
+        sleep 2
+
+        # Verify service is running
+        if launchctl list | grep -q "$LABEL" 2>/dev/null; then
+            echo -e "${GREEN}✓ Service is running (auto-start on login enabled)${NC}"
+            return 0
+        else
+            echo -e "${YELLOW}⚠ Service loaded but not found in service list${NC}"
+            return 1
+        fi
     else
-        launchctl load "$PLIST_FILE"
-        echo -e "${GREEN}User agent loaded. ClaraCore will start automatically when you log in.${NC}"
+        echo -e "${YELLOW}⚠ Failed to load Launch Agent${NC}"
+        echo -e "${YELLOW}  This may be due to permissions or an existing service${NC}"
+        echo
+        echo -e "${YELLOW}  Try manually with:${NC}"
+        if [[ "$SYSTEM_INSTALL" == true ]]; then
+            echo -e "    ${BLUE}sudo launchctl load $PLIST_FILE${NC}"
+        else
+            echo -e "    ${BLUE}launchctl load $PLIST_FILE${NC}"
+        fi
+        echo -e "${YELLOW}  Or start manually:${NC}"
+        echo -e "    ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
+        return 1
     fi
 }
 
@@ -429,8 +458,10 @@ main() {
             SERVICE_STARTED=true
         fi
     elif [[ "$PLATFORM" == "darwin" ]]; then
-        setup_macos_service
-        SERVICE_STARTED=true
+        # Check if macOS service setup succeeded
+        if setup_macos_service; then
+            SERVICE_STARTED=true
+        fi
     fi
 
     # Perform health check if service was started
@@ -495,15 +526,13 @@ main() {
             echo -e "   Start:   ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     elif [[ "$PLATFORM" == "darwin" ]]; then
-        if [[ "$SYSTEM_INSTALL" == true ]]; then
-            LABEL="com.claracore.server"
-        else
-            LABEL="com.claracore.server"
-        fi
+        LABEL="com.claracore.server"
         echo -e "   Status:  ${BLUE}launchctl list | grep claracore${NC}"
         echo -e "   Stop:    ${BLUE}launchctl stop $LABEL${NC}"
         echo -e "   Restart: ${BLUE}launchctl kickstart -k $LABEL${NC}"
+        echo -e "   Unload:  ${BLUE}launchctl unload ~/Library/LaunchAgents/$LABEL.plist${NC}"
         echo -e "   Logs:    ${BLUE}tail -f $CONFIG_DIR/claracore.log${NC}"
+        echo -e "   Errors:  ${BLUE}tail -f $CONFIG_DIR/claracore.error.log${NC}"
     fi
     echo
     echo -e "${YELLOW}Configuration Files:${NC}"
