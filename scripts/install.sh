@@ -249,14 +249,52 @@ EOF
 
     if [[ "$SYSTEM_INSTALL" == true ]]; then
         if systemctl daemon-reload 2>/dev/null && systemctl enable "$SERVICE_NAME" 2>/dev/null; then
-            echo -e "${GREEN}System service enabled. Start with: sudo systemctl start $SERVICE_NAME${NC}"
+            echo -e "${GREEN}✓ System service enabled (auto-start on boot)${NC}"
+
+            # Start the service immediately
+            echo -e "${BLUE}Starting ClaraCore service...${NC}"
+            if systemctl start "$SERVICE_NAME" 2>/dev/null; then
+                echo -e "${GREEN}✓ Service started successfully${NC}"
+
+                # Wait a moment for service to initialize
+                sleep 2
+
+                # Check service status
+                if systemctl is-active --quiet "$SERVICE_NAME"; then
+                    echo -e "${GREEN}✓ Service is running${NC}"
+                else
+                    echo -e "${YELLOW}⚠ Service may not be running properly. Check: sudo systemctl status $SERVICE_NAME${NC}"
+                fi
+            else
+                echo -e "${YELLOW}⚠ Failed to start service automatically${NC}"
+                echo -e "${YELLOW}  Manual start: sudo systemctl start $SERVICE_NAME${NC}"
+            fi
         else
             echo -e "${YELLOW}Failed to enable system service. You may need to run with sudo or start manually.${NC}"
             echo -e "${YELLOW}Manual start: sudo $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     else
         if systemctl --user daemon-reload 2>/dev/null && systemctl --user enable "$SERVICE_NAME" 2>/dev/null; then
-            echo -e "${GREEN}User service enabled. Start with: systemctl --user start $SERVICE_NAME${NC}"
+            echo -e "${GREEN}✓ User service enabled (auto-start on login)${NC}"
+
+            # Start the service immediately
+            echo -e "${BLUE}Starting ClaraCore service...${NC}"
+            if systemctl --user start "$SERVICE_NAME" 2>/dev/null; then
+                echo -e "${GREEN}✓ Service started successfully${NC}"
+
+                # Wait a moment for service to initialize
+                sleep 2
+
+                # Check service status
+                if systemctl --user is-active --quiet "$SERVICE_NAME"; then
+                    echo -e "${GREEN}✓ Service is running${NC}"
+                else
+                    echo -e "${YELLOW}⚠ Service may not be running properly. Check: systemctl --user status $SERVICE_NAME${NC}"
+                fi
+            else
+                echo -e "${YELLOW}⚠ Failed to start service automatically${NC}"
+                echo -e "${YELLOW}  Manual start: systemctl --user start $SERVICE_NAME${NC}"
+            fi
         else
             echo -e "${YELLOW}Failed to enable user service. Starting manually may be required.${NC}"
             echo -e "${YELLOW}Manual start: $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
@@ -319,6 +357,56 @@ EOF
     fi
 }
 
+# Check if service is healthy and responding
+check_service_health() {
+    echo -e "${BLUE}Checking service health...${NC}"
+
+    # Wait for service to fully initialize
+    local max_attempts=15
+    local attempt=1
+    local port=5800
+
+    while [ $attempt -le $max_attempts ]; do
+        # Try to connect to the service
+        if command -v curl >/dev/null 2>&1; then
+            if curl -s -f "http://localhost:$port/" >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ ClaraCore is running and accessible${NC}"
+                echo -e "${GREEN}✓ Web interface available at: ${BLUE}http://localhost:$port/ui/${NC}"
+                return 0
+            fi
+        elif command -v wget >/dev/null 2>&1; then
+            if wget -q -O /dev/null "http://localhost:$port/" 2>/dev/null; then
+                echo -e "${GREEN}✓ ClaraCore is running and accessible${NC}"
+                echo -e "${GREEN}✓ Web interface available at: ${BLUE}http://localhost:$port/ui/${NC}"
+                return 0
+            fi
+        else
+            # No curl or wget, try netcat or simple bash tcp check
+            if (echo >/dev/tcp/localhost/$port) >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ Service is listening on port $port${NC}"
+                echo -e "${GREEN}✓ Web interface should be at: ${BLUE}http://localhost:$port/ui/${NC}"
+                return 0
+            fi
+        fi
+
+        # Show progress
+        if [ $attempt -eq 1 ]; then
+            echo -ne "${YELLOW}  Waiting for service to start"
+        else
+            echo -ne "."
+        fi
+
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+
+    echo
+    echo -e "${YELLOW}⚠ Could not verify service is responding${NC}"
+    echo -e "${YELLOW}  The service may still be starting or there may be an issue${NC}"
+    echo -e "${YELLOW}  Check the service status and logs${NC}"
+    return 1
+}
+
 # Main installation flow
 main() {
     echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
@@ -331,14 +419,26 @@ main() {
     get_latest_release
     download_binary
     create_config
-    
+
     # Setup autostart service
+    SERVICE_STARTED=false
     if [[ "$PLATFORM" == "linux" ]]; then
         setup_linux_service
+        # Check if systemd is available and service was likely started
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+            SERVICE_STARTED=true
+        fi
     elif [[ "$PLATFORM" == "darwin" ]]; then
         setup_macos_service
+        SERVICE_STARTED=true
     fi
-    
+
+    # Perform health check if service was started
+    if [[ "$SERVICE_STARTED" == true ]]; then
+        echo
+        check_service_health
+    fi
+
     echo
     echo -e "${GREEN}╔══════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║     Installation Completed!         ║${NC}"
@@ -356,39 +456,59 @@ main() {
         echo
     fi
     
-    echo -e "${YELLOW}Next steps:${NC}"
-    echo -e "1. Configure your models folder:"
-    echo -e "   ${BLUE}claracore --models-folder /path/to/your/models${NC}"
-    echo
-    echo -e "2. Or start with the web interface:"
-    echo -e "   ${BLUE}claracore${NC}"
-    echo -e "   Then visit: ${BLUE}http://localhost:5800/ui/setup${NC}"
-    echo
-    echo -e "3. Service management:"
+    if [[ "$SERVICE_STARTED" == true ]]; then
+        echo -e "${GREEN}✓ ClaraCore is now running as a service and will auto-start on boot!${NC}"
+        echo
+        echo -e "${YELLOW}Quick Start:${NC}"
+        echo -e "1. ${GREEN}Open your browser and visit: ${BLUE}http://localhost:5800/ui/${NC}"
+        echo
+        echo -e "2. Configure your models via the web interface:"
+        echo -e "   • Click 'Setup' to configure your models folder"
+        echo -e "   • Or use the auto-discovery wizard"
+        echo
+    else
+        echo -e "${YELLOW}Next steps:${NC}"
+        echo -e "1. Start ClaraCore manually:"
+        echo -e "   ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
+        echo
+        echo -e "2. Then visit the web interface:"
+        echo -e "   ${BLUE}http://localhost:5800/ui/setup${NC}"
+        echo
+    fi
+
+    echo -e "${YELLOW}Service Management:${NC}"
     if [[ "$PLATFORM" == "linux" ]]; then
         if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
             if [[ "$SYSTEM_INSTALL" == true ]]; then
-                echo -e "   Start:   ${BLUE}sudo systemctl start $SERVICE_NAME${NC}"
-                echo -e "   Stop:    ${BLUE}sudo systemctl stop $SERVICE_NAME${NC}"
                 echo -e "   Status:  ${BLUE}sudo systemctl status $SERVICE_NAME${NC}"
+                echo -e "   Stop:    ${BLUE}sudo systemctl stop $SERVICE_NAME${NC}"
+                echo -e "   Restart: ${BLUE}sudo systemctl restart $SERVICE_NAME${NC}"
+                echo -e "   Logs:    ${BLUE}sudo journalctl -u $SERVICE_NAME -f${NC}"
             else
-                echo -e "   Start:   ${BLUE}systemctl --user start $SERVICE_NAME${NC}"
-                echo -e "   Stop:    ${BLUE}systemctl --user stop $SERVICE_NAME${NC}"
                 echo -e "   Status:  ${BLUE}systemctl --user status $SERVICE_NAME${NC}"
+                echo -e "   Stop:    ${BLUE}systemctl --user stop $SERVICE_NAME${NC}"
+                echo -e "   Restart: ${BLUE}systemctl --user restart $SERVICE_NAME${NC}"
+                echo -e "   Logs:    ${BLUE}journalctl --user -u $SERVICE_NAME -f${NC}"
             fi
         else
             echo -e "   ${YELLOW}Systemd not available - manual start required:${NC}"
             echo -e "   Start:   ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     elif [[ "$PLATFORM" == "darwin" ]]; then
-        echo -e "   Start:   ${BLUE}launchctl start $LABEL${NC}"
+        if [[ "$SYSTEM_INSTALL" == true ]]; then
+            LABEL="com.claracore.server"
+        else
+            LABEL="com.claracore.server"
+        fi
+        echo -e "   Status:  ${BLUE}launchctl list | grep claracore${NC}"
         echo -e "   Stop:    ${BLUE}launchctl stop $LABEL${NC}"
-        echo -e "   Unload:  ${BLUE}launchctl unload $PLIST_FILE${NC}"
+        echo -e "   Restart: ${BLUE}launchctl kickstart -k $LABEL${NC}"
+        echo -e "   Logs:    ${BLUE}tail -f $CONFIG_DIR/claracore.log${NC}"
     fi
     echo
-    echo -e "4. Configuration files:"
-    echo -e "   Config:    ${BLUE}$CONFIG_DIR/config.yaml${NC}"
-    echo -e "   Settings:  ${BLUE}$CONFIG_DIR/settings.json${NC}"
+    echo -e "${YELLOW}Configuration Files:${NC}"
+    echo -e "   Config:   ${BLUE}$CONFIG_DIR/config.yaml${NC}"
+    echo -e "   Settings: ${BLUE}$CONFIG_DIR/settings.json${NC}"
     echo
     echo -e "${GREEN}Documentation: https://github.com/$REPO/tree/main/docs${NC}"
     echo -e "${GREEN}Support: https://github.com/$REPO/issues${NC}"
