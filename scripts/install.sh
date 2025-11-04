@@ -177,7 +177,7 @@ cors: true
 api_key: ""
 
 # Models will be auto-discovered and configured
-models: []
+models: {}
 
 # Model groups for memory management
 groups: {}
@@ -194,6 +194,13 @@ EOF
   "enableJinja": true,
   "requireApiKey": false,
   "apiKey": ""
+}
+EOF
+
+    # Create model_folders.json (required for self-heal)
+    cat > "$CONFIG_DIR/model_folders.json" << 'EOF'
+{
+  "folders": []
 }
 EOF
 
@@ -220,6 +227,9 @@ setup_linux_service() {
     
     SERVICE_FILE="$SYSTEMD_DIR/$SERVICE_NAME.service"
     
+    # Create logs directory
+    mkdir -p "$CONFIG_DIR/logs"
+    
     cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=ClaraCore AI Inference Server
@@ -236,12 +246,22 @@ RestartSec=3
 Environment=HOME=$HOME
 Environment=USER=$USER
 
+# Logging configuration - runs silently, logs to systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claracore
+
 # Security settings
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=$CONFIG_DIR $HOME/models
+
+# Performance and reliability
+LimitNOFILE=65536
+TimeoutStartSec=60
+TimeoutStopSec=30
 
 [Install]
 WantedBy=default.target
@@ -314,6 +334,9 @@ setup_macos_service() {
         LABEL="com.claracore.server"
     fi
 
+    # Create logs directory
+    mkdir -p "$CONFIG_DIR/logs"
+
     cat > "$PLIST_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -333,10 +356,12 @@ setup_macos_service() {
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
     <key>StandardOutPath</key>
-    <string>$CONFIG_DIR/claracore.log</string>
+    <string>$CONFIG_DIR/logs/claracore.log</string>
     <key>StandardErrorPath</key>
-    <string>$CONFIG_DIR/claracore.error.log</string>
+    <string>$CONFIG_DIR/logs/claracore.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>
@@ -344,20 +369,29 @@ setup_macos_service() {
         <key>USER</key>
         <string>$USER</string>
     </dict>
+    <key>SessionCreate</key>
+    <false/>
+    <key>LaunchOnlyOnce</key>
+    <false/>
 </dict>
 </plist>
 EOF
+
+    # Set proper permissions for plist file
+    chmod 644 "$PLIST_FILE"
 
     # Check if service is already loaded and unload it first
     if launchctl list | grep -q "$LABEL" 2>/dev/null; then
         echo -e "${YELLOW}Service already loaded, unloading first...${NC}"
         launchctl unload "$PLIST_FILE" 2>/dev/null || true
+        sleep 1
     fi
 
     # Load the service
     echo -e "${BLUE}Loading ClaraCore service...${NC}"
     if launchctl load "$PLIST_FILE" 2>/dev/null; then
         echo -e "${GREEN}✓ Service loaded successfully${NC}"
+        echo -e "${GREEN}✓ ClaraCore will run silently in the background${NC}"
 
         # Wait a moment for service to initialize
         sleep 2
@@ -365,6 +399,13 @@ EOF
         # Verify service is running
         if launchctl list | grep -q "$LABEL" 2>/dev/null; then
             echo -e "${GREEN}✓ Service is running (auto-start on login enabled)${NC}"
+            
+            # Get the PID to confirm it's actually running
+            PID=$(launchctl list | grep "$LABEL" | awk '{print $1}')
+            if [[ "$PID" != "-" ]]; then
+                echo -e "${GREEN}✓ Process running with PID: $PID${NC}"
+            fi
+            
             return 0
         else
             echo -e "${YELLOW}⚠ Service loaded but not found in service list${NC}"
@@ -467,7 +508,50 @@ main() {
     # Perform health check if service was started
     if [[ "$SERVICE_STARTED" == true ]]; then
         echo
-        check_service_health
+        if ! check_service_health; then
+            echo
+            echo -e "${YELLOW}⚠ Service is installed but may not be responding yet${NC}"
+            echo -e "${YELLOW}Troubleshooting steps:${NC}"
+            echo
+            if [[ "$PLATFORM" == "linux" ]]; then
+                echo -e "${BLUE}1. Check service status:${NC}"
+                if [[ "$SYSTEM_INSTALL" == true ]]; then
+                    echo -e "   ${GREEN}sudo systemctl status $SERVICE_NAME${NC}"
+                else
+                    echo -e "   ${GREEN}systemctl --user status $SERVICE_NAME${NC}"
+                fi
+                echo
+                echo -e "${BLUE}2. View logs:${NC}"
+                if [[ "$SYSTEM_INSTALL" == true ]]; then
+                    echo -e "   ${GREEN}sudo journalctl -u $SERVICE_NAME -n 50${NC}"
+                else
+                    echo -e "   ${GREEN}journalctl --user -u $SERVICE_NAME -n 50${NC}"
+                fi
+                echo
+                echo -e "${BLUE}3. Try restarting:${NC}"
+                if [[ "$SYSTEM_INSTALL" == true ]]; then
+                    echo -e "   ${GREEN}sudo systemctl restart $SERVICE_NAME${NC}"
+                else
+                    echo -e "   ${GREEN}systemctl --user restart $SERVICE_NAME${NC}"
+                fi
+            elif [[ "$PLATFORM" == "darwin" ]]; then
+                LABEL="com.claracore.server"
+                echo -e "${BLUE}1. Check service status:${NC}"
+                echo -e "   ${GREEN}launchctl list | grep claracore${NC}"
+                echo
+                echo -e "${BLUE}2. View logs:${NC}"
+                echo -e "   ${GREEN}tail -n 50 $CONFIG_DIR/logs/claracore.error.log${NC}"
+                echo
+                echo -e "${BLUE}3. Try restarting:${NC}"
+                echo -e "   ${GREEN}launchctl kickstart -k $LABEL${NC}"
+            fi
+            echo
+            echo -e "${BLUE}4. Check if binary is executable:${NC}"
+            echo -e "   ${GREEN}ls -la $INSTALL_DIR/claracore${NC}"
+            echo
+            echo -e "${BLUE}5. Try starting manually to see errors:${NC}"
+            echo -e "   ${GREEN}$INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+        fi
     fi
 
     echo
@@ -488,7 +572,8 @@ main() {
     fi
     
     if [[ "$SERVICE_STARTED" == true ]]; then
-        echo -e "${GREEN}✓ ClaraCore is now running as a service and will auto-start on boot!${NC}"
+        echo -e "${GREEN}✓ ClaraCore is now running silently in the background!${NC}"
+        echo -e "${GREEN}✓ It will automatically start on system boot${NC}"
         echo
         echo -e "${YELLOW}Quick Start:${NC}"
         echo -e "1. ${GREEN}Open your browser and visit: ${BLUE}http://localhost:5800/ui/${NC}"
@@ -496,6 +581,11 @@ main() {
         echo -e "2. Configure your models via the web interface:"
         echo -e "   • Click 'Setup' to configure your models folder"
         echo -e "   • Or use the auto-discovery wizard"
+        echo
+        echo -e "${BLUE}💡 Tips:${NC}"
+        echo -e "   • ClaraCore runs as a background service (no terminal window)"
+        echo -e "   • Just like Ollama, it runs silently in the background"
+        echo -e "   • Access it anytime via the web interface"
         echo
     else
         echo -e "${YELLOW}Next steps:${NC}"
@@ -531,8 +621,8 @@ main() {
         echo -e "   Stop:    ${BLUE}launchctl stop $LABEL${NC}"
         echo -e "   Restart: ${BLUE}launchctl kickstart -k $LABEL${NC}"
         echo -e "   Unload:  ${BLUE}launchctl unload ~/Library/LaunchAgents/$LABEL.plist${NC}"
-        echo -e "   Logs:    ${BLUE}tail -f $CONFIG_DIR/claracore.log${NC}"
-        echo -e "   Errors:  ${BLUE}tail -f $CONFIG_DIR/claracore.error.log${NC}"
+        echo -e "   Logs:    ${BLUE}tail -f $CONFIG_DIR/logs/claracore.log${NC}"
+        echo -e "   Errors:  ${BLUE}tail -f $CONFIG_DIR/logs/claracore.error.log${NC}"
     fi
     echo
     echo -e "${YELLOW}Configuration Files:${NC}"

@@ -101,34 +101,58 @@ function Stop-ClaraProcesses {
 }
 
 function Remove-WindowsService {
-    if (-not (Test-AdminRights)) {
-        Write-ColorOutput "Warning: Cannot remove Windows Service without administrator privileges" "Yellow"
-        return
-    }
-    
-    Write-ColorOutput "Removing Windows Service..." "Blue"
+    Write-ColorOutput "Removing ClaraCore service..." "Blue"
     
     $serviceName = "ClaraCore"
-    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    $serviceRemoved = $false
     
+    # Check and remove Windows Service
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if ($service) {
-        try {
-            # Stop service if running
-            if ($service.Status -eq "Running") {
-                Stop-Service -Name $serviceName -Force
-                Write-ColorOutput "Service stopped" "Green"
+        if (-not (Test-AdminRights)) {
+            Write-ColorOutput "Warning: Cannot remove Windows Service without administrator privileges" "Yellow"
+            Write-ColorOutput "Please run as administrator to remove the Windows Service" "Yellow"
+        } else {
+            try {
+                # Stop service if running
+                if ($service.Status -eq "Running") {
+                    Stop-Service -Name $serviceName -Force
+                    Write-ColorOutput "Service stopped" "Green"
+                }
+                
+                # Remove service
+                sc.exe delete $serviceName | Out-Null
+                Write-ColorOutput "Windows Service removed" "Green"
+                $serviceRemoved = $true
             }
-            
-            # Remove service
-            sc.exe delete $serviceName | Out-Null
-            Write-ColorOutput "Windows Service removed" "Green"
-        }
-        catch {
-            Write-ColorOutput "Error removing service: $($_.Exception.Message)" "Red"
+            catch {
+                Write-ColorOutput "Error removing service: $($_.Exception.Message)" "Red"
+            }
         }
     }
-    else {
-        Write-ColorOutput "No Windows Service found" "Yellow"
+    
+    # Check and remove Scheduled Task
+    $task = Get-ScheduledTask -TaskName $serviceName -ErrorAction SilentlyContinue
+    if ($task) {
+        try {
+            # Stop task if running
+            if ($task.State -eq "Running") {
+                Stop-ScheduledTask -TaskName $serviceName -ErrorAction SilentlyContinue
+                Write-ColorOutput "Scheduled task stopped" "Green"
+            }
+            
+            # Remove task
+            Unregister-ScheduledTask -TaskName $serviceName -Confirm:$false
+            Write-ColorOutput "Scheduled Task removed" "Green"
+            $serviceRemoved = $true
+        }
+        catch {
+            Write-ColorOutput "Error removing scheduled task: $($_.Exception.Message)" "Red"
+        }
+    }
+    
+    if (-not $serviceRemoved) {
+        Write-ColorOutput "No Windows Service or Scheduled Task found" "Yellow"
     }
 }
 

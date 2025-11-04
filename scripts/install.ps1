@@ -158,7 +158,7 @@ cors: true
 api_key: ""
 
 # Models will be auto-discovered and configured
-models: []
+models: {}
 
 # Model groups for memory management
 groups: {}
@@ -178,8 +178,15 @@ groups: {}
 }
 "@
 
+    $modelFoldersJson = @"
+{
+  "folders": []
+}
+"@
+
     $configYaml | Out-File -FilePath (Join-Path $ConfigDir "config.yaml") -Encoding UTF8
     $settingsJson | Out-File -FilePath (Join-Path $ConfigDir "settings.json") -Encoding UTF8
+    $modelFoldersJson | Out-File -FilePath (Join-Path $ConfigDir "model_folders.json") -Encoding UTF8
     
     Write-ColorOutput "Default configuration created in $ConfigDir" "Green"
 }
@@ -189,7 +196,8 @@ function Install-WindowsService {
     
     if (-not (Test-AdminRights)) {
         Write-ColorOutput "Warning: Cannot install Windows Service without administrator privileges" "Yellow"
-        Write-ColorOutput "Skipping service installation. You can install manually later." "Yellow"
+        Write-ColorOutput "Installing user-level service instead..." "Yellow"
+        Install-UserLevelService $Paths
         return
     }
     
@@ -209,8 +217,8 @@ function Install-WindowsService {
     }
     
     # Create service with proper user context
-    # Don't specify config file - let ClaraCore create its own
-    $binaryPath = "`"$($Paths.BinaryPath)`""
+    $configPath = Join-Path $Paths.ConfigDir "config.yaml"
+    $binaryPath = "`"$($Paths.BinaryPath)`" --config `"$configPath`""
     
     try {
         # Test if binary can run first
@@ -221,40 +229,109 @@ function Install-WindowsService {
             throw "Binary test failed. Likely blocked by Windows security policies."
         }
         
-        # Create startup shortcut instead of Windows service (more reliable for console apps)
-        Write-ColorOutput "Setting up auto-start shortcut..." "Blue"
+        Write-ColorOutput "Creating Windows Service..." "Blue"
         
-        try {
-            $startupPath = [Environment]::GetFolderPath("Startup")
-            $shortcutPath = Join-Path $startupPath "ClaraCore.lnk"
-            
-            $shell = New-Object -ComObject WScript.Shell
-            $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = $Paths.BinaryPath
-            $shortcut.WorkingDirectory = Split-Path $Paths.BinaryPath -Parent
-            $shortcut.WindowStyle = 7  # Minimized window
-            $shortcut.Description = "ClaraCore AI Inference Server"
-            $shortcut.Save()
-            
-            Write-ColorOutput "Auto-start shortcut created successfully" "Green"
-            Write-ColorOutput "ClaraCore will start automatically when you log in" "Green"
-            Write-ColorOutput "Shortcut location: $shortcutPath" "Blue"
-            
-            # Release COM object
-            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell) | Out-Null
-            
-        } catch {
-            Write-ColorOutput "Warning: Could not create auto-start shortcut: $($_.Exception.Message)" "Yellow"
+        # Create the Windows service using sc.exe
+        $createResult = sc.exe create $serviceName binPath= $binaryPath start= auto DisplayName= $serviceDisplayName
+        
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create service: $createResult"
+        }
+        
+        # Set service description
+        sc.exe description $serviceName $serviceDescription | Out-Null
+        
+        # Configure service to restart on failure
+        sc.exe failure $serviceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+        
+        # Set service to run as LocalSystem with desktop interaction disabled (runs in background)
+        Write-ColorOutput "Configuring service to run in background..." "Blue"
+        
+        # Start the service
+        Write-ColorOutput "Starting ClaraCore service..." "Blue"
+        Start-Service -Name $serviceName -ErrorAction Stop
+        
+        # Wait a moment and check status
+        Start-Sleep -Seconds 3
+        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+        
+        if ($service.Status -eq 'Running') {
+            Write-ColorOutput "✅ Windows Service installed and started successfully" "Green"
+            Write-ColorOutput "✅ ClaraCore will run in background on system startup" "Green"
+            Write-ColorOutput "   Service Name: $serviceName" "Blue"
+            return $true
+        } else {
+            throw "Service created but failed to start. Status: $($service.Status)"
         }
     }
     catch {
         Write-ColorOutput "Error: Failed to install Windows Service: $($_.Exception.Message)" "Red"
         Write-ColorOutput "" "White"
-        Write-ColorOutput "This is likely due to Windows security policies blocking the executable." "Yellow"
-        Write-ColorOutput "Solutions:" "Yellow"
-        Write-ColorOutput "1. Unblock the file: Unblock-File `"$($Paths.BinaryPath)`"" "White"
-        Write-ColorOutput "2. Start manually: $($Paths.BinaryPath)" "White"
-        Write-ColorOutput "3. Add Windows Defender exclusion for: $(Split-Path $Paths.BinaryPath)" "White"
+        Write-ColorOutput "Attempting user-level service installation instead..." "Yellow"
+        Install-UserLevelService $Paths
+    }
+}
+
+function Install-UserLevelService {
+    param([hashtable]$Paths)
+    
+    Write-ColorOutput "Setting up user-level auto-start (Task Scheduler)..." "Blue"
+    
+    try {
+        $taskName = "ClaraCore"
+        $configPath = Join-Path $Paths.ConfigDir "config.yaml"
+        
+        # Remove existing task if it exists
+        $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        if ($existingTask) {
+            Write-ColorOutput "Removing existing scheduled task..." "Yellow"
+            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        }
+        
+        # Create action to run ClaraCore hidden
+        $action = New-ScheduledTaskAction -Execute $Paths.BinaryPath -Argument "--config `"$configPath`"" -WorkingDirectory (Split-Path $Paths.BinaryPath)
+        
+        # Create trigger to run at logon
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        
+        # Create settings for the task
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable:$false -Hidden
+        
+        # Create principal to run with highest privileges without showing window
+        $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+        
+        # Register the scheduled task
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "ClaraCore AI Inference Server - Runs in background" | Out-Null
+        
+        Write-ColorOutput "✅ User-level service installed successfully" "Green"
+        Write-ColorOutput "✅ ClaraCore will start automatically when you log in" "Green"
+        Write-ColorOutput "   Task Name: $taskName" "Blue"
+        
+        # Try to start the task immediately
+        Write-ColorOutput "Starting ClaraCore task..." "Blue"
+        try {
+            Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+            Start-Sleep -Seconds 3
+            
+            # Verify task started
+            $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+            if ($taskInfo) {
+                Write-ColorOutput "✅ Task started successfully" "Green"
+                return $true
+            } else {
+                Write-ColorOutput "⚠ Task created but may not have started" "Yellow"
+                return $true
+            }
+        } catch {
+            Write-ColorOutput "Warning: Task created but failed to start immediately: $($_.Exception.Message)" "Yellow"
+            Write-ColorOutput "It will start automatically on next login" "Yellow"
+            return $true
+        }
+    }
+    catch {
+        Write-ColorOutput "Warning: Could not create scheduled task: $($_.Exception.Message)" "Yellow"
+        Write-ColorOutput "You can start ClaraCore manually: $($Paths.BinaryPath)" "Yellow"
+        return $false
     }
 }
 
@@ -275,56 +352,50 @@ function Create-DesktopShortcut {
 }
 
 function Show-NextSteps {
-    param([hashtable]$Paths)
+    param([hashtable]$Paths, [bool]$ServiceInstalled)
     
     Write-Header "Installation Completed!"
     
-    Write-ColorOutput "Next steps:" "Yellow"
+    Write-ColorOutput "✅ ClaraCore is now installed and running in the background!" "Green"
     Write-Host ""
     
-    # Test if binary works
-    Write-ColorOutput "Testing installation..." "Blue"
-    try {
-        $testResult = Start-Process -FilePath $Paths.BinaryPath -ArgumentList "--version" -Wait -PassThru -WindowStyle Hidden -ErrorAction Stop
-        if ($testResult.ExitCode -eq 0) {
-            Write-ColorOutput "✅ Installation test successful!" "Green"
+    Write-ColorOutput "🌐 Web Interface:" "Yellow"
+    Write-ColorOutput "   Open your browser and visit: http://localhost:5800/ui/" "Blue"
+    Write-Host ""
+    
+    if ($ServiceInstalled) {
+        Write-ColorOutput "🔧 Service Management:" "Yellow"
+        
+        $isAdmin = Test-AdminRights
+        if ($isAdmin) {
+            Write-ColorOutput "   Status:   Get-Service ClaraCore | Select-Object Status,StartType" "Blue"
+            Write-ColorOutput "   Stop:     Stop-Service ClaraCore" "Blue"
+            Write-ColorOutput "   Start:    Start-Service ClaraCore" "Blue"
+            Write-ColorOutput "   Restart:  Restart-Service ClaraCore" "Blue"
+            Write-ColorOutput "   Logs:     Get-EventLog -LogName Application -Source ClaraCore -Newest 50" "Blue"
         } else {
-            throw "Binary test failed"
+            Write-ColorOutput "   Status:   Get-ScheduledTask -TaskName ClaraCore" "Blue"
+            Write-ColorOutput "   Stop:     Stop-ScheduledTask -TaskName ClaraCore" "Blue"
+            Write-ColorOutput "   Start:    Start-ScheduledTask -TaskName ClaraCore" "Blue"
+            Write-ColorOutput "   Disable:  Disable-ScheduledTask -TaskName ClaraCore" "Blue"
+            Write-ColorOutput "   Enable:   Enable-ScheduledTask -TaskName ClaraCore" "Blue"
         }
-    }
-    catch {
-        Write-ColorOutput "⚠️  Binary is blocked by Windows security" "Yellow"
         Write-Host ""
-        Write-ColorOutput "IMPORTANT: Fix Windows security blocking:" "Red"
-        Write-ColorOutput "   Unblock-File `"$($Paths.BinaryPath)`"" "White"
-        Write-Host ""
-        Write-ColorOutput "Or add Windows Defender exclusion:" "Yellow"
-        Write-ColorOutput "   Windows Security > Exclusions > Add folder: $(Split-Path $Paths.BinaryPath)" "White"
     }
-    Write-Host ""
     
-    Write-ColorOutput "1. Configure your models folder:" "White"
-    Write-ColorOutput "   $($Paths.BinaryPath) --models-folder `"C:\path\to\your\models`"" "Blue"
-    Write-Host ""
-    
-    Write-ColorOutput "2. Or start with the web interface:" "White"
-    Write-ColorOutput "   $($Paths.BinaryPath)" "Blue"
-    Write-ColorOutput "   Then visit: http://localhost:5800/ui/setup" "Blue"
-    Write-Host ""
-    
-    Write-ColorOutput "3. Auto-start:" "White"
-    Write-ColorOutput "   ClaraCore will start automatically when you log in" "Blue"
-    Write-ColorOutput "   Manual start: $($Paths.BinaryPath)" "Blue"
-    Write-ColorOutput "   Stop: Close the ClaraCore window or press Ctrl+C" "Blue"
-    Write-Host ""
-    
-    Write-ColorOutput "4. Configuration files:" "White"
+    Write-ColorOutput "📂 Configuration Files:" "Yellow"
     Write-ColorOutput "   Config:    $(Join-Path $Paths.ConfigDir "config.yaml")" "Blue"
     Write-ColorOutput "   Settings:  $(Join-Path $Paths.ConfigDir "settings.json")" "Blue"
     Write-Host ""
     
-    Write-ColorOutput "Documentation: https://github.com/badboysm890/ClaraCore/tree/main/docs" "Green"
-    Write-ColorOutput "Support: https://github.com/badboysm890/ClaraCore/issues" "Green"
+    Write-ColorOutput "💡 Quick Tips:" "Yellow"
+    Write-ColorOutput "   • ClaraCore runs silently in the background (no terminal window)" "White"
+    Write-ColorOutput "   • It will auto-start when your system boots" "White"
+    Write-ColorOutput "   • Configure models via the web interface at http://localhost:5800/ui/setup" "White"
+    Write-Host ""
+    
+    Write-ColorOutput "📚 Documentation: https://github.com/claraverse-space/ClaraCore/tree/main/docs" "Green"
+    Write-ColorOutput "❓ Support: https://github.com/claraverse-space/ClaraCore/issues" "Green"
 }
 
 function Main {
@@ -350,8 +421,9 @@ function Main {
         Create-DefaultConfig $paths.ConfigDir
         
         # Install Windows Service (if requested and admin)
+        $serviceInstalled = $false
         if (-not $NoService) {
-            Install-WindowsService $paths
+            $serviceInstalled = Install-WindowsService $paths
         }
         
         # Create desktop shortcut
@@ -360,8 +432,61 @@ function Main {
         # Clean up temp file
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
         
+        # Wait a moment for service to start
+        if ($serviceInstalled) {
+            Write-ColorOutput "Waiting for ClaraCore to initialize..." "Blue"
+            Start-Sleep -Seconds 5
+            
+            # Try to check if service is responding
+            $maxAttempts = 10
+            $attempt = 0
+            $isRunning = $false
+            
+            while ($attempt -lt $maxAttempts -and -not $isRunning) {
+                try {
+                    $response = Invoke-WebRequest -Uri "http://localhost:5800/" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+                    if ($response.StatusCode -eq 200) {
+                        Write-ColorOutput "✅ ClaraCore is running and accessible!" "Green"
+                        $isRunning = $true
+                        break
+                    }
+                } catch {
+                    if ($attempt -eq 0) {
+                        Write-Host -NoNewline "  Waiting for service to start"
+                    }
+                    Write-Host -NoNewline "."
+                    Start-Sleep -Seconds 1
+                }
+                $attempt++
+            }
+            
+            if (-not $isRunning) {
+                Write-Host ""
+                Write-ColorOutput "⚠ Service may not have started automatically" "Yellow"
+                Write-Host ""
+                Write-ColorOutput "Troubleshooting steps:" "Yellow"
+                Write-ColorOutput "1. Check if binary is blocked:" "White"
+                Write-ColorOutput "   Unblock-File `"$($paths.BinaryPath)`"" "Blue"
+                Write-Host ""
+                Write-ColorOutput "2. Try starting manually:" "White"
+                Write-ColorOutput "   Start-ScheduledTask -TaskName ClaraCore" "Blue"
+                Write-ColorOutput "   # or if admin: Start-Service ClaraCore" "Blue"
+                Write-Host ""
+                Write-ColorOutput "3. Check service status:" "White"
+                Write-ColorOutput "   .\scripts\claracore-service.ps1 status" "Blue"
+                Write-Host ""
+                Write-ColorOutput "4. Add Windows Defender exclusion:" "White"
+                Write-ColorOutput "   .\scripts\add-defender-exclusion.bat" "Blue"
+            }
+        } else {
+            Write-Host ""
+            Write-ColorOutput "⚠ Service installation may have failed" "Yellow"
+            Write-ColorOutput "You can start ClaraCore manually with:" "White"
+            Write-ColorOutput "   $($paths.BinaryPath)" "Blue"
+        }
+        
         # Show next steps
-        Show-NextSteps $paths
+        Show-NextSteps $paths $serviceInstalled
         
         Write-Host ""
         Write-ColorOutput "Installation completed successfully!" "Green"
