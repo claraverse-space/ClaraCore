@@ -1,0 +1,42 @@
+# ClaraCore Log Rotation Configuration
+# Install to /etc/logrotate.d/claracore (system) or ~/.config/logrotate.d/claracore (user)
+#
+# For user-level logrotate, add to crontab:
+# 0 0 * * * /usr/sbin/logrotate ~/.config/logrotate.d/claracore --state ~/.config/logrotate-state
+
+# User-level log rotation
+~/.config/claracore/logs/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644
+    dateext
+    dateformat -%Y%m%d
+    maxsize 100M
+    sharedscripts
+    postrotate
+        # Signal the service to reopen log files (if using file logging)
+        systemctl --user restart claracore >/dev/null 2>&1 || true
+    endscript
+}
+
+# System-wide log rotation (if running as system service)
+/var/log/claracore/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 claracore claracore
+    dateext
+    dateformat -%Y%m%d
+    maxsize 100M
+    sharedscripts
+    postrotate
+        systemctl restart claracore >/dev/null 2>&1 || true
+    endscript
+}

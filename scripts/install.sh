@@ -246,7 +246,7 @@ RestartSec=3
 Environment=HOME=$HOME
 Environment=USER=$USER
 
-# Logging configuration - runs silently, logs to systemd journal
+# Logging configuration - logs to systemd journal (auto-rotated by journald)
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=claracore
@@ -257,6 +257,12 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=$CONFIG_DIR $HOME/models
+
+# Resource limits (prevent runaway processes)
+MemoryMax=16G
+MemoryHigh=12G
+CPUQuota=400%
+TasksMax=4096
 
 # Performance and reliability
 LimitNOFILE=65536
@@ -319,6 +325,27 @@ EOF
             echo -e "${YELLOW}Failed to enable user service. Starting manually may be required.${NC}"
             echo -e "${YELLOW}Manual start: $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
         fi
+    fi
+
+    # Setup log rotation for user-level service
+    if [[ "$SYSTEM_INSTALL" == false ]]; then
+        mkdir -p "$HOME/.config/logrotate.d"
+        cat > "$HOME/.config/logrotate.d/claracore" << 'LOGROTATE_EOF'
+# ClaraCore log rotation (user-level)
+~/.config/claracore/logs/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644
+    dateext
+    dateformat -%Y%m%d
+    maxsize 100M
+}
+LOGROTATE_EOF
+        echo -e "${GREEN}✓ Log rotation configured for user logs${NC}"
     fi
 }
 
@@ -425,6 +452,21 @@ EOF
         echo -e "    ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
         return 1
     fi
+
+    # Setup log rotation for macOS (using newsyslog)
+    # Note: macOS has built-in log rotation through newsyslog
+    # Users can optionally set up custom rotation
+    echo -e "${BLUE}Configuring log rotation...${NC}"
+    cat > "$CONFIG_DIR/newsyslog.conf" << 'NEWSYSLOG_EOF'
+# ClaraCore log rotation for macOS
+# To use: sudo cp ~/.config/claracore/newsyslog.conf /etc/newsyslog.d/claracore.conf
+# Or manually rotate logs using: newsyslog -v -f ~/.config/claracore/newsyslog.conf
+
+# Format: logfilename [owner:group] mode count size when flags
+*.log          644  7    100  *    GZ
+NEWSYSLOG_EOF
+    echo -e "${GREEN}✓ Log rotation template created in $CONFIG_DIR/newsyslog.conf${NC}"
+    echo -e "${YELLOW}  Note: macOS logs are in $CONFIG_DIR/logs/${NC}"
 }
 
 # Check if service is healthy and responding

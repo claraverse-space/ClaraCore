@@ -1,0 +1,12 @@
+# ClaraCore Log Rotation Configuration for macOS (newsyslog)
+# Install to /etc/newsyslog.d/claracore.conf (system) or use system's newsyslog
+#
+# Format: logfilename [owner:group] mode count size when flags [/pid_file] [sig_num]
+#
+# User-level logs (adjust path as needed)
+~/.config/claracore/logs/claracore.log          644  7    100  *    GZ
+~/.config/claracore/logs/claracore.error.log    644  7    100  *    GZ
+
+# System logs (if running as LaunchDaemon)
+# /Library/Logs/ClaraCore/claracore.log          644  7    100  *    GZ
+# /Library/Logs/ClaraCore/claracore.error.log    644  7    100  *    GZ

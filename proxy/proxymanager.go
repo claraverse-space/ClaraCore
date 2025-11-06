@@ -383,9 +383,7 @@ func (pm *ProxyManager) setupGinEngine() {
 
 	pm.ginEngine.GET("/unload", pm.unloadAllModelsHandler)
 	pm.ginEngine.GET("/running", pm.listRunningProcessesHandler)
-	pm.ginEngine.GET("/health", func(c *gin.Context) {
-		c.String(http.StatusOK, "OK")
-	})
+	pm.ginEngine.GET("/health", pm.healthCheckHandler)
 
 	pm.ginEngine.GET("/favicon.ico", func(c *gin.Context) {
 		if data, err := reactStaticFS.ReadFile("ui_dist/favicon.ico"); err == nil {
@@ -840,6 +838,30 @@ func (pm *ProxyManager) sendErrorResponse(c *gin.Context, statusCode int, messag
 func (pm *ProxyManager) unloadAllModelsHandler(c *gin.Context) {
 	pm.StopProcesses(StopImmediately)
 	c.String(http.StatusOK, "OK")
+}
+
+func (pm *ProxyManager) healthCheckHandler(c *gin.Context) {
+	// Count running models
+	runningCount := 0
+	totalModels := len(pm.config.Models)
+
+	for _, processGroup := range pm.processGroups {
+		for _, process := range processGroup.processes {
+			if process.CurrentState() == StateReady {
+				runningCount++
+			}
+		}
+	}
+
+	// Calculate uptime (would need to be tracked from server start)
+	// For now, we'll return a simple OK status with counts
+	c.Header("Content-Type", "application/json")
+	c.JSON(http.StatusOK, gin.H{
+		"status":        "ok",
+		"models_total":  totalModels,
+		"models_loaded": runningCount,
+		"timestamp":     time.Now().Unix(),
+	})
 }
 
 func (pm *ProxyManager) listRunningProcessesHandler(context *gin.Context) {
