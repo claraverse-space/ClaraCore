@@ -230,7 +230,10 @@ setup_linux_service() {
     # Create logs directory
     mkdir -p "$CONFIG_DIR/logs"
     
-    cat > "$SERVICE_FILE" << EOF
+    # Create service file with appropriate settings based on install type
+    if [[ "$SYSTEM_INSTALL" == true ]]; then
+        # System-wide service (requires User= directive)
+        cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=ClaraCore AI Inference Server
 After=network.target
@@ -264,8 +267,43 @@ TimeoutStartSec=60
 TimeoutStopSec=30
 
 [Install]
+WantedBy=multi-user.target
+EOF
+    else
+        # User service (DO NOT include User= directive)
+        cat > "$SERVICE_FILE" << EOF
+[Unit]
+Description=ClaraCore AI Inference Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$CONFIG_DIR
+ExecStart=$INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml
+Restart=always
+RestartSec=3
+Environment=HOME=$HOME
+Environment=USER=$USER
+
+# Logging configuration - runs silently, logs to systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claracore
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+# Performance and reliability
+LimitNOFILE=65536
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
 WantedBy=default.target
 EOF
+    fi
 
     if [[ "$SYSTEM_INSTALL" == true ]]; then
         if systemctl daemon-reload 2>/dev/null && systemctl enable "$SERVICE_NAME" 2>/dev/null; then

@@ -240,30 +240,44 @@ func GetOptimalBinaryURL(system SystemInfo, forceBackend string, version string)
 			// Windows: CUDA > ROCm > Vulkan > CPU
 			if system.HasCUDA {
 				binaryType = "cuda"
+				fmt.Printf("🚀 Auto-detected backend: CUDA (NVIDIA GPU acceleration)\n")
 			} else if system.HasROCm {
 				binaryType = "rocm"
+				fmt.Printf("🚀 Auto-detected backend: ROCm (AMD GPU acceleration)\n")
 			} else if system.HasVulkan {
 				binaryType = "vulkan"
+				fmt.Printf("🚀 Auto-detected backend: Vulkan (GPU acceleration)\n")
 			} else {
 				binaryType = "cpu"
+				fmt.Printf("💻 Auto-detected backend: CPU (no GPU acceleration)\n")
 			}
 		case "linux":
-			// Linux: CUDA > ROCm > Vulkan > CPU
-			if system.HasCUDA {
-				binaryType = "cuda"
+			// Linux: Vulkan > ROCm > CPU (no pre-built CUDA binaries available)
+			// The ubuntu binary includes all backends (Vulkan, ROCm, CPU)
+			// CUDA GPUs should use Vulkan backend since llama.cpp doesn't provide pre-built CUDA binaries for Linux
+			if system.HasVulkan {
+				binaryType = "vulkan"
+				if system.HasCUDA {
+					fmt.Printf("🚀 Auto-detected backend: Vulkan (optimized for NVIDIA GPU via Vulkan)\n")
+					fmt.Printf("   ℹ️  Note: Using Vulkan backend since llama.cpp doesn't provide pre-built CUDA binaries for Linux\n")
+				} else {
+					fmt.Printf("🚀 Auto-detected backend: Vulkan (GPU acceleration)\n")
+				}
 			} else if system.HasROCm {
 				binaryType = "rocm"
-			} else if system.HasVulkan {
-				binaryType = "vulkan"
+				fmt.Printf("🚀 Auto-detected backend: ROCm (AMD GPU acceleration)\n")
 			} else {
 				binaryType = "cpu"
+				fmt.Printf("💻 Auto-detected backend: CPU (no GPU acceleration detected)\n")
 			}
 		case "darwin":
 			// macOS: Metal (Apple Silicon) > CPU (Intel)
 			if system.Architecture == "arm64" {
 				binaryType = "metal"
+				fmt.Printf("🚀 Auto-detected backend: Metal (Apple Silicon GPU acceleration)\n")
 			} else {
 				binaryType = "cpu"
+				fmt.Printf("💻 Auto-detected backend: CPU (Intel Mac)\n")
 			}
 		default:
 			return "", "", fmt.Errorf("unsupported operating system: %s", system.OS)
@@ -286,16 +300,19 @@ func GetOptimalBinaryURL(system SystemInfo, forceBackend string, version string)
 			return "", "", fmt.Errorf("unsupported backend '%s' for Windows", binaryType)
 		}
 	case "linux":
+		// Note: llama.cpp provides separate binaries for different backends on Linux
+		// - Vulkan binary: for GPU acceleration (NVIDIA, AMD, Intel GPUs)
+		// - ROCm binary: for AMD GPUs with ROCm drivers
+		// - Ubuntu (CPU) binary: for CPU-only or fallback
+		// There are no pre-built CUDA binaries - NVIDIA GPUs should use Vulkan backend
 		switch binaryType {
 		case "cuda":
-			// Use CPU binary which includes all backends (CUDA, Vulkan, ROCm, CPU)
-			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
-		case "rocm":
-			// Use CPU binary which includes all backends
-			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
+			// CUDA not available as pre-built - use Vulkan for NVIDIA GPUs
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-vulkan-x64.zip", version)
 		case "vulkan":
-			// Use CPU binary which includes all backends
-			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-vulkan-x64.zip", version)
+		case "rocm":
+			filename = fmt.Sprintf("llama-%s-bin-ubuntu-rocm-x64.zip", version)
 		case "cpu":
 			filename = fmt.Sprintf("llama-%s-bin-ubuntu-x64.zip", version)
 		default:
@@ -1047,19 +1064,25 @@ func detectVulkan() bool {
 		for _, path := range vulkanPaths {
 			if _, err := os.Stat(path); err == nil {
 				detectionLog = append(detectionLog, fmt.Sprintf("   ✓ Found libvulkan at: %s", path))
-				// Try to verify Vulkan devices exist
-				cmd := exec.Command("vulkaninfo", "--summary")
-				output, err := cmd.Output()
-				if err == nil && strings.Contains(string(output), "deviceType") {
-					detectionLog = append(detectionLog, "   ✅ Vulkan devices verified via vulkaninfo!")
-					fmt.Println(strings.Join(detectionLog, "\n"))
-					return true
+
+				// Try to verify Vulkan devices exist using vulkaninfo if available
+				if commandExists("vulkaninfo") {
+					cmd := exec.Command("vulkaninfo", "--summary")
+					output, err := cmd.Output()
+					if err == nil && strings.Contains(string(output), "deviceType") {
+						detectionLog = append(detectionLog, "   ✅ Vulkan devices verified via vulkaninfo!")
+						fmt.Println(strings.Join(detectionLog, "\n"))
+						return true
+					}
+					if err != nil {
+						detectionLog = append(detectionLog, fmt.Sprintf("   ⚠ vulkaninfo command failed: %v (but library exists)", err))
+					}
+				} else {
+					detectionLog = append(detectionLog, "   ℹ vulkaninfo not installed (optional verification tool)")
 				}
-				if err != nil {
-					detectionLog = append(detectionLog, fmt.Sprintf("   ⚠ vulkaninfo command failed: %v (but library exists)", err))
-				}
-				// Vulkan library exists even if vulkaninfo fails
-				detectionLog = append(detectionLog, "   ✅ Vulkan library detected (assuming devices available)")
+
+				// Vulkan library exists - this is sufficient for llama.cpp to use Vulkan
+				detectionLog = append(detectionLog, "   ✅ Vulkan library detected (ready for GPU acceleration)")
 				fmt.Println(strings.Join(detectionLog, "\n"))
 				return true
 			}
