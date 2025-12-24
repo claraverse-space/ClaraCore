@@ -159,7 +159,7 @@ func (scg *ConfigGenerator) GenerateConfig(models []ModelInfo) error {
 
 // writeHeader writes the configuration header
 func (scg *ConfigGenerator) writeHeader(config *strings.Builder) {
-	config.WriteString("# Auto-generated Clara Core configuration (SMART GPU ALLOCATION)\n")
+	config.WriteString("# Auto-generated Jarvis Core configuration (SMART GPU ALLOCATION)\n")
 
 	// Show all model folders if multiple paths are configured
 	if len(scg.ModelsPaths) > 1 {

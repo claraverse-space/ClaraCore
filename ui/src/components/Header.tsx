@@ -136,7 +136,7 @@ export function Header() {
       animate={{ y: 0, opacity: 1 }}
       className="flex items-center justify-between bg-surface/80 backdrop-blur-md border-b border-border-secondary px-6 py-3 h-16 sticky top-0 z-50"
     >
-      {/* ClaraCore Branding */}
+      {/* JarvisCore Branding */}
       <motion.div 
         className="flex items-center gap-3"
         whileHover={{ scale: 1.02 }}
@@ -144,13 +144,13 @@ export function Header() {
         <div className="flex items-center justify-center w-10 h-10 rounded-xl shadow-lg overflow-hidden">
           <img 
             src={logoSrc} 
-            alt="ClaraCore Logo" 
+            alt="JarvisCore Logo" 
             className="w-full h-full object-contain"
           />
         </div>
         <div className="flex flex-col">
           <h1 className="text-xl font-bold text-text-primary leading-none">
-            ClaraCore
+            JarvisCore
           </h1>
           {screenWidth !== "xs" && (
             <span className="text-xs text-text-tertiary leading-none">

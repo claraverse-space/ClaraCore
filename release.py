@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-ClaraCore Release Manager
+JarvisCore Release Manager
 Automates the creation of GitHub releases with cross-platform binaries.
 
 Usage:
@@ -61,41 +61,41 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-REPO_OWNER = "claraverse-space"
-REPO_NAME = "ClaraCore"
+REPO_OWNER = "jarvisverse-space"
+REPO_NAME = "JarvisCore"
 BUILD_DIR = "dist"
-BINARY_NAME = "claracore"
+BINARY_NAME = "jarviscore"
 
 # Build targets for cross-compilation
 BUILD_TARGETS = [
     {
         "goos": "linux",
         "goarch": "amd64",
-        "filename": "claracore-linux-amd64",
+        "filename": "jarviscore-linux-amd64",
         "description": "Linux x64"
     },
     {
         "goos": "linux", 
         "goarch": "arm64",
-        "filename": "claracore-linux-arm64",
+        "filename": "jarviscore-linux-arm64",
         "description": "Linux ARM64"
     },
     {
         "goos": "darwin",
         "goarch": "amd64", 
-        "filename": "claracore-darwin-amd64",
+        "filename": "jarviscore-darwin-amd64",
         "description": "macOS Intel"
     },
     {
         "goos": "darwin",
         "goarch": "arm64",
-        "filename": "claracore-darwin-arm64", 
+        "filename": "jarviscore-darwin-arm64", 
         "description": "macOS Apple Silicon"
     },
     {
         "goos": "windows",
         "goarch": "amd64",
-        "filename": "claracore-windows-amd64.exe",
+        "filename": "jarviscore-windows-amd64.exe",
         "description": "Windows x64"
     }
 ]
@@ -221,7 +221,7 @@ def sign_windows_binary(binary_path: Path) -> bool:
         "/tr", "http://timestamp.digicert.com",  # RFC 3161 timestamp server
         "/td", "sha256",
         "/fd", "sha256",
-        "/d", "ClaraCore AI Inference Server",
+        "/d", "JarvisCore AI Inference Server",
         "/du", f"https://github.com/{REPO_OWNER}/{REPO_NAME}",
         str(binary_path)
     ]
@@ -242,11 +242,11 @@ def compile_windows_resources() -> bool:
     if sys.platform != "win32":
         return True  # Not needed on other platforms
     
-    rc_file = Path("claracore.rc")
-    syso_file = Path("claracore_windows.syso")
+    rc_file = Path("jarviscore.rc")
+    syso_file = Path("jarviscore_windows.syso")
     
     if not rc_file.exists():
-        print_colored("  ⚠️  claracore.rc not found, skipping metadata", Colors.YELLOW)
+        print_colored("  ⚠️  jarviscore.rc not found, skipping metadata", Colors.YELLOW)
         return True
     
     # Check if windres is available
@@ -271,7 +271,7 @@ def compile_windows_resources() -> bool:
 
 def build_binaries(version: str) -> List[Dict]:
     """Build binaries for all target platforms"""
-    print_header(f"Building ClaraCore {version} Binaries")
+    print_header(f"Building JarvisCore {version} Binaries")
     
     # Compile Windows resources first (if on Windows)
     compile_windows_resources()
@@ -358,7 +358,7 @@ def build_binaries(version: str) -> List[Dict]:
         print_colored(f"✓ Built {target['filename']} ({file_size})", Colors.GREEN)
     
     # Cleanup .syso file after build
-    syso_file = Path("claracore_windows.syso")
+    syso_file = Path("jarviscore_windows.syso")
     if syso_file.exists():
         syso_file.unlink()
         print_colored("  🧹 Cleaned up temporary files", Colors.CYAN)
@@ -384,7 +384,7 @@ def generate_release_notes(version: str, binaries: List[Dict]) -> str:
     commit_hash = get_git_commit()
     build_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     
-    notes = f"""# ClaraCore {version}
+    notes = f"""# JarvisCore {version}
 
 AI-powered model inference server with automatic setup and OpenAI-compatible API.
 
@@ -417,21 +417,21 @@ irm https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/scripts/inst
 ### Manual Installation
 
 1. Download the appropriate binary for your system
-2. Make it executable (Linux/macOS): `chmod +x claracore-*`
-3. Run setup: `./claracore-* --models-folder /path/to/your/models`
+2. Make it executable (Linux/macOS): `chmod +x jarviscore-*`
+3. Run setup: `./jarviscore-* --models-folder /path/to/your/models`
 4. Visit: http://localhost:5800/ui/setup
 
 ## 🛠️ Quick Start
 
 ```bash
 # Basic usage
-./claracore-linux-amd64 --models-folder /path/to/gguf/models
+./jarviscore-linux-amd64 --models-folder /path/to/gguf/models
 
 # With specific backend
-./claracore-linux-amd64 --models-folder /path/to/models --backend vulkan
+./jarviscore-linux-amd64 --models-folder /path/to/models --backend vulkan
 
 # Web interface
-./claracore-linux-amd64
+./jarviscore-linux-amd64
 # Then visit: http://localhost:5800/ui/setup
 ```
 
@@ -547,7 +547,7 @@ def create_github_release(token: str, version: str, binaries: List[Dict], draft:
         print_colored("Creating release...", Colors.BLUE)
         release = repo.create_git_release(
             tag=version,
-            name=f"ClaraCore {version}",
+            name=f"JarvisCore {version}",
             message=release_notes,
             draft=draft,
             prerelease=version.find("alpha") != -1 or version.find("beta") != -1 or version.find("rc") != -1
@@ -575,7 +575,7 @@ def create_github_release(token: str, version: str, binaries: List[Dict], draft:
         
         # Create checksums file
         print_colored("Creating checksums file...", Colors.BLUE)
-        checksums_content = f"# SHA256 Checksums for ClaraCore {version}\n\n"
+        checksums_content = f"# SHA256 Checksums for JarvisCore {version}\n\n"
         for binary in binaries:
             checksums_content += f"{binary['sha256']}  {binary['target']['filename']}\n"
         
@@ -659,7 +659,7 @@ def check_prerequisites() -> bool:
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(
-        description="Create GitHub release for ClaraCore with cross-platform binaries",
+        description="Create GitHub release for JarvisCore with cross-platform binaries",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

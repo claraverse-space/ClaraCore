@@ -1,11 +1,11 @@
 @echo off
-REM ClaraCore Service Management Script for Windows (Batch Wrapper)
+REM JarvisCore Service Management Script for Windows (Batch Wrapper)
 REM This is a simple wrapper around the PowerShell service management script
 
 setlocal enabledelayedexpansion
 
 set SCRIPT_DIR=%~dp0
-set PS_SCRIPT=%SCRIPT_DIR%claracore-service.ps1
+set PS_SCRIPT=%SCRIPT_DIR%jarviscore-service.ps1
 
 REM Check if PowerShell script exists
 if not exist "%PS_SCRIPT%" (

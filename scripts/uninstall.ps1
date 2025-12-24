@@ -1,5 +1,5 @@
-# ClaraCore Windows Uninstall Script
-# Removes ClaraCore installation and Windows Service
+# JarvisCore Windows Uninstall Script
+# Removes JarvisCore installation and Windows Service
 
 param(
     [switch]$RemoveConfig = $false,
@@ -38,43 +38,43 @@ function Test-AdminRights {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Find-ClaraInstallations {
-    Write-ColorOutput "Finding ClaraCore installations..." "Blue"
+function Find-JarvisInstallations {
+    Write-ColorOutput "Finding JarvisCore installations..." "Blue"
     
     $installations = @()
     
     # Check system-wide installation
-    $systemPath = "$env:ProgramFiles\ClaraCore"
-    if (Test-Path (Join-Path $systemPath "claracore.exe")) {
+    $systemPath = "$env:ProgramFiles\JarvisCore"
+    if (Test-Path (Join-Path $systemPath "jarviscore.exe")) {
         $installations += @{
             Type = "System"
             Path = $systemPath
-            ConfigPath = "$env:ProgramData\ClaraCore"
-            Binary = Join-Path $systemPath "claracore.exe"
+            ConfigPath = "$env:ProgramData\JarvisCore"
+            Binary = Join-Path $systemPath "jarviscore.exe"
         }
     }
     
     # Check user installation
-    $userPath = "$env:LOCALAPPDATA\ClaraCore"
-    if (Test-Path (Join-Path $userPath "claracore.exe")) {
+    $userPath = "$env:LOCALAPPDATA\JarvisCore"
+    if (Test-Path (Join-Path $userPath "jarviscore.exe")) {
         $installations += @{
             Type = "User"
             Path = $userPath
-            ConfigPath = "$env:APPDATA\ClaraCore"
-            Binary = Join-Path $userPath "claracore.exe"
+            ConfigPath = "$env:APPDATA\JarvisCore"
+            Binary = Join-Path $userPath "jarviscore.exe"
         }
     }
     
     # Check PATH for other installations
     $pathDirs = $env:PATH -split ";"
     foreach ($dir in $pathDirs) {
-        $claraPath = Join-Path $dir "claracore.exe"
-        if ((Test-Path $claraPath) -and ($claraPath -notin $installations.Binary)) {
+        $jarvisPath = Join-Path $dir "jarviscore.exe"
+        if ((Test-Path $jarvisPath) -and ($jarvisPath -notin $installations.Binary)) {
             $installations += @{
                 Type = "Custom"
                 Path = $dir
                 ConfigPath = ""
-                Binary = $claraPath
+                Binary = $jarvisPath
             }
         }
     }
@@ -82,10 +82,10 @@ function Find-ClaraInstallations {
     return $installations
 }
 
-function Stop-ClaraProcesses {
-    Write-ColorOutput "Stopping ClaraCore processes..." "Blue"
+function Stop-JarvisProcesses {
+    Write-ColorOutput "Stopping JarvisCore processes..." "Blue"
     
-    $processes = Get-Process -Name "claracore" -ErrorAction SilentlyContinue
+    $processes = Get-Process -Name "jarviscore" -ErrorAction SilentlyContinue
     if ($processes) {
         foreach ($process in $processes) {
             try {
@@ -101,9 +101,9 @@ function Stop-ClaraProcesses {
 }
 
 function Remove-WindowsService {
-    Write-ColorOutput "Removing ClaraCore service..." "Blue"
+    Write-ColorOutput "Removing JarvisCore service..." "Blue"
     
-    $serviceName = "ClaraCore"
+    $serviceName = "JarvisCore"
     $serviceRemoved = $false
     
     # Check and remove Windows Service
@@ -193,7 +193,7 @@ function Remove-Installation {
 }
 
 function Remove-DesktopShortcut {
-    $shortcutPath = Join-Path $env:USERPROFILE "Desktop\ClaraCore.lnk"
+    $shortcutPath = Join-Path $env:USERPROFILE "Desktop\JarvisCore.lnk"
     if (Test-Path $shortcutPath) {
         Remove-Item $shortcutPath -Force
         Write-ColorOutput "Removed desktop shortcut" "Green"
@@ -208,7 +208,7 @@ function Confirm-Uninstall {
     }
     
     Write-Host ""
-    Write-ColorOutput "The following ClaraCore installations will be removed:" "Yellow"
+    Write-ColorOutput "The following JarvisCore installations will be removed:" "Yellow"
     foreach ($install in $Installations) {
         Write-ColorOutput "  - $($install.Type): $($install.Path)" "White"
     }
@@ -229,13 +229,13 @@ function Confirm-Uninstall {
 }
 
 function Main {
-    Write-Header "ClaraCore Windows Uninstaller"
+    Write-Header "JarvisCore Windows Uninstaller"
     
     # Find installations
-    $installations = Find-ClaraInstallations
+    $installations = Find-JarvisInstallations
     
     if ($installations.Count -eq 0) {
-        Write-ColorOutput "No ClaraCore installations found" "Yellow"
+        Write-ColorOutput "No JarvisCore installations found" "Yellow"
         exit 0
     }
     
@@ -247,7 +247,7 @@ function Main {
     
     try {
         # Stop processes
-        Stop-ClaraProcesses
+        Stop-JarvisProcesses
         
         # Remove Windows Service
         Remove-WindowsService

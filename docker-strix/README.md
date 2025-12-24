@@ -1,7 +1,7 @@
 ````markdown
-# ClaraCore Docker - AMD Strix Halo Edition
+# JarvisCore Docker - AMD Strix Halo Edition
 
-Docker setup for ClaraCore optimized for **AMD Strix Halo APUs** (Ryzen AI Max 300 series).
+Docker setup for JarvisCore optimized for **AMD Strix Halo APUs** (Ryzen AI Max 300 series).
 
 ## Prerequisites
 
@@ -44,7 +44,7 @@ sudo reboot
 
 ```bash
 # Pull the image from Docker Hub
-docker pull clara17verse/claracore:strix
+docker pull jarvis17verse/jarviscore:strix
 
 # Run with docker-compose
 cd docker-strix
@@ -55,32 +55,32 @@ docker-compose up -d
 
 ```bash
 docker run -d \
-  --name claracore-strix \
+  --name jarviscore-strix \
   --device=/dev/dri \
   --group-add video \
   --security-opt seccomp=unconfined \
   -p 5890:5890 \
-  -v claracore-strix-downloads:/app/downloads \
-  clara17verse/claracore:strix
+  -v jarviscore-strix-downloads:/app/downloads \
+  jarvis17verse/jarviscore:strix
 ```
 
 ### Option 3: Run with Custom Model Folder
 
 ```bash
 docker run -d \
-  --name claracore-strix \
+  --name jarviscore-strix \
   --device=/dev/dri \
   --group-add video \
   --security-opt seccomp=unconfined \
   -p 5890:5890 \
-  -v claracore-strix-downloads:/app/downloads \
+  -v jarviscore-strix-downloads:/app/downloads \
   -v /path/to/your/models:/app/models:ro \
-  clara17verse/claracore:strix
+  jarvis17verse/jarviscore:strix
 ```
 
-**Access ClaraCore:** http://localhost:5890/ui/
+**Access JarvisCore:** http://localhost:5890/ui/
 
-✅ **Your models are saved** in Docker volume `claracore-strix-downloads`
+✅ **Your models are saved** in Docker volume `jarviscore-strix-downloads`
 
 ## Docker Commands
 
@@ -102,13 +102,13 @@ docker-compose ps
 
 ```bash
 docker run -d \
-  --name claracore-strix \
+  --name jarviscore-strix \
   --device=/dev/dri \
   --group-add video \
   --security-opt seccomp=unconfined \
   -p 5890:5890 \
-  -v claracore-strix-downloads:/app/downloads \
-  clara17verse/claracore:strix
+  -v jarviscore-strix-downloads:/app/downloads \
+  jarvis17verse/jarviscore:strix
 ```
 
 ## Troubleshooting
@@ -134,7 +134,7 @@ You must create udev rules (see [Host System Setup](#host-system-setup-required-
 
 ```bash
 # Monitor container
-docker stats claracore-strix
+docker stats jarviscore-strix
 
 # Check system memory
 free -h
@@ -151,17 +151,17 @@ cat /proc/cmdline | grep amdgpu
 
 ## Data Persistence
 
-✅ **Downloaded models are saved** in Docker volume `claracore-strix-downloads`
+✅ **Downloaded models are saved** in Docker volume `jarviscore-strix-downloads`
 
 **View volume:**
 ```bash
-docker volume inspect claracore-strix-downloads
+docker volume inspect jarviscore-strix-downloads
 ```
 
 **Backup:**
 ```bash
-docker run --rm -v claracore-strix-downloads:/downloads -v $(pwd):/backup ubuntu \
-  tar czf /backup/claracore-strix-backup.tar.gz -C /downloads .
+docker run --rm -v jarviscore-strix-downloads:/downloads -v $(pwd):/backup ubuntu \
+  tar czf /backup/jarviscore-strix-backup.tar.gz -C /downloads .
 ```
 
 ## Using Your Own Model Folders
@@ -169,7 +169,7 @@ docker run --rm -v claracore-strix-downloads:/downloads -v $(pwd):/backup ubuntu
 Edit `docker-compose.yml`:
 ```yaml
 volumes:
-  - claracore-strix-downloads:/app/downloads
+  - jarviscore-strix-downloads:/app/downloads
   - /path/to/your/models:/app/models:ro
 ```
 
@@ -177,7 +177,7 @@ volumes:
 
 - **Base image:** kyuz0/amd-strix-halo-toolboxes:vulkan-radv
 - **Backend:** Vulkan RADV (Mesa driver)
-- **Docker Hub:** clara17verse/claracore:strix
+- **Docker Hub:** jarvis17verse/jarviscore:strix
 - **Port:** 5890
 
 **For more details on Strix Halo optimization:** [kyuz0/amd-strix-halo-toolboxes](https://github.com/kyuz0/amd-strix-halo-toolboxes)

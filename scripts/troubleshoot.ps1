@@ -1,4 +1,4 @@
-# ClaraCore Windows Troubleshooting Script
+# JarvisCore Windows Troubleshooting Script
 # Fixes common Windows security and service issues
 
 param(
@@ -20,11 +20,11 @@ function Write-ColorOutput {
     }
 }
 
-function Find-ClaraInstallation {
+function Find-JarvisInstallation {
     $paths = @(
-        "$env:LOCALAPPDATA\ClaraCore\claracore.exe",
-        "$env:ProgramFiles\ClaraCore\claracore.exe",
-        ".\claracore.exe"
+        "$env:LOCALAPPDATA\JarvisCore\jarviscore.exe",
+        "$env:ProgramFiles\JarvisCore\jarviscore.exe",
+        ".\jarviscore.exe"
     )
     
     foreach ($path in $paths) {
@@ -76,7 +76,7 @@ function Invoke-UnblockFile {
 
 function Show-Status {
     param([string]$Path)
-    Write-ColorOutput "=== ClaraCore Status ===" "Blue"
+    Write-ColorOutput "=== JarvisCore Status ===" "Blue"
     
     if ($Path) {
         Write-ColorOutput "Binary: $Path" "Green"
@@ -93,7 +93,7 @@ function Show-Status {
         Write-ColorOutput "Binary: NOT FOUND" "Red"
     }
     
-    $service = Get-Service -Name "ClaraCore" -ErrorAction SilentlyContinue
+    $service = Get-Service -Name "JarvisCore" -ErrorAction SilentlyContinue
     if ($service) {
         Write-ColorOutput "Service: $($service.Status)" "White"
     } else {
@@ -102,7 +102,7 @@ function Show-Status {
 }
 
 # Main execution
-Write-ColorOutput "ClaraCore Troubleshooter" "Blue"
+Write-ColorOutput "JarvisCore Troubleshooter" "Blue"
 Write-Host ""
 
 if (-not ($UnblockFile -or $FixService -or $ShowStatus -or $All)) {
@@ -113,9 +113,9 @@ if (-not ($UnblockFile -or $FixService -or $ShowStatus -or $All)) {
     exit
 }
 
-$binaryPath = Find-ClaraInstallation
+$binaryPath = Find-JarvisInstallation
 if (-not $binaryPath) {
-    Write-ColorOutput "ClaraCore not found. Install it first." "Red"
+    Write-ColorOutput "JarvisCore not found. Install it first." "Red"
     exit 1
 }
 

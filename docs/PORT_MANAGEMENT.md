@@ -1,13 +1,13 @@
-# ClaraCore Port Management
+# JarvisCore Port Management
 
-ClaraCore now has intelligent port management that automatically handles port conflicts and assignments.
+JarvisCore now has intelligent port management that automatically handles port conflicts and assignments.
 
 ## Port Architecture
 
-### ClaraCore Web Interface
+### JarvisCore Web Interface
 - **Default Port**: 5800
 - **Configurable**: Use `--listen` flag to change
-- **Example**: `./claracore --listen :8096` to run on port 8096
+- **Example**: `./jarviscore --listen :8096` to run on port 8096
 
 ### Model Servers (llama-server instances)
 - **Default Start Port**: 8100
@@ -19,7 +19,7 @@ ClaraCore now has intelligent port management that automatically handles port co
 
 ### Basic Configuration
 ```yaml
-# ClaraCore global settings
+# JarvisCore global settings
 startPort: 8100  # Models start from port 8100
 
 models:
@@ -44,36 +44,36 @@ groups:
       - embedding2
 ```
 
-### Custom ClaraCore Port
+### Custom JarvisCore Port
 ```bash
-# Run ClaraCore on port 9000 instead of 5800
-./claracore --listen :9000
+# Run JarvisCore on port 9000 instead of 5800
+./jarviscore --listen :9000
 
 # Or bind to specific IP
-./claracore --listen 192.168.1.100:5800
+./jarviscore --listen 192.168.1.100:5800
 ```
 
 ## Port Ranges
 
 | Service | Default Port Range | Purpose |
 |---------|-------------------|---------|
-| ClaraCore Web UI | 5800 | Web interface, API endpoints |
+| JarvisCore Web UI | 5800 | Web interface, API endpoints |
 | Model Servers | 8100+ | Individual llama-server instances |
 | Large Models Group | 8200+ | Heavy models (swappable) |
 | Small Models Group | 8300+ | Embeddings, light models |
 
 ## Auto-setup Defaults
 
-When using `--models-folder`, ClaraCore automatically:
+When using `--models-folder`, JarvisCore automatically:
 
 1. Sets `startPort: 8100` for models
 2. Creates groups with appropriate port ranges
-3. Keeps ClaraCore web interface on port 5800
+3. Keeps JarvisCore web interface on port 5800
 4. Ensures no port conflicts
 
 ## Benefits
 
-✅ **No Port Conflicts**: ClaraCore and models use separate port ranges  
+✅ **No Port Conflicts**: JarvisCore and models use separate port ranges  
 ✅ **Auto-reload Support**: Config changes trigger automatic server restarts  
 ✅ **Flexible Configuration**: Easy to customize ports for different environments  
 ✅ **Group Isolation**: Different model groups can use different port ranges  
@@ -90,4 +90,4 @@ startPort: 5800
 startPort: 8100
 ```
 
-ClaraCore will automatically fix this during auto-setup, but manual configs should be updated.
+JarvisCore will automatically fix this during auto-setup, but manual configs should be updated.

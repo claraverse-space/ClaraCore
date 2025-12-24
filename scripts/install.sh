@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ClaraCore Installation Script
+# JarvisCore Installation Script
 # Supports Linux and macOS with automatic service setup
 
 set -e
@@ -13,10 +13,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-    REPO="claraverse-space/ClaraCore"
+    REPO="jarvisverse-space/JarvisCore"
 INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="$HOME/.config/claracore"
-SERVICE_NAME="claracore"
+CONFIG_DIR="$HOME/.config/jarviscore"
+SERVICE_NAME="jarviscore"
 
 # Platform detection
 detect_platform() {
@@ -96,14 +96,14 @@ get_latest_release() {
 
 # Download and install binary
 download_binary() {
-    BINARY_NAME="claracore-$PLATFORM-$ARCH"
+    BINARY_NAME="jarviscore-$PLATFORM-$ARCH"
     if [[ "$PLATFORM" == "darwin" ]]; then
         DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_RELEASE/$BINARY_NAME"
     else
         DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_RELEASE/$BINARY_NAME"
     fi
     
-    echo -e "${BLUE}Downloading ClaraCore binary...${NC}"
+    echo -e "${BLUE}Downloading JarvisCore binary...${NC}"
     echo -e "${YELLOW}URL: $DOWNLOAD_URL${NC}"
     
     TEMP_FILE=$(mktemp)
@@ -120,13 +120,13 @@ download_binary() {
     fi
     
     # Install binary
-    echo -e "${BLUE}Installing binary to $INSTALL_DIR/claracore...${NC}"
+    echo -e "${BLUE}Installing binary to $INSTALL_DIR/jarviscore...${NC}"
     chmod +x "$TEMP_FILE"
     
     if [[ "$SYSTEM_INSTALL" == true ]]; then
-        mv "$TEMP_FILE" "$INSTALL_DIR/claracore"
+        mv "$TEMP_FILE" "$INSTALL_DIR/jarviscore"
     else
-        mv "$TEMP_FILE" "$INSTALL_DIR/claracore"
+        mv "$TEMP_FILE" "$INSTALL_DIR/jarviscore"
         # Add to PATH if not already there
         if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
             echo -e "${BLUE}Adding ~/.local/bin to PATH...${NC}"
@@ -156,10 +156,10 @@ download_binary() {
     echo -e "${GREEN}Binary installed successfully${NC}"
     
     # Test if binary works and is in PATH
-    if command -v claracore >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ claracore command is accessible${NC}"
+    if command -v jarviscore >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ jarviscore command is accessible${NC}"
     else
-        echo -e "${YELLOW}⚠ claracore not yet in PATH for this session${NC}"
+        echo -e "${YELLOW}⚠ jarviscore not yet in PATH for this session${NC}"
     fi
 }
 
@@ -168,7 +168,7 @@ create_config() {
     echo -e "${BLUE}Creating default configuration...${NC}"
     
     cat > "$CONFIG_DIR/config.yaml" << 'EOF'
-# ClaraCore Configuration
+# JarvisCore Configuration
 # This file is auto-generated. You can modify it or regenerate via the web UI.
 
 host: "127.0.0.1"
@@ -212,14 +212,14 @@ setup_linux_service() {
     # Check if systemd is available
     if ! command -v systemctl >/dev/null 2>&1; then
         echo -e "${YELLOW}Systemd not available - skipping service setup${NC}"
-        echo -e "${YELLOW}You can manually start ClaraCore with: claracore --config $CONFIG_DIR/config.yaml${NC}"
+        echo -e "${YELLOW}You can manually start JarvisCore with: jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         return 0
     fi
     
     # Test if systemd is running
     if ! systemctl is-system-running >/dev/null 2>&1; then
         echo -e "${YELLOW}Systemd not running (possibly in container/WSL) - skipping service setup${NC}"
-        echo -e "${YELLOW}You can manually start ClaraCore with: claracore --config $CONFIG_DIR/config.yaml${NC}"
+        echo -e "${YELLOW}You can manually start JarvisCore with: jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         return 0
     fi
     
@@ -235,7 +235,7 @@ setup_linux_service() {
         # System-wide service (requires User= directive)
         cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=ClaraCore AI Inference Server
+Description=JarvisCore AI Inference Server
 After=network.target
 Wants=network.target
 
@@ -243,7 +243,7 @@ Wants=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$CONFIG_DIR
-ExecStart=$INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml
+ExecStart=$INSTALL_DIR/jarviscore --config $CONFIG_DIR/config.yaml
 Restart=always
 RestartSec=3
 Environment=HOME=$HOME
@@ -252,7 +252,7 @@ Environment=USER=$USER
 # Logging configuration - runs silently, logs to systemd journal
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=claracore
+SyslogIdentifier=jarviscore
 
 # Security settings
 NoNewPrivileges=yes
@@ -273,14 +273,14 @@ EOF
         # User service (DO NOT include User= directive)
         cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=ClaraCore AI Inference Server
+Description=JarvisCore AI Inference Server
 After=network.target
 Wants=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=$CONFIG_DIR
-ExecStart=$INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml
+ExecStart=$INSTALL_DIR/jarviscore --config $CONFIG_DIR/config.yaml
 Restart=always
 RestartSec=3
 Environment=HOME=$HOME
@@ -289,7 +289,7 @@ Environment=USER=$USER
 # Logging configuration - runs silently, logs to systemd journal
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=claracore
+SyslogIdentifier=jarviscore
 
 # Security settings
 NoNewPrivileges=yes
@@ -310,7 +310,7 @@ EOF
             echo -e "${GREEN}✓ System service enabled (auto-start on boot)${NC}"
 
             # Start the service immediately
-            echo -e "${BLUE}Starting ClaraCore service...${NC}"
+            echo -e "${BLUE}Starting JarvisCore service...${NC}"
             if systemctl start "$SERVICE_NAME" 2>/dev/null; then
                 echo -e "${GREEN}✓ Service started successfully${NC}"
 
@@ -329,14 +329,14 @@ EOF
             fi
         else
             echo -e "${YELLOW}Failed to enable system service. You may need to run with sudo or start manually.${NC}"
-            echo -e "${YELLOW}Manual start: sudo $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+            echo -e "${YELLOW}Manual start: sudo $INSTALL_DIR/jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     else
         if systemctl --user daemon-reload 2>/dev/null && systemctl --user enable "$SERVICE_NAME" 2>/dev/null; then
             echo -e "${GREEN}✓ User service enabled (auto-start on login)${NC}"
 
             # Start the service immediately
-            echo -e "${BLUE}Starting ClaraCore service...${NC}"
+            echo -e "${BLUE}Starting JarvisCore service...${NC}"
             if systemctl --user start "$SERVICE_NAME" 2>/dev/null; then
                 echo -e "${GREEN}✓ Service started successfully${NC}"
 
@@ -355,7 +355,7 @@ EOF
             fi
         else
             echo -e "${YELLOW}Failed to enable user service. Starting manually may be required.${NC}"
-            echo -e "${YELLOW}Manual start: $INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+            echo -e "${YELLOW}Manual start: $INSTALL_DIR/jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     fi
 }
@@ -365,11 +365,11 @@ setup_macos_service() {
     echo -e "${BLUE}Setting up macOS Launch Agent...${NC}"
 
     if [[ "$SYSTEM_INSTALL" == true ]]; then
-        PLIST_FILE="$LAUNCHD_DIR/com.claracore.server.plist"
-        LABEL="com.claracore.server"
+        PLIST_FILE="$LAUNCHD_DIR/com.jarviscore.server.plist"
+        LABEL="com.jarviscore.server"
     else
-        PLIST_FILE="$LAUNCHD_DIR/com.claracore.server.plist"
-        LABEL="com.claracore.server"
+        PLIST_FILE="$LAUNCHD_DIR/com.jarviscore.server.plist"
+        LABEL="com.jarviscore.server"
     fi
 
     # Create logs directory
@@ -384,7 +384,7 @@ setup_macos_service() {
     <string>$LABEL</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$INSTALL_DIR/claracore</string>
+        <string>$INSTALL_DIR/jarviscore</string>
         <string>--config</string>
         <string>$CONFIG_DIR/config.yaml</string>
     </array>
@@ -397,9 +397,9 @@ setup_macos_service() {
     <key>ProcessType</key>
     <string>Background</string>
     <key>StandardOutPath</key>
-    <string>$CONFIG_DIR/logs/claracore.log</string>
+    <string>$CONFIG_DIR/logs/jarviscore.log</string>
     <key>StandardErrorPath</key>
-    <string>$CONFIG_DIR/logs/claracore.error.log</string>
+    <string>$CONFIG_DIR/logs/jarviscore.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>
@@ -426,10 +426,10 @@ EOF
     fi
 
     # Load the service
-    echo -e "${BLUE}Loading ClaraCore service...${NC}"
+    echo -e "${BLUE}Loading JarvisCore service...${NC}"
     if launchctl load "$PLIST_FILE" 2>/dev/null; then
         echo -e "${GREEN}✓ Service loaded successfully${NC}"
-        echo -e "${GREEN}✓ ClaraCore will run silently in the background${NC}"
+        echo -e "${GREEN}✓ JarvisCore will run silently in the background${NC}"
 
         # Wait a moment for service to initialize
         sleep 2
@@ -460,7 +460,7 @@ EOF
             echo -e "    ${BLUE}launchctl load $PLIST_FILE${NC}"
         fi
         echo -e "${YELLOW}  Or start manually:${NC}"
-        echo -e "    ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
+        echo -e "    ${BLUE}jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         return 1
     fi
 }
@@ -478,13 +478,13 @@ check_service_health() {
         # Try to connect to the service
         if command -v curl >/dev/null 2>&1; then
             if curl -s -f "http://localhost:$port/" >/dev/null 2>&1; then
-                echo -e "${GREEN}✓ ClaraCore is running and accessible${NC}"
+                echo -e "${GREEN}✓ JarvisCore is running and accessible${NC}"
                 echo -e "${GREEN}✓ Web interface available at: ${BLUE}http://localhost:$port/ui/${NC}"
                 return 0
             fi
         elif command -v wget >/dev/null 2>&1; then
             if wget -q -O /dev/null "http://localhost:$port/" 2>/dev/null; then
-                echo -e "${GREEN}✓ ClaraCore is running and accessible${NC}"
+                echo -e "${GREEN}✓ JarvisCore is running and accessible${NC}"
                 echo -e "${GREEN}✓ Web interface available at: ${BLUE}http://localhost:$port/ui/${NC}"
                 return 0
             fi
@@ -518,7 +518,7 @@ check_service_health() {
 # Main installation flow
 main() {
     echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║        ClaraCore Installer           ║${NC}"
+    echo -e "${BLUE}║        JarvisCore Installer           ║${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
     echo
     
@@ -573,22 +573,22 @@ main() {
                     echo -e "   ${GREEN}systemctl --user restart $SERVICE_NAME${NC}"
                 fi
             elif [[ "$PLATFORM" == "darwin" ]]; then
-                LABEL="com.claracore.server"
+                LABEL="com.jarviscore.server"
                 echo -e "${BLUE}1. Check service status:${NC}"
-                echo -e "   ${GREEN}launchctl list | grep claracore${NC}"
+                echo -e "   ${GREEN}launchctl list | grep jarviscore${NC}"
                 echo
                 echo -e "${BLUE}2. View logs:${NC}"
-                echo -e "   ${GREEN}tail -n 50 $CONFIG_DIR/logs/claracore.error.log${NC}"
+                echo -e "   ${GREEN}tail -n 50 $CONFIG_DIR/logs/jarviscore.error.log${NC}"
                 echo
                 echo -e "${BLUE}3. Try restarting:${NC}"
                 echo -e "   ${GREEN}launchctl kickstart -k $LABEL${NC}"
             fi
             echo
             echo -e "${BLUE}4. Check if binary is executable:${NC}"
-            echo -e "   ${GREEN}ls -la $INSTALL_DIR/claracore${NC}"
+            echo -e "   ${GREEN}ls -la $INSTALL_DIR/jarviscore${NC}"
             echo
             echo -e "${BLUE}5. Try starting manually to see errors:${NC}"
-            echo -e "   ${GREEN}$INSTALL_DIR/claracore --config $CONFIG_DIR/config.yaml${NC}"
+            echo -e "   ${GREEN}$INSTALL_DIR/jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     fi
 
@@ -598,11 +598,11 @@ main() {
     echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
     echo
     
-    # Check if claracore is now accessible
-    if command -v claracore >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ claracore command is ready to use!${NC}"
+    # Check if jarviscore is now accessible
+    if command -v jarviscore >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ jarviscore command is ready to use!${NC}"
     else
-        echo -e "${YELLOW}⚠ To use 'claracore' command, restart your terminal or run:${NC}"
+        echo -e "${YELLOW}⚠ To use 'jarviscore' command, restart your terminal or run:${NC}"
         echo -e "   ${BLUE}source ~/.bashrc${NC}"
         echo -e "   ${BLUE}# or${NC}"
         echo -e "   ${BLUE}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
@@ -610,7 +610,7 @@ main() {
     fi
     
     if [[ "$SERVICE_STARTED" == true ]]; then
-        echo -e "${GREEN}✓ ClaraCore is now running silently in the background!${NC}"
+        echo -e "${GREEN}✓ JarvisCore is now running silently in the background!${NC}"
         echo -e "${GREEN}✓ It will automatically start on system boot${NC}"
         echo
         echo -e "${YELLOW}Quick Start:${NC}"
@@ -621,14 +621,14 @@ main() {
         echo -e "   • Or use the auto-discovery wizard"
         echo
         echo -e "${BLUE}💡 Tips:${NC}"
-        echo -e "   • ClaraCore runs as a background service (no terminal window)"
+        echo -e "   • JarvisCore runs as a background service (no terminal window)"
         echo -e "   • Just like Ollama, it runs silently in the background"
         echo -e "   • Access it anytime via the web interface"
         echo
     else
         echo -e "${YELLOW}Next steps:${NC}"
-        echo -e "1. Start ClaraCore manually:"
-        echo -e "   ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
+        echo -e "1. Start JarvisCore manually:"
+        echo -e "   ${BLUE}jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         echo
         echo -e "2. Then visit the web interface:"
         echo -e "   ${BLUE}http://localhost:5800/ui/setup${NC}"
@@ -651,16 +651,16 @@ main() {
             fi
         else
             echo -e "   ${YELLOW}Systemd not available - manual start required:${NC}"
-            echo -e "   Start:   ${BLUE}claracore --config $CONFIG_DIR/config.yaml${NC}"
+            echo -e "   Start:   ${BLUE}jarviscore --config $CONFIG_DIR/config.yaml${NC}"
         fi
     elif [[ "$PLATFORM" == "darwin" ]]; then
-        LABEL="com.claracore.server"
-        echo -e "   Status:  ${BLUE}launchctl list | grep claracore${NC}"
+        LABEL="com.jarviscore.server"
+        echo -e "   Status:  ${BLUE}launchctl list | grep jarviscore${NC}"
         echo -e "   Stop:    ${BLUE}launchctl stop $LABEL${NC}"
         echo -e "   Restart: ${BLUE}launchctl kickstart -k $LABEL${NC}"
         echo -e "   Unload:  ${BLUE}launchctl unload ~/Library/LaunchAgents/$LABEL.plist${NC}"
-        echo -e "   Logs:    ${BLUE}tail -f $CONFIG_DIR/logs/claracore.log${NC}"
-        echo -e "   Errors:  ${BLUE}tail -f $CONFIG_DIR/logs/claracore.error.log${NC}"
+        echo -e "   Logs:    ${BLUE}tail -f $CONFIG_DIR/logs/jarviscore.log${NC}"
+        echo -e "   Errors:  ${BLUE}tail -f $CONFIG_DIR/logs/jarviscore.error.log${NC}"
     fi
     echo
     echo -e "${YELLOW}Configuration Files:${NC}"

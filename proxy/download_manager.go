@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prave/ClaraCore/event"
+	"github.com/prave/JarvisCore/event"
 )
 
 // DownloadStatus represents the current state of a download

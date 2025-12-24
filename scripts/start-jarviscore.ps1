@@ -1,5 +1,5 @@
-# Quick Start Script for ClaraCore
-# Use this if ClaraCore didn't start automatically after installation
+# Quick Start Script for JarvisCore
+# Use this if JarvisCore didn't start automatically after installation
 
 $ErrorActionPreference = "Stop"
 
@@ -13,18 +13,18 @@ function Write-ColorOutput {
 }
 
 Write-Host ""
-Write-ColorOutput "ClaraCore Quick Start" "Blue"
+Write-ColorOutput "JarvisCore Quick Start" "Blue"
 Write-ColorOutput "=====================" "Blue"
 Write-Host ""
 
-# Find ClaraCore installation
+# Find JarvisCore installation
 $binaryPath = $null
 $configPath = $null
 
 # Check common locations
 $locations = @(
-    @{Binary = "$env:ProgramFiles\ClaraCore\claracore.exe"; Config = "$env:ProgramData\ClaraCore\config.yaml"},
-    @{Binary = "$env:LOCALAPPDATA\ClaraCore\claracore.exe"; Config = "$env:APPDATA\ClaraCore\config.yaml"}
+    @{Binary = "$env:ProgramFiles\JarvisCore\jarviscore.exe"; Config = "$env:ProgramData\JarvisCore\config.yaml"},
+    @{Binary = "$env:LOCALAPPDATA\JarvisCore\jarviscore.exe"; Config = "$env:APPDATA\JarvisCore\config.yaml"}
 )
 
 foreach ($loc in $locations) {
@@ -36,14 +36,14 @@ foreach ($loc in $locations) {
 }
 
 if (-not $binaryPath) {
-    Write-ColorOutput "❌ ClaraCore installation not found!" "Red"
+    Write-ColorOutput "❌ JarvisCore installation not found!" "Red"
     Write-Host ""
     Write-ColorOutput "Please run the installer first:" "Yellow"
     Write-ColorOutput "  .\install.ps1" "White"
     exit 1
 }
 
-Write-ColorOutput "Found ClaraCore at: $binaryPath" "Green"
+Write-ColorOutput "Found JarvisCore at: $binaryPath" "Green"
 Write-Host ""
 
 # Check and fix config files
@@ -78,7 +78,7 @@ Write-Host ""
 try {
     $response = Invoke-WebRequest -Uri "http://localhost:5800/" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
     if ($response.StatusCode -eq 200) {
-        Write-ColorOutput "✅ ClaraCore is already running!" "Green"
+        Write-ColorOutput "✅ JarvisCore is already running!" "Green"
         Write-Host ""
         Write-ColorOutput "Access the web interface at:" "Blue"
         Write-ColorOutput "  http://localhost:5800/ui/" "Cyan"
@@ -89,7 +89,7 @@ try {
     # Not running, continue
 }
 
-Write-ColorOutput "Starting ClaraCore..." "Blue"
+Write-ColorOutput "Starting JarvisCore..." "Blue"
 Write-Host ""
 
 # Try to unblock the binary first
@@ -104,10 +104,10 @@ try {
 $serviceStarted = $false
 
 # Try Windows Service first (requires admin)
-$service = Get-Service -Name "ClaraCore" -ErrorAction SilentlyContinue
+$service = Get-Service -Name "JarvisCore" -ErrorAction SilentlyContinue
 if ($service) {
     try {
-        Start-Service -Name "ClaraCore"
+        Start-Service -Name "JarvisCore"
         Write-ColorOutput "✓ Started Windows Service" "Green"
         $serviceStarted = $true
     } catch {
@@ -117,10 +117,10 @@ if ($service) {
 
 # Try Scheduled Task
 if (-not $serviceStarted) {
-    $task = Get-ScheduledTask -TaskName "ClaraCore" -ErrorAction SilentlyContinue
+    $task = Get-ScheduledTask -TaskName "JarvisCore" -ErrorAction SilentlyContinue
     if ($task) {
         try {
-            Start-ScheduledTask -TaskName "ClaraCore"
+            Start-ScheduledTask -TaskName "JarvisCore"
             Write-ColorOutput "✓ Started Scheduled Task" "Green"
             $serviceStarted = $true
         } catch {
@@ -131,7 +131,7 @@ if (-not $serviceStarted) {
 
 # If no service, start manually
 if (-not $serviceStarted) {
-    Write-ColorOutput "Starting ClaraCore manually..." "Yellow"
+    Write-ColorOutput "Starting JarvisCore manually..." "Yellow"
     Write-Host ""
     
     try {
@@ -145,10 +145,10 @@ if (-not $serviceStarted) {
         
         $process = [System.Diagnostics.Process]::Start($processInfo)
         
-        Write-ColorOutput "✓ Started ClaraCore process (PID: $($process.Id))" "Green"
+        Write-ColorOutput "✓ Started JarvisCore process (PID: $($process.Id))" "Green"
         Write-ColorOutput "  Note: This is a manual start. Use the installer to set up auto-start." "Yellow"
     } catch {
-        Write-ColorOutput "❌ Failed to start ClaraCore: $($_.Exception.Message)" "Red"
+        Write-ColorOutput "❌ Failed to start JarvisCore: $($_.Exception.Message)" "Red"
         Write-Host ""
         Write-ColorOutput "Troubleshooting:" "Yellow"
         Write-ColorOutput "1. Unblock the binary:" "White"
@@ -164,7 +164,7 @@ if (-not $serviceStarted) {
 
 # Wait for service to start
 Write-Host ""
-Write-ColorOutput "Waiting for ClaraCore to initialize..." "Blue"
+Write-ColorOutput "Waiting for JarvisCore to initialize..." "Blue"
 Start-Sleep -Seconds 5
 
 # Check if accessible
@@ -178,7 +178,7 @@ while ($attempt -lt $maxAttempts) {
         if ($response.StatusCode -eq 200) {
             Write-Host ""
             Write-Host ""
-            Write-ColorOutput "✅ ClaraCore is running and accessible!" "Green"
+            Write-ColorOutput "✅ JarvisCore is running and accessible!" "Green"
             Write-Host ""
             Write-ColorOutput "┌─────────────────────────────────────────┐" "Blue"
             Write-ColorOutput "│  Open your browser and visit:          │" "Blue"
@@ -198,12 +198,12 @@ while ($attempt -lt $maxAttempts) {
 
 Write-Host ""
 Write-Host ""
-Write-ColorOutput "⚠ ClaraCore may still be starting up..." "Yellow"
+Write-ColorOutput "⚠ JarvisCore may still be starting up..." "Yellow"
 Write-Host ""
 Write-ColorOutput "Try accessing the web interface in a moment:" "White"
 Write-ColorOutput "  http://localhost:5800/ui/" "Cyan"
 Write-Host ""
 Write-ColorOutput "To check status:" "White"
-Write-ColorOutput "  .\scripts\claracore-service.ps1 status" "Cyan"
+Write-ColorOutput "  .\scripts\jarviscore-service.ps1 status" "Cyan"
 Write-Host ""
 

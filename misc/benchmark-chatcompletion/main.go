@@ -1,7 +1,7 @@
 package main
 
-// created for issue: #252 https://github.com/mostlygeek/ClaraCore/issues/252
-// this simple benchmark tool sends a lot of small chat completion requests to ClaraCore
+// created for issue: #252 https://github.com/mostlygeek/JarvisCore/issues/252
+// this simple benchmark tool sends a lot of small chat completion requests to JarvisCore
 // to make sure all the requests are accounted for.
 //
 // requests can be sent in parallel, and the tool will report the results.

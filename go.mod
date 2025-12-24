@@ -1,4 +1,4 @@
-module github.com/prave/ClaraCore
+module github.com/prave/JarvisCore
 
 go 1.23.0
 

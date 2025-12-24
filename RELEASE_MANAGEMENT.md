@@ -1,6 +1,6 @@
-# ClaraCore Release Management
+# JarvisCore Release Management
 
-This directory contains automated release management tools for ClaraCore.
+This directory contains automated release management tools for JarvisCore.
 
 ## 🚀 Quick Release
 
@@ -36,11 +36,11 @@ python release.py --version v0.1.0 --token-file .github_token
 
 ### Cross-Platform Builds
 Automatically builds binaries for:
-- Linux x64 (`claracore-linux-amd64`)
-- Linux ARM64 (`claracore-linux-arm64`)
-- macOS Intel (`claracore-darwin-amd64`)
-- macOS Apple Silicon (`claracore-darwin-arm64`)
-- Windows x64 (`claracore-windows-amd64.exe`)
+- Linux x64 (`jarviscore-linux-amd64`)
+- Linux ARM64 (`jarviscore-linux-arm64`)
+- macOS Intel (`jarviscore-darwin-amd64`)
+- macOS Apple Silicon (`jarviscore-darwin-arm64`)
+- Windows x64 (`jarviscore-windows-amd64.exe`)
 
 ### Release Automation
 - Creates GitHub release with proper versioning
@@ -154,7 +154,7 @@ curl -H "Authorization: token ghp_your_token" https://api.github.com/rate_limit
 ### Network Issues
 ```bash
 # Test GitHub connectivity
-curl https://api.github.com/repos/badboysm890/ClaraCore
+curl https://api.github.com/repos/badboysm890/JarvisCore
 
 # Use proxy if needed
 export HTTPS_PROXY=http://proxy:port

@@ -1,30 +1,30 @@
 # 🔒 Security Verification Guide
 
-## Why is ClaraCore Flagged by Antivirus?
+## Why is JarvisCore Flagged by Antivirus?
 
-**ClaraCore is 100% safe and open source.** Antivirus software flags it because it:
+**JarvisCore is 100% safe and open source.** Antivirus software flags it because it:
 1. Downloads AI model binaries from llama.cpp (legitimate ML tool)
 2. Spawns subprocesses to run AI models
 3. Self-heals by downloading missing components
 
 These are **normal behaviors for AI inference tools**, but trigger heuristic detection.
 
-## ✅ Verify ClaraCore is Legitimate
+## ✅ Verify JarvisCore is Legitimate
 
 ### Method 1: Check SHA256 Hash (Recommended)
 
 **Windows:**
 ```powershell
 # Calculate hash of your downloaded file
-Get-FileHash claracore.exe -Algorithm SHA256
+Get-FileHash jarviscore.exe -Algorithm SHA256
 
 # Compare with official release hash at:
-# https://github.com/claraverse-space/ClaraCore/releases
+# https://github.com/jarvisverse-space/JarvisCore/releases
 ```
 
 **Linux/macOS:**
 ```bash
-sha256sum claracore
+sha256sum jarviscore
 # Compare with official release hash
 ```
 
@@ -32,8 +32,8 @@ sha256sum claracore
 
 ```bash
 # Clone and inspect the code yourself
-git clone https://github.com/claraverse-space/ClaraCore.git
-cd ClaraCore
+git clone https://github.com/jarvisverse-space/JarvisCore.git
+cd JarvisCore
 
 # Review the code (it's all open source!)
 # Then build it yourself
@@ -43,7 +43,7 @@ python build.py
 ### Method 3: VirusTotal Scan
 
 1. Visit https://www.virustotal.com
-2. Upload your `claracore.exe`
+2. Upload your `jarviscore.exe`
 3. Check that major vendors (Microsoft, Kaspersky, etc.) show it as clean
 4. Some generic heuristic engines may flag it - this is normal
 
@@ -53,14 +53,14 @@ python build.py
 1. Open Windows Security
 2. Virus & threat protection → Manage settings
 3. Exclusions → Add an exclusion
-4. Add folder: `%LOCALAPPDATA%\ClaraCore`
+4. Add folder: `%LOCALAPPDATA%\JarvisCore`
 
 **Option B - PowerShell (Admin required):**
 ```powershell
-Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\ClaraCore"
+Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\JarvisCore"
 ```
 
-## 📝 What ClaraCore Does NOT Do
+## 📝 What JarvisCore Does NOT Do
 
 - ❌ Does NOT modify Windows Registry
 - ❌ Does NOT access system files
@@ -69,7 +69,7 @@ Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\ClaraCore"
 - ❌ Does NOT modify system settings
 - ❌ Does NOT install services or drivers
 
-## 🔍 What ClaraCore DOES Do
+## 🔍 What JarvisCore DOES Do
 
 - ✅ Downloads llama.cpp binaries from official GitHub releases
 - ✅ Creates config files in its own directory
@@ -78,7 +78,7 @@ Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\ClaraCore"
 
 ## 🏢 For Enterprise/Corporate Users
 
-If your IT department blocks ClaraCore:
+If your IT department blocks JarvisCore:
 
 1. **Submit to your security team for review** - The code is open source
 2. **Build from source** - Your security team can audit the code
@@ -87,9 +87,9 @@ If your IT department blocks ClaraCore:
 
 ## 📧 Still Concerned?
 
-- 🔍 Review the source code: https://github.com/claraverse-space/ClaraCore
-- 💬 Open an issue: https://github.com/claraverse-space/ClaraCore/issues
-- 📖 Read the documentation: https://github.com/claraverse-space/ClaraCore/blob/main/README.md
+- 🔍 Review the source code: https://github.com/jarvisverse-space/JarvisCore
+- 💬 Open an issue: https://github.com/jarvisverse-space/JarvisCore/issues
+- 📖 Read the documentation: https://github.com/jarvisverse-space/JarvisCore/blob/main/README.md
 
 ## 🎯 Why We Don't Code Sign
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Quick Start Script for ClaraCore
-# Use this if ClaraCore didn't start automatically after installation
+# Quick Start Script for JarvisCore
+# Use this if JarvisCore didn't start automatically after installation
 
 set -e
 
@@ -13,7 +13,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 echo ""
-echo -e "${BLUE}ClaraCore Quick Start${NC}"
+echo -e "${BLUE}JarvisCore Quick Start${NC}"
 echo -e "${BLUE}=====================${NC}"
 echo ""
 
@@ -21,28 +21,28 @@ echo ""
 OS="$(uname)"
 if [[ "$OS" == "Linux" ]]; then
     PLATFORM="linux"
-    SERVICE_NAME="claracore"
+    SERVICE_NAME="jarviscore"
 elif [[ "$OS" == "Darwin" ]]; then
     PLATFORM="darwin"
-    SERVICE_NAME="com.claracore.server"
+    SERVICE_NAME="com.jarviscore.server"
 else
     echo -e "${RED}❌ Unsupported operating system: $OS${NC}"
     exit 1
 fi
 
-# Find ClaraCore installation
+# Find JarvisCore installation
 BINARY_PATH=""
-CONFIG_PATH="$HOME/.config/claracore/config.yaml"
+CONFIG_PATH="$HOME/.config/jarviscore/config.yaml"
 
 # Check common locations
-if [[ -f "/usr/local/bin/claracore" ]]; then
-    BINARY_PATH="/usr/local/bin/claracore"
-elif [[ -f "$HOME/.local/bin/claracore" ]]; then
-    BINARY_PATH="$HOME/.local/bin/claracore"
+if [[ -f "/usr/local/bin/jarviscore" ]]; then
+    BINARY_PATH="/usr/local/bin/jarviscore"
+elif [[ -f "$HOME/.local/bin/jarviscore" ]]; then
+    BINARY_PATH="$HOME/.local/bin/jarviscore"
 fi
 
 if [[ -z "$BINARY_PATH" ]]; then
-    echo -e "${RED}❌ ClaraCore installation not found!${NC}"
+    echo -e "${RED}❌ JarvisCore installation not found!${NC}"
     echo ""
     echo -e "${YELLOW}Please run the installer first:${NC}"
     echo -e "  ${CYAN}bash install.sh${NC}"
@@ -50,7 +50,7 @@ if [[ -z "$BINARY_PATH" ]]; then
     exit 1
 fi
 
-echo -e "${GREEN}Found ClaraCore at: $BINARY_PATH${NC}"
+echo -e "${GREEN}Found JarvisCore at: $BINARY_PATH${NC}"
 echo ""
 
 # Check and fix config files
@@ -82,7 +82,7 @@ echo ""
 # Check if already running
 if command -v curl >/dev/null 2>&1; then
     if curl -s -f "http://localhost:5800/" >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ ClaraCore is already running!${NC}"
+        echo -e "${GREEN}✅ JarvisCore is already running!${NC}"
         echo ""
         echo -e "${BLUE}Access the web interface at:${NC}"
         echo -e "  ${CYAN}http://localhost:5800/ui/${NC}"
@@ -91,7 +91,7 @@ if command -v curl >/dev/null 2>&1; then
     fi
 fi
 
-echo -e "${BLUE}Starting ClaraCore...${NC}"
+echo -e "${BLUE}Starting JarvisCore...${NC}"
 echo ""
 
 # Try starting via service
@@ -134,7 +134,7 @@ fi
 
 # If no service, start manually
 if [[ "$SERVICE_STARTED" == false ]]; then
-    echo -e "${YELLOW}Starting ClaraCore manually...${NC}"
+    echo -e "${YELLOW}Starting JarvisCore manually...${NC}"
     echo ""
     
     # Check if binary is executable
@@ -144,16 +144,16 @@ if [[ "$SERVICE_STARTED" == false ]]; then
     fi
     
     # Start in background
-    nohup "$BINARY_PATH" --config "$CONFIG_PATH" > "$HOME/.config/claracore/logs/claracore.log" 2>&1 &
+    nohup "$BINARY_PATH" --config "$CONFIG_PATH" > "$HOME/.config/jarviscore/logs/jarviscore.log" 2>&1 &
     PROCESS_PID=$!
     
-    echo -e "${GREEN}✓ Started ClaraCore process (PID: $PROCESS_PID)${NC}"
+    echo -e "${GREEN}✓ Started JarvisCore process (PID: $PROCESS_PID)${NC}"
     echo -e "${YELLOW}  Note: This is a manual start. Use the installer to set up auto-start.${NC}"
 fi
 
 # Wait for service to start
 echo ""
-echo -e "${BLUE}Waiting for ClaraCore to initialize...${NC}"
+echo -e "${BLUE}Waiting for JarvisCore to initialize...${NC}"
 sleep 3
 
 # Check if accessible
@@ -185,7 +185,7 @@ echo ""
 echo ""
 
 if [[ "$RUNNING" == true ]]; then
-    echo -e "${GREEN}✅ ClaraCore is running and accessible!${NC}"
+    echo -e "${GREEN}✅ JarvisCore is running and accessible!${NC}"
     echo ""
     echo -e "${BLUE}┌─────────────────────────────────────────┐${NC}"
     echo -e "${BLUE}│  Open your browser and visit:          │${NC}"
@@ -195,21 +195,21 @@ if [[ "$RUNNING" == true ]]; then
     echo -e "${BLUE}└─────────────────────────────────────────┘${NC}"
     echo ""
 else
-    echo -e "${YELLOW}⚠ ClaraCore may still be starting up...${NC}"
+    echo -e "${YELLOW}⚠ JarvisCore may still be starting up...${NC}"
     echo ""
     echo -e "${CYAN}Try accessing the web interface in a moment:${NC}"
     echo -e "  ${CYAN}http://localhost:5800/ui/${NC}"
     echo ""
     echo -e "${CYAN}To check status:${NC}"
     if [[ "$PLATFORM" == "linux" ]]; then
-        echo -e "  ${CYAN}systemctl --user status claracore${NC}"
-        echo -e "  ${CYAN}# or: sudo systemctl status claracore${NC}"
+        echo -e "  ${CYAN}systemctl --user status jarviscore${NC}"
+        echo -e "  ${CYAN}# or: sudo systemctl status jarviscore${NC}"
     else
-        echo -e "  ${CYAN}launchctl list | grep claracore${NC}"
+        echo -e "  ${CYAN}launchctl list | grep jarviscore${NC}"
     fi
     echo ""
     echo -e "${CYAN}To view logs:${NC}"
-    echo -e "  ${CYAN}tail -f $HOME/.config/claracore/logs/claracore.error.log${NC}"
+    echo -e "  ${CYAN}tail -f $HOME/.config/jarviscore/logs/jarviscore.error.log${NC}"
     echo ""
 fi
 

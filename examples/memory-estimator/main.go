@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/prave/ClaraCore/autosetup"
+	"github.com/prave/JarvisCore/autosetup"
 )
 
 func main() {

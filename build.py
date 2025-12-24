@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClaraCore Build Script
+JarvisCore Build Script
 Builds both UI and Go backend in sequence
 """
 
@@ -45,7 +45,7 @@ def get_version():
 def print_banner():
     """Print build script banner"""
     print("=" * 60)
-    print("🚀 ClaraCore Build Script")
+    print("🚀 JarvisCore Build Script")
     print("=" * 60)
 
 def print_step(step_name):
@@ -119,11 +119,11 @@ def build_ui():
 
 def build_go():
     """Build the Go backend"""
-    print_step("Building ClaraCore (Go Backend)")
+    print_step("Building JarvisCore (Go Backend)")
     
     # Check if go.mod exists
     if not Path("go.mod").exists():
-        print("❌ go.mod not found! Are you in the ClaraCore root directory?")
+        print("❌ go.mod not found! Are you in the JarvisCore root directory?")
         return False
     
     # Detect target based on host OS/arch
@@ -155,7 +155,7 @@ def build_go():
     else:
         goarch = "amd64"
 
-    output_name = f"claracore{output_ext}"
+    output_name = f"jarviscore{output_ext}"
     print(f"🧭 Target platform: {goos}/{goarch}")
     print(f"📄 Output: {output_name}")
 
@@ -193,14 +193,14 @@ def build_go():
     
     # Check if executable was created
     if output_path.exists():
-        print("✅ ClaraCore executable created successfully")
+        print("✅ JarvisCore executable created successfully")
         
         # Get file size
         size = output_path.stat().st_size
         size_mb = size / (1024 * 1024)
         print(f"📊 Executable size: {size_mb:.1f} MB")
     else:
-        print("❌ ClaraCore executable not found after build!")
+        print("❌ JarvisCore executable not found after build!")
         return False
     
     return True
@@ -243,8 +243,8 @@ def main():
     print_banner()
     
     # Check if we're in the right directory
-    if not Path("claracore.go").exists() and not Path("go.mod").exists():
-        print("❌ Please run this script from the ClaraCore root directory")
+    if not Path("jarviscore.go").exists() and not Path("go.mod").exists():
+        print("❌ Please run this script from the JarvisCore root directory")
         sys.exit(1)
     
     # Check dependencies
@@ -272,7 +272,7 @@ def main():
     print(f"⏱️  Total build time: {build_time:.2f} seconds")
     # Determine the correct binary name for this host
     system = platform.system().lower()
-    output_name = "claracore.exe" if system.startswith("windows") else "claracore"
+    output_name = "jarviscore.exe" if system.startswith("windows") else "jarviscore"
     print(f"🚀 Ready to run: ./{output_name}")
     print("🌐 UI will be served at: http://localhost:5800")
     print("=" * 60)

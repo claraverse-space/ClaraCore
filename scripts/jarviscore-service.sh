@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ClaraCore Service Management Script
+# JarvisCore Service Management Script
 # Cross-platform service control for Linux and macOS
 
 set -e
@@ -16,16 +16,16 @@ NC='\033[0m' # No Color
 OS="$(uname)"
 if [[ "$OS" == "Linux" ]]; then
     SERVICE_MANAGER="systemd"
-    SERVICE_NAME="claracore"
-    SERVICE_FILE="/etc/systemd/system/claracore.service"
+    SERVICE_NAME="jarviscore"
+    SERVICE_FILE="/etc/systemd/system/jarviscore.service"
 elif [[ "$OS" == "Darwin" ]]; then
     SERVICE_MANAGER="launchd"
-    SERVICE_NAME="com.claracore.server"
-    SERVICE_FILE="/Library/LaunchDaemons/com.claracore.server.plist"
+    SERVICE_NAME="com.jarviscore.server"
+    SERVICE_FILE="/Library/LaunchDaemons/com.jarviscore.server.plist"
 else
     echo -e "${RED}Error: Unsupported operating system: $OS${NC}"
     echo "This script supports Linux and macOS only."
-    echo "For Windows, use PowerShell: Get-Service ClaraCore, Start-Service ClaraCore, Stop-Service ClaraCore"
+    echo "For Windows, use PowerShell: Get-Service JarvisCore, Start-Service JarvisCore, Stop-Service JarvisCore"
     exit 1
 fi
 
@@ -45,7 +45,7 @@ check_admin() {
 }
 
 service_status() {
-    echo -e "${BLUE}Checking ClaraCore service status...${NC}"
+    echo -e "${BLUE}Checking JarvisCore service status...${NC}"
     echo ""
     
     if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
@@ -98,7 +98,7 @@ service_status() {
 }
 
 service_start() {
-    echo -e "${BLUE}Starting ClaraCore service...${NC}"
+    echo -e "${BLUE}Starting JarvisCore service...${NC}"
     
     if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
         systemctl start "$SERVICE_NAME"
@@ -122,7 +122,7 @@ service_start() {
 }
 
 service_stop() {
-    echo -e "${BLUE}Stopping ClaraCore service...${NC}"
+    echo -e "${BLUE}Stopping JarvisCore service...${NC}"
     
     if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
         systemctl stop "$SERVICE_NAME"
@@ -145,7 +145,7 @@ service_stop() {
 }
 
 service_restart() {
-    echo -e "${BLUE}Restarting ClaraCore service...${NC}"
+    echo -e "${BLUE}Restarting JarvisCore service...${NC}"
     
     if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
         systemctl restart "$SERVICE_NAME"
@@ -171,7 +171,7 @@ service_restart() {
 }
 
 service_enable() {
-    echo -e "${BLUE}Enabling ClaraCore service for auto-start...${NC}"
+    echo -e "${BLUE}Enabling JarvisCore service for auto-start...${NC}"
     
     if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
         systemctl enable "$SERVICE_NAME"
@@ -183,7 +183,7 @@ service_enable() {
 }
 
 service_disable() {
-    echo -e "${BLUE}Disabling ClaraCore service auto-start...${NC}"
+    echo -e "${BLUE}Disabling JarvisCore service auto-start...${NC}"
     
     if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
         systemctl disable "$SERVICE_NAME"
@@ -195,29 +195,29 @@ service_disable() {
 }
 
 show_logs() {
-    echo -e "${BLUE}Showing ClaraCore service logs...${NC}"
+    echo -e "${BLUE}Showing JarvisCore service logs...${NC}"
     echo ""
     
     if [[ "$SERVICE_MANAGER" == "systemd" ]]; then
         journalctl -u "$SERVICE_NAME" -f --no-pager
     elif [[ "$SERVICE_MANAGER" == "launchd" ]]; then
-        echo "Checking system logs for ClaraCore..."
-        tail -f /var/log/system.log | grep -i claracore
+        echo "Checking system logs for JarvisCore..."
+        tail -f /var/log/system.log | grep -i jarviscore
     fi
 }
 
 show_help() {
     cat << EOF
-ClaraCore Service Management Script
+JarvisCore Service Management Script
 
 USAGE:
     sudo $0 <command>
 
 COMMANDS:
     status      Show service status and information
-    start       Start the ClaraCore service
-    stop        Stop the ClaraCore service
-    restart     Restart the ClaraCore service
+    start       Start the JarvisCore service
+    stop        Stop the JarvisCore service
+    restart     Restart the JarvisCore service
     enable      Enable service for auto-start on boot
     disable     Disable service auto-start
     logs        Show service logs (follow mode)
@@ -235,10 +235,10 @@ SYSTEM INFORMATION:
     Service File: $SERVICE_FILE
 
 For Windows service management, use PowerShell:
-    Get-Service ClaraCore
-    Start-Service ClaraCore
-    Stop-Service ClaraCore
-    Restart-Service ClaraCore
+    Get-Service JarvisCore
+    Start-Service JarvisCore
+    Stop-Service JarvisCore
+    Restart-Service JarvisCore
 
 EOF
 }
@@ -246,36 +246,36 @@ EOF
 # Main script logic
 case "${1:-}" in
     "status")
-        print_header "ClaraCore Service Status"
+        print_header "JarvisCore Service Status"
         service_status
         ;;
     "start")
         check_admin
-        print_header "Starting ClaraCore Service"
+        print_header "Starting JarvisCore Service"
         service_start
         ;;
     "stop")
         check_admin
-        print_header "Stopping ClaraCore Service"
+        print_header "Stopping JarvisCore Service"
         service_stop
         ;;
     "restart")
         check_admin
-        print_header "Restarting ClaraCore Service"
+        print_header "Restarting JarvisCore Service"
         service_restart
         ;;
     "enable")
         check_admin
-        print_header "Enabling ClaraCore Service"
+        print_header "Enabling JarvisCore Service"
         service_enable
         ;;
     "disable")
         check_admin
-        print_header "Disabling ClaraCore Service"
+        print_header "Disabling JarvisCore Service"
         service_disable
         ;;
     "logs")
-        print_header "ClaraCore Service Logs"
+        print_header "JarvisCore Service Logs"
         show_logs
         ;;
     "help"|"--help"|"-h")

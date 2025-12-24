@@ -261,7 +261,7 @@ const Configuration: React.FC = () => {
 
   const generateYAMLConfig = (models: ConfiguredModel[]): string => {
     // This is a simplified YAML generation - in a real implementation you'd want proper YAML formatting
-    let yaml = `# Auto-generated ClaraCore configuration
+    let yaml = `# Auto-generated JarvisCore configuration
 healthCheckTimeout: 300
 logLevel: info
 startPort: 5800
@@ -386,7 +386,7 @@ ${models.map(model => `      - "${model.id}"`).join('\n')}
                 </div>
                 <div>
                   <h3 className="font-semibold text-brand-700 dark:text-brand-200">
-                    👋 New to ClaraCore? Let's get you started!
+                    👋 New to JarvisCore? Let's get you started!
                   </h3>
                   <p className="text-brand-600 dark:text-brand-300 mt-1">
                     Our guided setup will help you configure your models in just a few clicks.
@@ -547,7 +547,7 @@ ${models.map(model => `      - "${model.id}"`).join('\n')}
                 <CardTitle>2. Configured Models</CardTitle>
               </div>
               <CardDescription>
-                Models ready to use in ClaraCore
+                Models ready to use in JarvisCore
               </CardDescription>
             </CardHeader>
             <CardContent>

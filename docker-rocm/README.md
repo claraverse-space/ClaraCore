@@ -1,6 +1,6 @@
-# ClaraCore Docker - ROCm Edition
+# JarvisCore Docker - ROCm Edition
 
-Clean Docker setup for ClaraCore with AMD GPU acceleration using llama.cpp's official ROCm image.
+Clean Docker setup for JarvisCore with AMD GPU acceleration using llama.cpp's official ROCm image.
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ For unofficial support on other AMD GPUs (RX 5000, RX 500, etc.), see "GPU Overr
 
 ```bash
 # Pull the image from Docker Hub
-docker pull clara17verse/claracore:rocm
+docker pull jarvis17verse/jarviscore:rocm
 
 # Run with docker-compose
 cd docker-rocm
@@ -38,34 +38,34 @@ docker-compose up -d
 
 ```bash
 docker run -d \
-  --name claracore-rocm \
+  --name jarviscore-rocm \
   --device=/dev/kfd \
   --device=/dev/dri \
   --group-add video \
   --group-add render \
   -p 5890:5890 \
-  -v claracore-rocm-downloads:/app/downloads \
-  clara17verse/claracore:rocm
+  -v jarviscore-rocm-downloads:/app/downloads \
+  jarvis17verse/jarviscore:rocm
 ```
 
 ### Option 3: Run with Custom Model Folder
 
 ```bash
 docker run -d \
-  --name claracore-rocm \
+  --name jarviscore-rocm \
   --device=/dev/kfd \
   --device=/dev/dri \
   --group-add video \
   --group-add render \
   -p 5890:5890 \
-  -v claracore-rocm-downloads:/app/downloads \
+  -v jarviscore-rocm-downloads:/app/downloads \
   -v /path/to/your/models:/app/models:ro \
-  clara17verse/claracore:rocm
+  jarvis17verse/jarviscore:rocm
 ```
 
-**Access ClaraCore:** http://localhost:5890/ui/
+**Access JarvisCore:** http://localhost:5890/ui/
 
-✅ **Your models are saved** in Docker volume `claracore-rocm-downloads`
+✅ **Your models are saved** in Docker volume `jarviscore-rocm-downloads`
 
 ## View Logs
 
@@ -140,22 +140,22 @@ rocminfo | grep "Name:"
 
 Check inside container:
 ```bash
-docker exec claracore-rocm rocm-smi
+docker exec jarviscore-rocm rocm-smi
 ```
 
 ## Building the Image
 
 ### Build locally:
 ```bash
-# From ClaraCore root directory
-cd /home/bb17g/claracore/ClaraCore
+# From JarvisCore root directory
+cd /home/bb17g/jarviscore/JarvisCore
 
-# Build ClaraCore binary for Linux
-GOOS=linux GOARCH=amd64 go build -o claracore .
+# Build JarvisCore binary for Linux
+GOOS=linux GOARCH=amd64 go build -o jarviscore .
 
 # Build Docker image
 cd docker-rocm
-docker build -f Dockerfile.rocm -t claracore:rocm ..
+docker build -f Dockerfile.rocm -t jarviscore:rocm ..
 
 # Or use docker-compose
 docker-compose build
@@ -164,11 +164,11 @@ docker-compose build
 ### Push to Docker Hub:
 ```bash
 # Tag for Docker Hub
-docker tag claracore:rocm yourusername/claracore:rocm
+docker tag jarviscore:rocm yourusername/jarviscore:rocm
 
 # Login and push
 docker login
-docker push yourusername/claracore:rocm
+docker push yourusername/jarviscore:rocm
 ```
 
 ## Testing Without AMD GPU
@@ -177,17 +177,17 @@ If you want to build the ROCm image but don't have an AMD GPU to test:
 
 ```bash
 # Build the image (this works on any system)
-docker build -f docker-rocm/Dockerfile.rocm -t claracore:rocm .
+docker build -f docker-rocm/Dockerfile.rocm -t jarviscore:rocm .
 
 # Test that it builds successfully
-docker images | grep claracore
+docker images | grep jarviscore
 
 # You can't run it without ROCm hardware, but you can verify:
 # 1. Image builds without errors
-# 2. ClaraCore binary is included
+# 2. JarvisCore binary is included
 # 3. Entry point is correct
 
-docker run --rm claracore:rocm --version
+docker run --rm jarviscore:rocm --version
 ```
 
 The container will fail to start without AMD GPU hardware, but you can:
@@ -198,8 +198,8 @@ The container will fail to start without AMD GPU hardware, but you can:
 
 ## Data Persistence
 
-✅ **Your downloaded models are safe!** The `/app/downloads` folder is stored in Docker volume `claracore-rocm-downloads`:
-- **Models** you download through ClaraCore
+✅ **Your downloaded models are safe!** The `/app/downloads` folder is stored in Docker volume `jarviscore-rocm-downloads`:
+- **Models** you download through JarvisCore
 - Persists even after `docker-compose down`
 
 **⚠️ Your downloads will ONLY be deleted if you run:** `docker-compose down -v`
@@ -211,7 +211,7 @@ You can easily bind-mount your existing model folders into the container!
 ### Edit docker-compose.yml:
 ```yaml
 volumes:
-  - claracore-rocm-downloads:/app/downloads
+  - jarviscore-rocm-downloads:/app/downloads
   - /path/to/your/models:/app/models:ro          # Add your path here
   - /mnt/storage/llm-models:/app/external:ro     # Multiple folders supported
 ```
@@ -219,24 +219,24 @@ volumes:
 **Tips:**
 - Use `:ro` (read-only) to prevent accidental modifications
 - Mount multiple folders to different paths
-- After mounting, go to Setup in ClaraCore UI and add these folders
+- After mounting, go to Setup in JarvisCore UI and add these folders
 
 ## Managing Your Data
 
 **View volume location:**
 ```bash
-docker volume inspect claracore-rocm-downloads
+docker volume inspect jarviscore-rocm-downloads
 ```
 
 **View what's inside:**
 ```bash
-docker exec claracore-rocm ls -lh /app/downloads
+docker exec jarviscore-rocm ls -lh /app/downloads
 ```
 
 **Backup your downloads:**
 ```bash
-docker run --rm -v claracore-rocm-downloads:/downloads -v $(pwd):/backup ubuntu \
-  tar czf /backup/claracore-rocm-downloads-backup.tar.gz -C /downloads .
+docker run --rm -v jarviscore-rocm-downloads:/downloads -v $(pwd):/backup ubuntu \
+  tar czf /backup/jarviscore-rocm-downloads-backup.tar.gz -C /downloads .
 ```
 
 ## Troubleshooting
@@ -275,11 +275,11 @@ watch -n 1 rocm-smi
 
 2. **Monitor inside container:**
 ```bash
-docker exec claracore-rocm rocm-smi
+docker exec jarviscore-rocm rocm-smi
 ```
 
 3. **Check if using GPU:**
-Look for "GPU layers: XX" in ClaraCore logs
+Look for "GPU layers: XX" in JarvisCore logs
 
 ### Common Errors
 

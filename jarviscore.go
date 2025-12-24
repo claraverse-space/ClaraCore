@@ -15,9 +15,9 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gin-gonic/gin"
-	"github.com/prave/ClaraCore/autosetup"
-	"github.com/prave/ClaraCore/event"
-	"github.com/prave/ClaraCore/proxy"
+	"github.com/prave/JarvisCore/autosetup"
+	"github.com/prave/JarvisCore/event"
+	"github.com/prave/JarvisCore/proxy"
 )
 
 var (
@@ -29,7 +29,7 @@ var (
 func main() {
 	// Define a command-line flag for the port
 	configPath := flag.String("config", "config.yaml", "config file name")
-	listenStr := flag.String("listen", ":5800", "listen ip/port for ClaraCore web interface")
+	listenStr := flag.String("listen", ":5800", "listen ip/port for JarvisCore web interface")
 	showVersion := flag.Bool("version", false, "show version of build")
 	watchConfig := flag.Bool("watch-config", true, "Automatically reload config file on change (default: true)")
 	modelsFolder := flag.String("models-folder", "", "automatically detect GGUF models in folder and generate config")
@@ -86,7 +86,7 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("✅ Auto-setup completed successfully!")
-		fmt.Println("🚀 Starting ClaraCore server with the generated configuration...")
+		fmt.Println("🚀 Starting JarvisCore server with the generated configuration...")
 		fmt.Println("📁 Config watching is enabled - any changes to config.yaml will trigger automatic reloads")
 		fmt.Printf("🌐 Server will be available at: http://localhost%s\n", *listenStr)
 		fmt.Printf("🎛️  Web interface: http://localhost%s/ui/\n", *listenStr)
@@ -235,7 +235,7 @@ func main() {
 	}()
 
 	// Start server
-	fmt.Printf("Clara Core listening on %s\n", *listenStr)
+	fmt.Printf("Jarvis Core listening on %s\n", *listenStr)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Fatal server error: %v\n", err)

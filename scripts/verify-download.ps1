@@ -1,5 +1,5 @@
-# ClaraCore Download Verification Script
-# Helps users verify the integrity of downloaded ClaraCore binaries
+# JarvisCore Download Verification Script
+# Helps users verify the integrity of downloaded JarvisCore binaries
 
 param(
     [Parameter(Mandatory=$true)]
@@ -11,7 +11,7 @@ param(
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " ClaraCore Download Verification" -ForegroundColor Cyan
+Write-Host " JarvisCore Download Verification" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

@@ -1,6 +1,6 @@
-# ClaraCore Docker - CPU Edition
+# JarvisCore Docker - CPU Edition
 
-Clean Docker setup for ClaraCore with CPU-only inference using llama.cpp's official CPU image.
+Clean Docker setup for JarvisCore with CPU-only inference using llama.cpp's official CPU image.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ No GPU required! This version runs on any CPU.
 
 ```bash
 # Pull the image from Docker Hub
-docker pull clara17verse/claracore:cpu
+docker pull jarvis17verse/jarviscore:cpu
 
 # Run with docker-compose
 cd docker-cpu
@@ -26,26 +26,26 @@ docker-compose up -d
 
 ```bash
 docker run -d \
-  --name claracore-cpu \
+  --name jarviscore-cpu \
   -p 5890:5890 \
-  -v claracore-cpu-downloads:/app/downloads \
-  clara17verse/claracore:cpu
+  -v jarviscore-cpu-downloads:/app/downloads \
+  jarvis17verse/jarviscore:cpu
 ```
 
 ### Option 3: Run with Custom Model Folder
 
 ```bash
 docker run -d \
-  --name claracore-cpu \
+  --name jarviscore-cpu \
   -p 5890:5890 \
-  -v claracore-cpu-downloads:/app/downloads \
+  -v jarviscore-cpu-downloads:/app/downloads \
   -v /path/to/your/models:/app/models:ro \
-  clara17verse/claracore:cpu
+  jarvis17verse/jarviscore:cpu
 ```
 
-**Access ClaraCore:** http://localhost:5890/ui/
+**Access JarvisCore:** http://localhost:5890/ui/
 
-✅ **Your models are saved** in Docker volume `claracore-cpu-downloads`
+✅ **Your models are saved** in Docker volume `jarviscore-cpu-downloads`
 
 ## View Logs
 
@@ -67,18 +67,18 @@ The container auto-detects available CPU cores. For better performance with larg
 ```bash
 # Set specific thread count
 docker run -d \
-  --name claracore-cpu \
+  --name jarviscore-cpu \
   -p 5890:5890 \
-  -v claracore-cpu-downloads:/app/downloads \
+  -v jarviscore-cpu-downloads:/app/downloads \
   -e OMP_NUM_THREADS=8 \
-  claracore:cpu
+  jarviscore:cpu
 ```
 
 ### Resource Limits
 Limit CPU usage to prevent system overload:
 
 ```yaml
-# Add to docker-compose.yml under 'claracore' service:
+# Add to docker-compose.yml under 'jarviscore' service:
 deploy:
   resources:
     limits:
@@ -93,15 +93,15 @@ deploy:
 
 ### Build locally:
 ```bash
-# From ClaraCore root directory
-cd /home/bb17g/claracore/ClaraCore
+# From JarvisCore root directory
+cd /home/bb17g/jarviscore/JarvisCore
 
-# Build ClaraCore binary for Linux
-GOOS=linux GOARCH=amd64 go build -o claracore .
+# Build JarvisCore binary for Linux
+GOOS=linux GOARCH=amd64 go build -o jarviscore .
 
 # Build Docker image
 cd docker-cpu
-docker build -f Dockerfile.cpu -t claracore:cpu ..
+docker build -f Dockerfile.cpu -t jarviscore:cpu ..
 
 # Or use docker-compose
 docker-compose build
@@ -110,12 +110,12 @@ docker-compose build
 ### Build for different architectures:
 ```bash
 # For ARM64 (Raspberry Pi, Apple Silicon)
-GOOS=linux GOARCH=arm64 go build -o claracore .
-docker build -f Dockerfile.cpu -t claracore:cpu-arm64 ..
+GOOS=linux GOARCH=arm64 go build -o jarviscore .
+docker build -f Dockerfile.cpu -t jarviscore:cpu-arm64 ..
 
 # For AMD64 (Intel/AMD x86-64)
-GOOS=linux GOARCH=amd64 go build -o claracore .
-docker build -f Dockerfile.cpu -t claracore:cpu-amd64 ..
+GOOS=linux GOARCH=amd64 go build -o jarviscore .
+docker build -f Dockerfile.cpu -t jarviscore:cpu-amd64 ..
 ```
 
 ## Multi-arch Build
@@ -130,15 +130,15 @@ docker buildx create --use
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -f docker-cpu/Dockerfile.cpu \
-  -t yourusername/claracore:cpu \
+  -t yourusername/jarviscore:cpu \
   --push \
   .
 ```
 
 ## Data Persistence
 
-✅ **Your downloaded models are safe!** The `/app/downloads` folder is stored in Docker volume `claracore-cpu-downloads`:
-- **Models** you download through ClaraCore
+✅ **Your downloaded models are safe!** The `/app/downloads` folder is stored in Docker volume `jarviscore-cpu-downloads`:
+- **Models** you download through JarvisCore
 - Persists even after `docker-compose down`
 
 **⚠️ Your downloads will ONLY be deleted if you run:** `docker-compose down -v`
@@ -150,7 +150,7 @@ You can easily bind-mount your existing model folders into the container!
 ### Edit docker-compose.yml:
 ```yaml
 volumes:
-  - claracore-cpu-downloads:/app/downloads
+  - jarviscore-cpu-downloads:/app/downloads
   - /path/to/your/models:/app/models:ro          # Add your path here
   - /mnt/storage/llm-models:/app/external:ro     # Multiple folders supported
 ```
@@ -158,30 +158,30 @@ volumes:
 **Tips:**
 - Use `:ro` (read-only) to prevent accidental modifications
 - Mount multiple folders to different paths
-- After mounting, go to Setup in ClaraCore UI and add these folders (e.g., `/app/models`, `/app/external`)
+- After mounting, go to Setup in JarvisCore UI and add these folders (e.g., `/app/models`, `/app/external`)
 
 ## Managing Your Data
 
 **View volume location:**
 ```bash
-docker volume inspect claracore-cpu-downloads
+docker volume inspect jarviscore-cpu-downloads
 ```
 
 **View what's inside:**
 ```bash
-docker exec claracore-cpu ls -lh /app/downloads
+docker exec jarviscore-cpu ls -lh /app/downloads
 ```
 
 **Backup your downloads:**
 ```bash
-docker run --rm -v claracore-cpu-downloads:/downloads -v $(pwd):/backup ubuntu \
-  tar czf /backup/claracore-cpu-downloads-backup.tar.gz -C /downloads .
+docker run --rm -v jarviscore-cpu-downloads:/downloads -v $(pwd):/backup ubuntu \
+  tar czf /backup/jarviscore-cpu-downloads-backup.tar.gz -C /downloads .
 ```
 
 **Restore from backup:**
 ```bash
-docker run --rm -v claracore-cpu-downloads:/downloads -v $(pwd):/backup ubuntu \
-  tar xzf /backup/claracore-cpu-downloads-backup.tar.gz -C /downloads
+docker run --rm -v jarviscore-cpu-downloads:/downloads -v $(pwd):/backup ubuntu \
+  tar xzf /backup/jarviscore-cpu-downloads-backup.tar.gz -C /downloads
 ```
 
 ## Troubleshooting

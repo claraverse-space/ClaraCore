@@ -449,7 +449,7 @@ const OnboardConfig: React.FC = () => {
 
   const steps = [
     {
-      title: "Welcome to ClaraCore Setup! 🚀",
+      title: "Welcome to JarvisCore Setup! 🚀",
       description: "Let's get you set up with your AI models in just a few steps",
       component: (
         <div className="text-center py-8">
@@ -1324,7 +1324,7 @@ const OnboardConfig: React.FC = () => {
     },
     {
       title: "Setup Complete! 🎉",
-      description: "Your ClaraCore configuration has been generated",
+      description: "Your JarvisCore configuration has been generated",
       component: (
         <div className="text-center py-8">
           <motion.div
@@ -1348,7 +1348,7 @@ const OnboardConfig: React.FC = () => {
               size="lg"
               icon={<ZapIcon size={20} />}
             >
-              Start Using ClaraCore
+              Start Using JarvisCore
             </Button>
             <br />
             <Button 
@@ -1384,7 +1384,7 @@ const OnboardConfig: React.FC = () => {
                   <div>
                     <h3 className="font-semibold text-text-primary">Setup Complete</h3>
                     <p className="text-sm text-text-secondary">
-                      ClaraCore is configured and ready to use
+                      JarvisCore is configured and ready to use
                     </p>
                   </div>
                 </div>

@@ -397,7 +397,7 @@ const ModelDownloaderPage: React.FC = () => {
         headers['Authorization'] = `Bearer ${hfApiKey}`;
       }
 
-      // Automatically add "GGUF" to search if not already present since ClaraCore only supports GGUF
+      // Automatically add "GGUF" to search if not already present since JarvisCore only supports GGUF
       let enhancedQuery = searchQuery.trim();
       if (!enhancedQuery.toLowerCase().includes('gguf')) {
         enhancedQuery = `${enhancedQuery} GGUF`;
@@ -1249,7 +1249,7 @@ const ModelDownloaderPage: React.FC = () => {
                 ) : (
                   <div className="text-center py-8 text-text-secondary">
                     <p>No GGUF files found for this model.</p>
-                    <p className="text-xs mt-1">ClaraCore only supports GGUF format models. Try searching for models with "GGUF" in the name.</p>
+                    <p className="text-xs mt-1">JarvisCore only supports GGUF format models. Try searching for models with "GGUF" in the name.</p>
                   </div>
                 );
               })()}

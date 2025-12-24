@@ -310,7 +310,7 @@ export function APIProvider({ children, autoStartAPIEvents = true }: APIProvider
     <APIContext.Provider value={value}>
       {children}
       {/* API Key Modal */}
-      <Modal open={showKeyModal} onClose={cancelApiKey} title="API Key Required" description="Enter the API key to access ClaraCore endpoints.">
+      <Modal open={showKeyModal} onClose={cancelApiKey} title="API Key Required" description="Enter the API key to access JarvisCore endpoints.">
         <div className="space-y-3">
           <input
             type="password"
