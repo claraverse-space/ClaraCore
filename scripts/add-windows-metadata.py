@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Add Windows metadata to ClaraCore executable
+Add Windows metadata to JarvisCore executable
 This helps reduce false positives from antivirus software
 """
 
@@ -22,8 +22,8 @@ def compile_resource_file():
         print("   - Or download from: https://www.mingw-w64.org/")
         return False
     
-    rc_file = Path("claracore.rc")
-    syso_file = Path("claracore_windows.syso")
+    rc_file = Path("jarviscore.rc")
+    syso_file = Path("jarviscore_windows.syso")
     
     if not rc_file.exists():
         print(f"❌ Resource file not found: {rc_file}")
@@ -48,7 +48,7 @@ def compile_resource_file():
 
 def main():
     print("=" * 60)
-    print("🛡️  ClaraCore Windows Metadata Builder")
+    print("🛡️  JarvisCore Windows Metadata Builder")
     print("=" * 60)
     print()
     

@@ -165,7 +165,7 @@ func commandExists(cmd string) bool {
 // shouldUseEmoji returns whether to use emoji in output based on environment
 func shouldUseEmoji() bool {
 	// Check NO_EMOJI environment variable
-	if os.Getenv("NO_EMOJI") != "" || os.Getenv("CLARACORE_NO_EMOJI") != "" {
+	if os.Getenv("NO_EMOJI") != "" || os.Getenv("JARVISCORE_NO_EMOJI") != "" {
 		return false
 	}
 
@@ -381,7 +381,7 @@ func killLlamaServerProcesses() {
 		return
 	}
 
-	// Only kill llama-server.exe processes, not claracore.exe
+	// Only kill llama-server.exe processes, not jarviscore.exe
 	cmd := exec.Command("taskkill", "/F", "/IM", "llama-server.exe")
 	err := cmd.Run()
 	if err == nil {
@@ -463,7 +463,7 @@ func DownloadBinary(downloadDir string, system SystemInfo, forceBackend string) 
 				fmt.Printf("⚠️  Failed to remove existing binary directory: %v\n", err)
 				fmt.Printf("💡 This can happen if binary files are locked by Windows.\n")
 				fmt.Printf("   Try:\n")
-				fmt.Printf("   1. Restart ClaraCore\n")
+				fmt.Printf("   1. Restart JarvisCore\n")
 				fmt.Printf("   2. Wait a few seconds and try again\n")
 				fmt.Printf("   3. Manually delete the 'binaries' folder if needed\n")
 				// Continue with download anyway - it might still work
@@ -1675,7 +1675,7 @@ func getAppleSiliconUnifiedMemory() float64 {
 
 // PrintPlatformSupportSummary prints a comprehensive summary of platform support
 func PrintPlatformSupportSummary() {
-	fmt.Printf("\n🌍 ClaraCore Platform Support Matrix:\n")
+	fmt.Printf("\n🌍 JarvisCore Platform Support Matrix:\n")
 	fmt.Printf("══════════════════════════════════════════════════════════════\n")
 
 	// Windows Support

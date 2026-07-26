@@ -69,7 +69,7 @@ const ComponentsDemo: React.FC = () => {
       <div className="flex items-center gap-4">
         <CpuChipIcon className="w-8 h-8 text-brand-500" />
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">ClaraCore UI</h1>
+          <h1 className="text-2xl font-bold text-text-primary">JarvisCore UI</h1>
           <p className="text-text-secondary">Modern Component Library Demo</p>
         </div>
       </div>
@@ -125,7 +125,7 @@ const ComponentsDemo: React.FC = () => {
           >
             <h1 className="text-3xl font-bold text-text-primary mb-2">Component Showcase</h1>
             <p className="text-text-secondary">
-              Explore the modern UI components built for ClaraCore
+              Explore the modern UI components built for JarvisCore
             </p>
           </motion.div>
 

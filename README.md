@@ -1,8 +1,8 @@
 <div align="center">
-  <img src="banner.png" alt="ClaraCore Banner" width="100%">
+  <img src="banner.png" alt="JarvisCore Banner" width="100%">
 </div>
 
-# ClaraCore 🚀
+# JarvisCore 🚀
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ```bash
@@ -12,30 +12,30 @@ source ~/.bashrc
 ```
 
 **🛡️ Windows Security Notice**
-ClaraCore may be flagged by antivirus software - **this is a false positive**. [Complete guide to antivirus warnings](docs/ANTIVIRUS_FALSE_POSITIVES.md) | [Why is this flagged?](SECURITY_VERIFICATION.md)
+JarvisCore may be flagged by antivirus software - **this is a false positive**. [Complete guide to antivirus warnings](docs/ANTIVIRUS_FALSE_POSITIVES.md) | [Why is this flagged?](SECURITY_VERIFICATION.md)
 
 ```powershell
 # Quick fix - Add Windows Defender exclusion:
-Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\ClaraCore"
+Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\JarvisCore"
 
 # Or unblock the file:
-Unblock-File "$env:LOCALAPPDATA\ClaraCore\claracore.exe"
+Unblock-File "$env:LOCALAPPDATA\JarvisCore\jarviscore.exe"
 
 # Or run troubleshooter:
-curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/troubleshoot.ps1 | powershell
+curl -fsSL https://raw.githubusercontent.com/jarvisverse-space/JarvisCore/main/scripts/troubleshoot.ps1 | powershell
 ```
 
-**✅ Verify it's safe:** Check SHA256 hash against [official releases](https://github.com/claraverse-space/ClaraCore/releases) or [build from source](SECURITY_VERIFICATION.md).
+**✅ Verify it's safe:** Check SHA256 hash against [official releases](https://github.com/jarvisverse-space/JarvisCore/releases) or [build from source](SECURITY_VERIFICATION.md).
 
 **Need help?** See our [Setup Guide](docs/SETUP.md) or [Container Guide](docker/CONTAINER_SETUP.md)
 
 ## 🙏 Credits & Acknowledgments)
 [![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/prave/ClaraCore)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/prave/JarvisCore)
 
 > **Auto-setup for llama.cpp** - Point it at your GGUF models folder and get a complete AI inference server in seconds.
 
-ClaraCore extends [llama-swap](https://github.com/mostlygeek/llama-swap) with intelligent automation, bringing zero-configuration setup to llama.cpp deployments.
+JarvisCore extends [llama-swap](https://github.com/mostlygeek/llama-swap) with intelligent automation, bringing zero-configuration setup to llama.cpp deployments.
 
 ## 🔥 Quick Install
 
@@ -43,17 +43,17 @@ ClaraCore extends [llama-swap](https://github.com/mostlygeek/llama-swap) with in
 
 **Linux/macOS (Recommended):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jarvisverse-space/JarvisCore/main/scripts/install.sh | bash
 ```
 
 **Windows:**
 ```powershell
-irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/jarvisverse-space/JarvisCore/main/scripts/install.ps1 | iex
 ```
 
 **Then start immediately:**
 ```bash
-claracore --models-folder /path/to/your/gguf/models
+jarviscore --models-folder /path/to/your/gguf/models
 # Visit: http://localhost:5800/ui/setup
 ```
 
@@ -61,21 +61,21 @@ claracore --models-folder /path/to/your/gguf/models
 
 **CUDA (NVIDIA):**
 ```bash
-docker run -d --gpus all -p 5800:5800 -v ./models:/models claracore:cuda --models-folder /models
+docker run -d --gpus all -p 5800:5800 -v ./models:/models jarviscore:cuda --models-folder /models
 ```
 
 **ROCm (AMD):**
 ```bash
-docker run -d --device=/dev/kfd --device=/dev/dri -p 5800:5800 -v ./models:/models claracore:rocm --models-folder /models
+docker run -d --device=/dev/kfd --device=/dev/dri -p 5800:5800 -v ./models:/models jarviscore:rocm --models-folder /models
 ```
 
 📦 **Optimized containers**: 2-3GB vs 8-12GB full SDKs. See [Container Guide](docker/CONTAINER_SETUP.md)
 
 ✨ **Features include:** Auto-setup, hardware detection, binary management, and production configs!
 
-## ✨ What's New in ClaraCore
+## ✨ What's New in JarvisCore
 
-While maintaining 100% compatibility with llama-swap, ClaraCore adds:
+While maintaining 100% compatibility with llama-swap, JarvisCore adds:
 
 - 🎯 **Auto-Setup Engine** - Automatic GGUF detection and configuration
 - 🔍 **Smart Hardware Detection** - CUDA/ROCm/Vulkan/Metal optimization
@@ -87,9 +87,9 @@ While maintaining 100% compatibility with llama-swap, ClaraCore adds:
 
 ```bash
 # One command setup - that's it!
-./claracore --models-folder /path/to/your/gguf/models --backend vulkan
+./jarviscore --models-folder /path/to/your/gguf/models --backend vulkan
 
-# ClaraCore will:
+# JarvisCore will:
 # 1. Scan for GGUF files
 # 2. Detect your hardware (GPUs, CUDA, etc.)
 # 3. Download optimal binaries
@@ -103,12 +103,12 @@ While maintaining 100% compatibility with llama-swap, ClaraCore adds:
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jarvisverse-space/JarvisCore/main/scripts/install.sh | bash
 ```
 
 **Windows:**
 ```powershell
-irm https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/jarvisverse-space/JarvisCore/main/scripts/install.ps1 | iex
 ```
 
 The installer will:
@@ -121,28 +121,28 @@ The installer will:
 
 ```bash
 # Windows
-curl -L -o claracore.exe https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-windows-amd64.exe
+curl -L -o jarviscore.exe https://github.com/jarvisverse-space/JarvisCore/releases/latest/download/jarviscore-windows-amd64.exe
 
 # Linux
-curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-linux-amd64
-chmod +x claracore
+curl -L -o jarviscore https://github.com/jarvisverse-space/JarvisCore/releases/latest/download/jarviscore-linux-amd64
+chmod +x jarviscore
 
 # macOS Intel
-curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-darwin-amd64
-chmod +x claracore
+curl -L -o jarviscore https://github.com/jarvisverse-space/JarvisCore/releases/latest/download/jarviscore-darwin-amd64
+chmod +x jarviscore
 
 # macOS Apple Silicon
-curl -L -o claracore https://github.com/claraverse-space/ClaraCore/releases/latest/download/claracore-darwin-arm64
-chmod +x claracore
+curl -L -o jarviscore https://github.com/jarvisverse-space/JarvisCore/releases/latest/download/jarviscore-darwin-arm64
+chmod +x jarviscore
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/claraverse-space/ClaraCore.git
-cd ClaraCore
+git clone https://github.com/jarvisverse-space/JarvisCore.git
+cd JarvisCore
 python build.py  # Builds UI + Go backend with version info
-# or: go build -o claracore .
+# or: go build -o jarviscore .
 ```
 
 ## 🎛️ Core Features
@@ -158,7 +158,7 @@ All the power of llama-swap, plus intelligent automation:
 - ✅ Docker/Podman support
 - ✅ Full llama.cpp server control
 
-### ClaraCore Enhancements
+### JarvisCore Enhancements
 - ✅ Zero-configuration setup
 - ✅ Automatic binary downloads
 - ✅ Hardware capability detection
@@ -171,12 +171,12 @@ All the power of llama-swap, plus intelligent automation:
 ### Automatic Setup
 ```bash
 # Just point to your models
-./claracore --models-folder ~/models
+./jarviscore --models-folder ~/models
 ```
 ### Manual Setup - for devices like strix halo and others who want to customize or setup without relying on auto-detection
 ```bash
 # Create a config file
-./claracore -ram 64 -vram 24 -backend cuda
+./jarviscore -ram 64 -vram 24 -backend cuda
 # it will download the binaries and create a config file automatically and UI will have all the features needed to manage models
 ```
 
@@ -196,10 +196,10 @@ curl http://localhost:8080/v1/chat/completions \
 
 ## 🔧 Configuration
 
-ClaraCore generates configurations automatically, but you can customize everything:
+JarvisCore generates configurations automatically, but you can customize everything:
 
 ```yaml
-# Auto-generated by ClaraCore
+# Auto-generated by JarvisCore
 models:
   "llama-3-70b":
     cmd: |
@@ -258,7 +258,7 @@ curl http://localhost:5800/api/setup/progress
 
 ## �🙏 Credits & Acknowledgments
 
-**ClaraCore is built on [llama-swap](https://github.com/mostlygeek/llama-swap) by [@mostlygeek](https://github.com/mostlygeek)** 
+**JarvisCore is built on [llama-swap](https://github.com/mostlygeek/llama-swap) by [@mostlygeek](https://github.com/mostlygeek)** 
 
 This project extends llama-swap's excellent proxy architecture with automatic setup capabilities. Approximately 90% of the core functionality comes from the original llama-swap codebase. We're deeply grateful for @mostlygeek's work in creating such a solid foundation.
 
@@ -301,10 +301,10 @@ MIT License - Same as llama-swap. See [LICENSE](LICENSE) for details.
 
 ## 🔗 Links
 
-- [ClaraCore Issues](https://github.com/prave/ClaraCore/issues)
+- [JarvisCore Issues](https://github.com/prave/JarvisCore/issues)
 - [Original llama-swap](https://github.com/mostlygeek/llama-swap)
 - [llama.cpp](https://github.com/ggerganov/llama.cpp)
-- [Documentation Wiki](https://github.com/prave/ClaraCore/wiki)
+- [Documentation Wiki](https://github.com/prave/JarvisCore/wiki)
 
 ---
 

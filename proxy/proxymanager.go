@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prave/ClaraCore/autosetup"
-	"github.com/prave/ClaraCore/event"
+	"github.com/prave/JarvisCore/autosetup"
+	"github.com/prave/JarvisCore/event"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -554,7 +554,7 @@ func (pm *ProxyManager) listModelsHandler(c *gin.Context) {
 			"id":       id,
 			"object":   "model",
 			"created":  createdTime,
-			"owned_by": "ClaraCore",
+			"owned_by": "JarvisCore",
 		}
 
 		if name := strings.TrimSpace(modelConfig.Name); name != "" {

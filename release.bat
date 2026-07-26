@@ -1,8 +1,8 @@
 @echo off
-REM ClaraCore Release Helper for Windows
+REM JarvisCore Release Helper for Windows
 
 echo ==========================================
-echo  ClaraCore Release Manager
+echo  JarvisCore Release Manager
 echo ==========================================
 echo.
 
@@ -118,6 +118,6 @@ if errorlevel 1 (
     echo  Release Created Successfully!
     echo ==========================================
     echo.
-    echo Visit: https://github.com/badboysm890/ClaraCore/releases
+    echo Visit: https://github.com/badboysm890/JarvisCore/releases
     pause
 )

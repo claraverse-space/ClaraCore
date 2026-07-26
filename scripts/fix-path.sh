@@ -1,6 +1,6 @@
 #!/bin/bash
-# ClaraCore PATH Fix Script
-# Run this if 'claracore' command is not found after installation
+# JarvisCore PATH Fix Script
+# Run this if 'jarviscore' command is not found after installation
 
 set -e
 
@@ -11,28 +11,28 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}ClaraCore PATH Fix${NC}"
+echo -e "${BLUE}JarvisCore PATH Fix${NC}"
 echo "================================"
 
-# Check if claracore binary exists
-CLARACORE_PATH="$HOME/.local/bin/claracore"
-if [[ ! -f "$CLARACORE_PATH" ]]; then
-    echo -e "${RED}Error: ClaraCore binary not found at $CLARACORE_PATH${NC}"
+# Check if jarviscore binary exists
+JARVISCORE_PATH="$HOME/.local/bin/jarviscore"
+if [[ ! -f "$JARVISCORE_PATH" ]]; then
+    echo -e "${RED}Error: JarvisCore binary not found at $JARVISCORE_PATH${NC}"
     echo "Please run the installer first:"
-    echo "curl -fsSL https://raw.githubusercontent.com/claraverse-space/ClaraCore/main/scripts/install.sh | bash"
+    echo "curl -fsSL https://raw.githubusercontent.com/jarvisverse-space/JarvisCore/main/scripts/install.sh | bash"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Found ClaraCore binary at $CLARACORE_PATH${NC}"
+echo -e "${GREEN}✓ Found JarvisCore binary at $JARVISCORE_PATH${NC}"
 
 # Check if already in PATH
-if command -v claracore >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ claracore is already accessible in PATH${NC}"
-    echo "Try running: claracore --version"
+if command -v jarviscore >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ jarviscore is already accessible in PATH${NC}"
+    echo "Try running: jarviscore --version"
     exit 0
 fi
 
-echo -e "${YELLOW}⚠ claracore not in PATH, fixing...${NC}"
+echo -e "${YELLOW}⚠ jarviscore not in PATH, fixing...${NC}"
 
 # Add to PATH for current session
 export PATH="$HOME/.local/bin:$PATH"
@@ -77,13 +77,13 @@ if [[ "$CONFIG_UPDATED" == false ]]; then
 fi
 
 # Test again
-if command -v claracore >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ SUCCESS: claracore is now accessible!${NC}"
+if command -v jarviscore >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ SUCCESS: jarviscore is now accessible!${NC}"
     echo
     echo "Test it with:"
-    echo -e "  ${BLUE}claracore --version${NC}"
+    echo -e "  ${BLUE}jarviscore --version${NC}"
 else
-    echo -e "${YELLOW}⚠ claracore still not accessible in current session${NC}"
+    echo -e "${YELLOW}⚠ jarviscore still not accessible in current session${NC}"
     echo
     echo "Manual solutions:"
     echo -e "1. Restart your terminal"
@@ -91,7 +91,7 @@ else
     echo -e "3. Or run: ${BLUE}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
     echo
     echo "Then test with:"
-    echo -e "  ${BLUE}claracore --version${NC}"
+    echo -e "  ${BLUE}jarviscore --version${NC}"
 fi
 
 echo

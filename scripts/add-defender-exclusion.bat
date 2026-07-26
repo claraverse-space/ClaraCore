@@ -1,10 +1,10 @@
 @echo off
-REM ClaraCore Windows Defender Exclusion Helper
-REM Adds ClaraCore to Windows Defender exclusions to prevent false positives
+REM JarvisCore Windows Defender Exclusion Helper
+REM Adds JarvisCore to Windows Defender exclusions to prevent false positives
 
 echo.
 echo ========================================
-echo  ClaraCore Antivirus Helper
+echo  JarvisCore Antivirus Helper
 echo ========================================
 echo.
 
@@ -19,7 +19,7 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
-echo Detected ClaraCore in current directory...
+echo Detected JarvisCore in current directory...
 echo.
 
 REM Get current directory
@@ -35,8 +35,8 @@ powershell -Command "Add-MpPreference -ExclusionPath '%CURRENT_DIR%'" >nul 2>&1
 if %errorLevel% equ 0 (
     echo [SUCCESS] Exclusion added successfully!
     echo.
-    echo ClaraCore is now excluded from Windows Defender scans.
-    echo You can now run claracore.exe without false positive warnings.
+    echo JarvisCore is now excluded from Windows Defender scans.
+    echo You can now run jarviscore.exe without false positive warnings.
     echo.
 ) else (
     echo [ERROR] Failed to add exclusion.
@@ -50,9 +50,9 @@ if %errorLevel% equ 0 (
 
 echo ========================================
 echo.
-echo To verify ClaraCore is safe:
+echo To verify JarvisCore is safe:
 echo   1. Check SHA256 hash against GitHub release
-echo   2. Review source code at github.com/claraverse-space/ClaraCore
+echo   2. Review source code at github.com/jarvisverse-space/JarvisCore
 echo   3. Build from source yourself
 echo.
 echo For more info, see docs/ANTIVIRUS_FALSE_POSITIVES.md

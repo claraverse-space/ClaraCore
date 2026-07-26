@@ -1,6 +1,6 @@
-# ClaraCore Docker - CUDA Edition
+# JarvisCore Docker - CUDA Edition
 
-Clean Docker setup for ClaraCore with NVIDIA GPU acceleration using llama.cpp's official CUDA image.
+Clean Docker setup for JarvisCore with NVIDIA GPU acceleration using llama.cpp's official CUDA image.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ Clean Docker setup for ClaraCore with NVIDIA GPU acceleration using llama.cpp's 
 
 ```bash
 # Pull the image from Docker Hub
-docker pull clara17verse/claracore:cuda
+docker pull jarvis17verse/jarviscore:cuda
 
 # Run with docker-compose
 cd docker-cuda
@@ -26,28 +26,28 @@ docker-compose up -d
 
 ```bash
 docker run -d \
-  --name claracore-cuda \
+  --name jarviscore-cuda \
   --gpus all \
   -p 5890:5890 \
-  -v claracore-cuda-downloads:/app/downloads \
-  clara17verse/claracore:cuda
+  -v jarviscore-cuda-downloads:/app/downloads \
+  jarvis17verse/jarviscore:cuda
 ```
 
 ### Option 3: Run with Custom Model Folder
 
 ```bash
 docker run -d \
-  --name claracore-cuda \
+  --name jarviscore-cuda \
   --gpus all \
   -p 5890:5890 \
-  -v claracore-cuda-downloads:/app/downloads \
+  -v jarviscore-cuda-downloads:/app/downloads \
   -v /path/to/your/models:/app/models:ro \
-  clara17verse/claracore:cuda
+  jarvis17verse/jarviscore:cuda
 ```
 
-**Access ClaraCore:** http://localhost:5890/ui/
+**Access JarvisCore:** http://localhost:5890/ui/
 
-✅ **Your models are saved** in Docker volume `claracore-cuda-downloads`
+✅ **Your models are saved** in Docker volume `jarviscore-cuda-downloads`
 
 ## View Logs
 
@@ -64,14 +64,14 @@ docker-compose down
 ## How It Works
 
 - Uses `ghcr.io/ggml-org/llama.cpp:server-cuda` as base (official llama.cpp CUDA image)
-- Adds ClaraCore binary on top
+- Adds JarvisCore binary on top
 - **Persistent Docker volume** stores all data (models, config, binaries)
-- ClaraCore handles everything automatically
+- JarvisCore handles everything automatically
 
 ## Data Persistence
 
-✅ **Your downloaded models are safe!** The `/app/downloads` folder is stored in Docker volume `claracore-downloads`:
-- **Models** you download through ClaraCore
+✅ **Your downloaded models are safe!** The `/app/downloads` folder is stored in Docker volume `jarviscore-downloads`:
+- **Models** you download through JarvisCore
 - Persists even after `docker-compose down`
 
 **⚠️ Your downloads will ONLY be deleted if you run:** `docker-compose down -v`
@@ -85,7 +85,7 @@ You can easily bind-mount your existing model folders into the container! Two wa
 Uncomment and customize the volume binds in `docker-compose.yml`:
 ```yaml
 volumes:
-  - claracore-downloads:/app/downloads
+  - jarviscore-downloads:/app/downloads
   - /path/to/your/models:/app/models:ro          # Add your path here
   - /mnt/storage/llm-models:/app/external:ro     # Multiple folders supported
 ```
@@ -108,10 +108,10 @@ docker-compose up -d
 
 Example override file:
 ```yaml
-name: claracore
+name: jarviscore
 
 services:
-  claracore:
+  jarviscore:
     volumes:
       - /home/myuser/models:/app/models:ro
       - /mnt/nas/llm-collection:/app/nas:ro
@@ -120,32 +120,32 @@ services:
 **Tips:**
 - Use `:ro` (read-only) to prevent accidental modifications
 - Mount multiple folders to different paths
-- After mounting, go to Setup in ClaraCore UI and add these folders (e.g., `/app/models`, `/app/nas`)
+- After mounting, go to Setup in JarvisCore UI and add these folders (e.g., `/app/models`, `/app/nas`)
 - Paths work on Linux, Windows (with WSL2), and macOS
 
 ### Managing Your Data
 
 **View volume location:**
 ```bash
-docker volume inspect claracore-downloads
+docker volume inspect jarviscore-downloads
 ```
 
 **View what's inside:**
 ```bash
-docker exec claracore ls -lh /app/downloads
+docker exec jarviscore ls -lh /app/downloads
 ```
 
 **Backup your downloads:**
 ```bash
 # Create tar archive of downloads
-docker run --rm -v claracore-downloads:/downloads -v $(pwd):/backup ubuntu \
-  tar czf /backup/claracore-downloads-backup.tar.gz -C /downloads .
+docker run --rm -v jarviscore-downloads:/downloads -v $(pwd):/backup ubuntu \
+  tar czf /backup/jarviscore-downloads-backup.tar.gz -C /downloads .
 ```
 
 **Restore from backup:**
 ```bash
-docker run --rm -v claracore-downloads:/downloads -v $(pwd):/backup ubuntu \
-  tar xzf /backup/claracore-downloads-backup.tar.gz -C /downloads
+docker run --rm -v jarviscore-downloads:/downloads -v $(pwd):/backup ubuntu \
+  tar xzf /backup/jarviscore-downloads-backup.tar.gz -C /downloads
 ```
 
 **Clean downloads and start fresh:**
@@ -158,7 +158,7 @@ docker-compose up -d
 
 Check GPU is accessible:
 ```bash
-docker exec claracore nvidia-smi
+docker exec jarviscore nvidia-smi
 ```
 
 ## ⚠️ Windows (WSL2) Performance Issues
@@ -172,21 +172,21 @@ Keep models in Linux filesystem for optimal performance:
 
 ```bash
 # Create volume
-docker volume create claracore-models
+docker volume create jarviscore-models
 
 # Run container with volume
 docker run -d \
-  --name claracore \
+  --name jarviscore \
   --gpus all \
   -p 5890:5890 \
-  -v claracore-models:/app/downloads \
+  -v jarviscore-models:/app/downloads \
   -e NVIDIA_VISIBLE_DEVICES=all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-  clara17verse/claracore:cuda
+  jarvis17verse/jarviscore:cuda
 
 # Copy models from Windows (one-time operation)
 docker run --rm \
-  -v claracore-models:/app/downloads \
+  -v jarviscore-models:/app/downloads \
   -v /mnt/c/path/to/your/models:/source \
   alpine sh -c "cp -r /source/* /app/downloads/"
 ```
@@ -199,26 +199,26 @@ cp -r /mnt/c/YourModelsFolder/* ~/llama-models/
 
 # Then mount the Linux path
 docker run -d \
-  --name claracore \
+  --name jarviscore \
   --gpus all \
   -p 5890:5890 \
   -v ~/llama-models:/app/downloads \
   -e NVIDIA_VISIBLE_DEVICES=all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-  clara17verse/claracore:cuda
+  jarvis17verse/jarviscore:cuda
 ```
 
 #### 3️⃣ Direct Windows Mount (Simplest but Slower)
 ```bash
 # Use Windows path directly (e.g., /mnt/c/BackUP/models)
 docker run -d \
-  --name claracore \
+  --name jarviscore \
   --gpus all \
   -p 5890:5890 \
   -v /mnt/c/YourModelsFolder:/app/downloads \
   -e NVIDIA_VISIBLE_DEVICES=all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-  clara17verse/claracore:cuda
+  jarvis17verse/jarviscore:cuda
 ```
 
 **Why is Windows mount slower?**

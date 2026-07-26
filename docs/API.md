@@ -1,8 +1,8 @@
-# ClaraCore Complete API Reference
+# JarvisCore Complete API Reference
 
 ## Overview
 
-ClaraCore provides a comprehensive HTTP API for managing AI models, system configuration, and OpenAI-compatible endpoints. The API is designed for both programmatic access and integration with the React UI.
+JarvisCore provides a comprehensive HTTP API for managing AI models, system configuration, and OpenAI-compatible endpoints. The API is designed for both programmatic access and integration with the React UI.
 
 **Base URLs:**
 - Local UI: `http://localhost:5800/ui/`
@@ -31,7 +31,7 @@ ClaraCore provides a comprehensive HTTP API for managing AI models, system confi
 
 ## Authentication
 
-ClaraCore supports optional API key authentication for all endpoints except system settings configuration.
+JarvisCore supports optional API key authentication for all endpoints except system settings configuration.
 
 ### Headers
 ```http
@@ -56,7 +56,7 @@ curl -X POST http://localhost:5800/api/settings/system \
 
 ## OpenAI-Compatible Endpoints
 
-ClaraCore provides full OpenAI API compatibility for seamless integration with existing tools and applications.
+JarvisCore provides full OpenAI API compatibility for seamless integration with existing tools and applications.
 
 ### Chat Completions
 
@@ -211,7 +211,7 @@ curl -X GET http://localhost:5800/v1/models \
       "id": "llama-3.2-3b-instruct",
       "object": "model",
       "created": 1699999999,
-      "owned_by": "claracore",
+      "owned_by": "jarviscore",
       "permission": [],
       "root": "llama-3.2-3b-instruct",
       "parent": null
@@ -220,7 +220,7 @@ curl -X GET http://localhost:5800/v1/models \
       "id": "nomic-embed-text-v1.5",
       "object": "model",
       "created": 1699999999,
-      "owned_by": "claracore",
+      "owned_by": "jarviscore",
       "permission": [],
       "root": "nomic-embed-text-v1.5",
       "parent": null
@@ -1318,7 +1318,7 @@ import requests
 import json
 from sseclient import SSEClient
 
-class ClaraCoreClient:
+class JarvisCoreClient:
     def __init__(self, base_url="http://localhost:5800", api_key=None):
         self.base_url = base_url
         self.headers = {"Content-Type": "application/json"}
@@ -1366,7 +1366,7 @@ class ClaraCoreClient:
                 yield json.loads(event.data)
 
 # Usage
-client = ClaraCoreClient(api_key="your-api-key")
+client = JarvisCoreClient(api_key="your-api-key")
 
 # Chat with model
 response = client.chat_completion(
@@ -1389,7 +1389,7 @@ for event in client.monitor_events():
 const axios = require('axios');
 const EventSource = require('eventsource');
 
-class ClaraCoreClient {
+class JarvisCoreClient {
     constructor(baseUrl = 'http://localhost:5800', apiKey = null) {
         this.baseUrl = baseUrl;
         this.headers = { 'Content-Type': 'application/json' };
@@ -1436,7 +1436,7 @@ class ClaraCoreClient {
 }
 
 // Usage
-const client = new ClaraCoreClient('http://localhost:5800', 'your-api-key');
+const client = new JarvisCoreClient('http://localhost:5800', 'your-api-key');
 
 // Chat completion
 client.chatCompletion('llama-3.2-3b-instruct', [
@@ -1481,4 +1481,4 @@ const eventSource = client.monitorEvents((event) => {
 
 ---
 
-This comprehensive API documentation covers all available endpoints in ClaraCore. The API provides both OpenAI compatibility for easy integration and powerful configuration management for advanced users.
+This comprehensive API documentation covers all available endpoints in JarvisCore. The API provides both OpenAI compatibility for easy integration and powerful configuration management for advanced users.

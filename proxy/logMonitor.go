@@ -8,7 +8,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/prave/ClaraCore/event"
+	"github.com/prave/JarvisCore/event"
 )
 
 type LogLevel int

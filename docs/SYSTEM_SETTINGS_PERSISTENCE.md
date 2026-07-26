@@ -2,7 +2,7 @@
 
 ## Overview
 
-ClaraCore now persists user's manual hardware selections in `settings.json`, ensuring that hardware configurations specified during setup are preserved across "Force Reconfigure" operations.
+JarvisCore now persists user's manual hardware selections in `settings.json`, ensuring that hardware configurations specified during setup are preserved across "Force Reconfigure" operations.
 
 ## Problem Solved
 
@@ -89,7 +89,7 @@ const settingsResponse = await fetch('/api/settings/system', {
 });
 ```
 
-### Self-Heal (`claracore.go`)
+### Self-Heal (`jarviscore.go`)
 
 The `selfHealReconfigure` function already loads and uses saved settings when automatically recovering from config errors.
 
@@ -97,7 +97,7 @@ The `selfHealReconfigure` function already loads and uses saved settings when au
 
 ### Setup Flow
 
-1. User runs ClaraCore setup wizard
+1. User runs JarvisCore setup wizard
 2. System auto-detects hardware (e.g., 12GB VRAM)
 3. User notices detection is wrong and manually adjusts to 24GB VRAM
 4. User completes setup → Settings are saved to `settings.json`
@@ -165,7 +165,7 @@ The backend will automatically merge saved settings with the provided options, g
 - `proxy/proxymanager_api.go`: Load and merge saved settings in regenerate endpoint
 - `ui/src/components/Header.tsx`: Updated Force Reconfigure to use saved settings
 - `ui/src/pages/OnboardConfig.tsx`: Save settings during initial setup
-- `claracore.go`: Self-heal function already uses saved settings
+- `jarviscore.go`: Self-heal function already uses saved settings
 
 ## Testing
 

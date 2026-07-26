@@ -1,17 +1,17 @@
-# Antivirus False Positives - ClaraCore
+# Antivirus False Positives - JarvisCore
 
 ## Why Am I Getting Antivirus Warnings?
 
-If you're seeing warnings from Windows Defender or other antivirus software when downloading or running ClaraCore, **don't worry** - this is a common issue with legitimate software, especially:
+If you're seeing warnings from Windows Defender or other antivirus software when downloading or running JarvisCore, **don't worry** - this is a common issue with legitimate software, especially:
 
 - 🆕 **New releases** without established reputation scores
 - 🔧 **System tools** that manage processes and network operations
 - 🐹 **Go binaries** which sometimes trigger heuristic detection
 - 📦 **Unsigned executables** (code signing certificates are expensive for open source projects)
 
-## Is ClaraCore Safe?
+## Is JarvisCore Safe?
 
-**Yes!** ClaraCore is completely safe and open source:
+**Yes!** JarvisCore is completely safe and open source:
 
 ✅ **100% Open Source** - Every line of code is public on GitHub  
 ✅ **No Malicious Code** - You can audit the entire codebase yourself  
@@ -19,9 +19,9 @@ If you're seeing warnings from Windows Defender or other antivirus software when
 ✅ **Active Community** - Transparent development and issue tracking  
 ✅ **MIT Licensed** - Permissive open source license  
 
-## What ClaraCore Actually Does
+## What JarvisCore Actually Does
 
-ClaraCore is an AI inference server that:
+JarvisCore is an AI inference server that:
 - Starts local HTTP servers for AI model hosting
 - Downloads AI models from HuggingFace
 - Manages GPU/CPU resources
@@ -37,12 +37,12 @@ Every release includes SHA256 checksums. Verify your download:
 
 **Windows PowerShell:**
 ```powershell
-Get-FileHash claracore-windows-amd64.exe -Algorithm SHA256
+Get-FileHash jarviscore-windows-amd64.exe -Algorithm SHA256
 ```
 
 **Linux/macOS:**
 ```bash
-sha256sum claracore-linux-amd64
+sha256sum jarviscore-linux-amd64
 ```
 
 Compare the output with the checksum in the GitHub release notes.
@@ -52,18 +52,18 @@ Compare the output with the checksum in the GitHub release notes.
 If the binary is code signed:
 
 **Windows:**
-1. Right-click `claracore-windows-amd64.exe`
+1. Right-click `jarviscore-windows-amd64.exe`
 2. Select **Properties**
 3. Go to **Digital Signatures** tab
-4. Verify the signature is from "ClaraCore Open Source"
+4. Verify the signature is from "JarvisCore Open Source"
 
 ### 3. Build from Source
 
 The ultimate verification - build it yourself:
 
 ```bash
-git clone https://github.com/claraverse-space/ClaraCore.git
-cd ClaraCore
+git clone https://github.com/jarvisverse-space/JarvisCore.git
+cd JarvisCore
 go build .
 ```
 
@@ -77,7 +77,7 @@ You'll get an identical binary (minus metadata).
 2. Go to **Virus & threat protection**
 3. Click **Manage settings**
 4. Scroll to **Exclusions** → **Add or remove exclusions**
-5. Add the ClaraCore executable or installation folder
+5. Add the JarvisCore executable or installation folder
 
 ### Option 2: Temporarily Disable Real-time Protection
 
@@ -86,7 +86,7 @@ While downloading:
 2. Go to **Virus & threat protection**
 3. Click **Manage settings**
 4. Toggle off **Real-time protection** temporarily
-5. Download and verify ClaraCore
+5. Download and verify JarvisCore
 6. Re-enable protection
 
 ### Option 3: Report False Positive to Microsoft
@@ -94,7 +94,7 @@ While downloading:
 Help improve detection for everyone:
 
 1. Visit [Microsoft Security Intelligence](https://www.microsoft.com/en-us/wdsi/filesubmission)
-2. Submit the ClaraCore executable
+2. Submit the JarvisCore executable
 3. Select **"I believe this file does not contain a threat"**
 4. Microsoft will analyze and update their database
 
@@ -139,7 +139,7 @@ We're exploring options:
 
 ## Technical Details: What Triggers Detection?
 
-ClaraCore performs legitimate operations that antivirus software monitors:
+JarvisCore performs legitimate operations that antivirus software monitors:
 
 1. **Network Operations**
    - Creates HTTP/HTTPS servers
@@ -170,7 +170,7 @@ We take security seriously:
 - ✅ **Public Development** - All commits are visible on GitHub
 - ✅ **Code Review** - Changes are reviewed before merging
 - ✅ **Dependency Management** - Go modules with version pinning
-- ✅ **No Telemetry** - ClaraCore doesn't phone home
+- ✅ **No Telemetry** - JarvisCore doesn't phone home
 - ✅ **Local First** - Everything runs on your machine
 - ✅ **Transparent Builds** - Reproducible build process
 
@@ -209,4 +209,4 @@ If you encounter false positives:
 
 ---
 
-**Remember:** False positives are frustrating but common. We're a legitimate open source project committed to transparency and security. Thank you for using ClaraCore!
+**Remember:** False positives are frustrating but common. We're a legitimate open source project committed to transparency and security. Thank you for using JarvisCore!

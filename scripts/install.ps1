@@ -1,4 +1,4 @@
-# ClaraCore Windows Installation Script
+# JarvisCore Windows Installation Script
 # Downloads the latest release and sets up Windows Service
 
 param(
@@ -44,7 +44,7 @@ function Get-LatestRelease {
     Write-ColorOutput "Fetching latest release information..." "Blue"
     
     try {
-        $repo = "claraverse-space/ClaraCore"
+        $repo = "jarvisverse-space/JarvisCore"
         $releaseUrl = "https://api.github.com/repos/$repo/releases/latest"
         $release = Invoke-RestMethod -Uri $releaseUrl -UseBasicParsing
         
@@ -60,7 +60,7 @@ function Get-LatestRelease {
 function Download-Binary {
     param([object]$Release)
     
-    $binaryName = "claracore-windows-amd64.exe"
+    $binaryName = "jarviscore-windows-amd64.exe"
     $asset = $Release.assets | Where-Object { $_.name -eq $binaryName }
     
     if (-not $asset) {
@@ -69,7 +69,7 @@ function Download-Binary {
     }
     
     $downloadUrl = $asset.browser_download_url
-    Write-ColorOutput "Downloading ClaraCore binary..." "Blue"
+    Write-ColorOutput "Downloading JarvisCore binary..." "Blue"
     Write-ColorOutput "URL: $downloadUrl" "Yellow"
     
     $tempFile = [System.IO.Path]::GetTempFileName() + ".exe"
@@ -94,12 +94,12 @@ function Install-Binary {
             Write-ColorOutput "Please run as administrator or remove -SystemWide flag" "Yellow"
             exit 1
         }
-        $installDir = "$env:ProgramFiles\ClaraCore"
-        $configDir = "$env:ProgramData\ClaraCore"
+        $installDir = "$env:ProgramFiles\JarvisCore"
+        $configDir = "$env:ProgramData\JarvisCore"
     }
     else {
-        $installDir = "$env:LOCALAPPDATA\ClaraCore"
-        $configDir = "$env:APPDATA\ClaraCore"
+        $installDir = "$env:LOCALAPPDATA\JarvisCore"
+        $configDir = "$env:APPDATA\JarvisCore"
     }
     
     if ($InstallPath) {
@@ -113,7 +113,7 @@ function Install-Binary {
     New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     
     # Install binary
-    $binaryPath = Join-Path $installDir "claracore.exe"
+    $binaryPath = Join-Path $installDir "jarviscore.exe"
     Copy-Item $TempFile $binaryPath -Force
     
     # Unblock the downloaded file to prevent Windows security warnings
@@ -149,7 +149,7 @@ function Create-DefaultConfig {
     Write-ColorOutput "Creating default configuration..." "Blue"
     
     $configYaml = @"
-# ClaraCore Configuration
+# JarvisCore Configuration
 # This file is auto-generated. You can modify it or regenerate via the web UI.
 
 host: "127.0.0.1"
@@ -203,9 +203,9 @@ function Install-WindowsService {
     
     Write-ColorOutput "Installing Windows Service..." "Blue"
     
-    $serviceName = "ClaraCore"
-    $serviceDisplayName = "ClaraCore AI Inference Server"
-    $serviceDescription = "ClaraCore AI model inference server with automatic setup"
+    $serviceName = "JarvisCore"
+    $serviceDisplayName = "JarvisCore AI Inference Server"
+    $serviceDescription = "JarvisCore AI model inference server with automatic setup"
     
     # Stop and remove existing service if it exists
     $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -248,7 +248,7 @@ function Install-WindowsService {
         Write-ColorOutput "Configuring service to run in background..." "Blue"
         
         # Start the service
-        Write-ColorOutput "Starting ClaraCore service..." "Blue"
+        Write-ColorOutput "Starting JarvisCore service..." "Blue"
         Start-Service -Name $serviceName -ErrorAction Stop
         
         # Wait a moment and check status
@@ -257,7 +257,7 @@ function Install-WindowsService {
         
         if ($service.Status -eq 'Running') {
             Write-ColorOutput "✅ Windows Service installed and started successfully" "Green"
-            Write-ColorOutput "✅ ClaraCore will run in background on system startup" "Green"
+            Write-ColorOutput "✅ JarvisCore will run in background on system startup" "Green"
             Write-ColorOutput "   Service Name: $serviceName" "Blue"
             return $true
         } else {
@@ -278,7 +278,7 @@ function Install-UserLevelService {
     Write-ColorOutput "Setting up user-level auto-start (Task Scheduler)..." "Blue"
     
     try {
-        $taskName = "ClaraCore"
+        $taskName = "JarvisCore"
         $configPath = Join-Path $Paths.ConfigDir "config.yaml"
         
         # Remove existing task if it exists
@@ -288,7 +288,7 @@ function Install-UserLevelService {
             Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
         }
         
-        # Create action to run ClaraCore hidden
+        # Create action to run JarvisCore hidden
         $action = New-ScheduledTaskAction -Execute $Paths.BinaryPath -Argument "--config `"$configPath`"" -WorkingDirectory (Split-Path $Paths.BinaryPath)
         
         # Create trigger to run at logon
@@ -301,14 +301,14 @@ function Install-UserLevelService {
         $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
         
         # Register the scheduled task
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "ClaraCore AI Inference Server - Runs in background" | Out-Null
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "JarvisCore AI Inference Server - Runs in background" | Out-Null
         
         Write-ColorOutput "✅ User-level service installed successfully" "Green"
-        Write-ColorOutput "✅ ClaraCore will start automatically when you log in" "Green"
+        Write-ColorOutput "✅ JarvisCore will start automatically when you log in" "Green"
         Write-ColorOutput "   Task Name: $taskName" "Blue"
         
         # Try to start the task immediately
-        Write-ColorOutput "Starting ClaraCore task..." "Blue"
+        Write-ColorOutput "Starting JarvisCore task..." "Blue"
         try {
             Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
             Start-Sleep -Seconds 3
@@ -330,7 +330,7 @@ function Install-UserLevelService {
     }
     catch {
         Write-ColorOutput "Warning: Could not create scheduled task: $($_.Exception.Message)" "Yellow"
-        Write-ColorOutput "You can start ClaraCore manually: $($Paths.BinaryPath)" "Yellow"
+        Write-ColorOutput "You can start JarvisCore manually: $($Paths.BinaryPath)" "Yellow"
         return $false
     }
 }
@@ -341,11 +341,11 @@ function Create-DesktopShortcut {
     Write-ColorOutput "Creating desktop shortcut..." "Blue"
     
     $WshShell = New-Object -comObject WScript.Shell
-    $shortcutPath = Join-Path $env:USERPROFILE "Desktop\ClaraCore.lnk"
+    $shortcutPath = Join-Path $env:USERPROFILE "Desktop\JarvisCore.lnk"
     $shortcut = $WshShell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = $Paths.BinaryPath
     $shortcut.WorkingDirectory = $Paths.ConfigDir
-    $shortcut.Description = "ClaraCore AI Inference Server"
+    $shortcut.Description = "JarvisCore AI Inference Server"
     $shortcut.Save()
     
     Write-ColorOutput "Desktop shortcut created" "Green"
@@ -356,7 +356,7 @@ function Show-NextSteps {
     
     Write-Header "Installation Completed!"
     
-    Write-ColorOutput "✅ ClaraCore is now installed and running in the background!" "Green"
+    Write-ColorOutput "✅ JarvisCore is now installed and running in the background!" "Green"
     Write-Host ""
     
     Write-ColorOutput "🌐 Web Interface:" "Yellow"
@@ -368,17 +368,17 @@ function Show-NextSteps {
         
         $isAdmin = Test-AdminRights
         if ($isAdmin) {
-            Write-ColorOutput "   Status:   Get-Service ClaraCore | Select-Object Status,StartType" "Blue"
-            Write-ColorOutput "   Stop:     Stop-Service ClaraCore" "Blue"
-            Write-ColorOutput "   Start:    Start-Service ClaraCore" "Blue"
-            Write-ColorOutput "   Restart:  Restart-Service ClaraCore" "Blue"
-            Write-ColorOutput "   Logs:     Get-EventLog -LogName Application -Source ClaraCore -Newest 50" "Blue"
+            Write-ColorOutput "   Status:   Get-Service JarvisCore | Select-Object Status,StartType" "Blue"
+            Write-ColorOutput "   Stop:     Stop-Service JarvisCore" "Blue"
+            Write-ColorOutput "   Start:    Start-Service JarvisCore" "Blue"
+            Write-ColorOutput "   Restart:  Restart-Service JarvisCore" "Blue"
+            Write-ColorOutput "   Logs:     Get-EventLog -LogName Application -Source JarvisCore -Newest 50" "Blue"
         } else {
-            Write-ColorOutput "   Status:   Get-ScheduledTask -TaskName ClaraCore" "Blue"
-            Write-ColorOutput "   Stop:     Stop-ScheduledTask -TaskName ClaraCore" "Blue"
-            Write-ColorOutput "   Start:    Start-ScheduledTask -TaskName ClaraCore" "Blue"
-            Write-ColorOutput "   Disable:  Disable-ScheduledTask -TaskName ClaraCore" "Blue"
-            Write-ColorOutput "   Enable:   Enable-ScheduledTask -TaskName ClaraCore" "Blue"
+            Write-ColorOutput "   Status:   Get-ScheduledTask -TaskName JarvisCore" "Blue"
+            Write-ColorOutput "   Stop:     Stop-ScheduledTask -TaskName JarvisCore" "Blue"
+            Write-ColorOutput "   Start:    Start-ScheduledTask -TaskName JarvisCore" "Blue"
+            Write-ColorOutput "   Disable:  Disable-ScheduledTask -TaskName JarvisCore" "Blue"
+            Write-ColorOutput "   Enable:   Enable-ScheduledTask -TaskName JarvisCore" "Blue"
         }
         Write-Host ""
     }
@@ -389,17 +389,17 @@ function Show-NextSteps {
     Write-Host ""
     
     Write-ColorOutput "💡 Quick Tips:" "Yellow"
-    Write-ColorOutput "   • ClaraCore runs silently in the background (no terminal window)" "White"
+    Write-ColorOutput "   • JarvisCore runs silently in the background (no terminal window)" "White"
     Write-ColorOutput "   • It will auto-start when your system boots" "White"
     Write-ColorOutput "   • Configure models via the web interface at http://localhost:5800/ui/setup" "White"
     Write-Host ""
     
-    Write-ColorOutput "📚 Documentation: https://github.com/claraverse-space/ClaraCore/tree/main/docs" "Green"
-    Write-ColorOutput "❓ Support: https://github.com/claraverse-space/ClaraCore/issues" "Green"
+    Write-ColorOutput "📚 Documentation: https://github.com/jarvisverse-space/JarvisCore/tree/main/docs" "Green"
+    Write-ColorOutput "❓ Support: https://github.com/jarvisverse-space/JarvisCore/issues" "Green"
 }
 
 function Main {
-    Write-Header "ClaraCore Windows Installer"
+    Write-Header "JarvisCore Windows Installer"
     
     # Check requirements
     if ($PSVersionTable.PSVersion.Major -lt 5) {
@@ -434,7 +434,7 @@ function Main {
         
         # Wait a moment for service to start
         if ($serviceInstalled) {
-            Write-ColorOutput "Waiting for ClaraCore to initialize..." "Blue"
+            Write-ColorOutput "Waiting for JarvisCore to initialize..." "Blue"
             Start-Sleep -Seconds 5
             
             # Try to check if service is responding
@@ -446,7 +446,7 @@ function Main {
                 try {
                     $response = Invoke-WebRequest -Uri "http://localhost:5800/" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
                     if ($response.StatusCode -eq 200) {
-                        Write-ColorOutput "✅ ClaraCore is running and accessible!" "Green"
+                        Write-ColorOutput "✅ JarvisCore is running and accessible!" "Green"
                         $isRunning = $true
                         break
                     }
@@ -469,11 +469,11 @@ function Main {
                 Write-ColorOutput "   Unblock-File `"$($paths.BinaryPath)`"" "Blue"
                 Write-Host ""
                 Write-ColorOutput "2. Try starting manually:" "White"
-                Write-ColorOutput "   Start-ScheduledTask -TaskName ClaraCore" "Blue"
-                Write-ColorOutput "   # or if admin: Start-Service ClaraCore" "Blue"
+                Write-ColorOutput "   Start-ScheduledTask -TaskName JarvisCore" "Blue"
+                Write-ColorOutput "   # or if admin: Start-Service JarvisCore" "Blue"
                 Write-Host ""
                 Write-ColorOutput "3. Check service status:" "White"
-                Write-ColorOutput "   .\scripts\claracore-service.ps1 status" "Blue"
+                Write-ColorOutput "   .\scripts\jarviscore-service.ps1 status" "Blue"
                 Write-Host ""
                 Write-ColorOutput "4. Add Windows Defender exclusion:" "White"
                 Write-ColorOutput "   .\scripts\add-defender-exclusion.bat" "Blue"
@@ -481,7 +481,7 @@ function Main {
         } else {
             Write-Host ""
             Write-ColorOutput "⚠ Service installation may have failed" "Yellow"
-            Write-ColorOutput "You can start ClaraCore manually with:" "White"
+            Write-ColorOutput "You can start JarvisCore manually with:" "White"
             Write-ColorOutput "   $($paths.BinaryPath)" "Blue"
         }
         

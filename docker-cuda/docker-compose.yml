@@ -1,18 +1,18 @@
-name: claracore
+name: jarviscore
 
 services:
-  claracore:
+  jarviscore:
     build:
       context: ..
       dockerfile: docker-cuda/Dockerfile.cuda
-    container_name: claracore
-    image: claracore:cuda
+    container_name: jarviscore
+    image: jarviscore:cuda
     restart: unless-stopped
     ports:
       - "5890:5890"
     volumes:
       # Persistent volume for downloaded models
-      - claracore-downloads:/app/downloads
+      - jarviscore-downloads:/app/downloads
       
       # Optional: Bind mount your own model folders
       # Uncomment and customize the paths below to use your existing models
@@ -35,8 +35,8 @@ volumes:
   # Persistent storage for downloaded models only
   # This volume persists even after 'docker-compose down'
   # To delete: docker-compose down -v (WARNING: deletes all downloaded models!)
-  claracore-downloads:
-    name: claracore-downloads
+  jarviscore-downloads:
+    name: jarviscore-downloads
 
 # ============================================================
 # 📁 BINDING YOUR OWN MODEL FOLDERS

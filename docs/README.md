@@ -1,6 +1,6 @@
-# ClaraCore Documentation
+# JarvisCore Documentation
 
-Welcome to the ClaraCore documentation! This directory contains comprehensive guides and references for using ClaraCore.
+Welcome to the JarvisCore documentation! This directory contains comprehensive guides and references for using JarvisCore.
 
 ## 📚 Documentation Overview
 
@@ -48,7 +48,7 @@ Welcome to the ClaraCore documentation! This directory contains comprehensive gu
 ## 🌟 Key Features Documentation
 
 ### OpenAI Compatibility
-ClaraCore provides full OpenAI API compatibility:
+JarvisCore provides full OpenAI API compatibility:
 ```bash
 # Chat completions
 POST /v1/chat/completions
@@ -67,10 +67,10 @@ GET /v1/models
 Automatic setup and optimization:
 ```bash
 # Auto-detect and configure
-./claracore --models-folder /path/to/models
+./jarviscore --models-folder /path/to/models
 
 # Backend-specific optimization
-./claracore --models-folder /path/to/models --backend vulkan
+./jarviscore --models-folder /path/to/models --backend vulkan
 ```
 
 ### Web Interface
@@ -88,7 +88,7 @@ Modern React-based UI:
 
 ## 🔧 Configuration Files
 
-ClaraCore uses several configuration files:
+JarvisCore uses several configuration files:
 
 ### `config.yaml` - Main Configuration
 ```yaml
@@ -151,11 +151,11 @@ models:
 
 ### 1. First-Time Setup
 ```bash
-# 1. Download ClaraCore
-curl -L -o claracore https://github.com/badboysm890/ClaraCore/releases/latest/download/claracore-linux-amd64
+# 1. Download JarvisCore
+curl -L -o jarviscore https://github.com/badboysm890/JarvisCore/releases/latest/download/jarviscore-linux-amd64
 
 # 2. Run auto-setup
-./claracore --models-folder /path/to/models
+./jarviscore --models-folder /path/to/models
 
 # 3. Access web interface
 open http://localhost:5800/ui/setup
@@ -195,14 +195,14 @@ curl -X POST http://localhost:5800/api/server/restart
 ## 🛠️ Advanced Topics
 
 ### Custom Binary Management
-ClaraCore automatically downloads optimal binaries, but you can customize:
+JarvisCore automatically downloads optimal binaries, but you can customize:
 ```bash
 # Use custom binary
-./claracore --binary-path /custom/llama-server
+./jarviscore --binary-path /custom/llama-server
 
 # Force binary re-download
 rm -rf binaries/
-./claracore --models-folder /path/to/models
+./jarviscore --models-folder /path/to/models
 ```
 
 ### Performance Tuning
@@ -213,7 +213,7 @@ Key parameters for optimization:
 - **Backend Selection**: Match hardware capabilities
 
 ### Multi-Model Configuration
-ClaraCore supports complex multi-model setups:
+JarvisCore supports complex multi-model setups:
 - **Speculative Decoding**: Automatic draft model pairing
 - **Model Groups**: Exclusive loading for memory management
 - **Smart Swapping**: On-demand model loading/unloading
@@ -221,8 +221,8 @@ ClaraCore supports complex multi-model setups:
 ## 📞 Support & Community
 
 ### Getting Help
-- **GitHub Issues**: [Report bugs and request features](https://github.com/badboysm890/ClaraCore/issues)
-- **GitHub Discussions**: [Community support and questions](https://github.com/badboysm890/ClaraCore/discussions)
+- **GitHub Issues**: [Report bugs and request features](https://github.com/badboysm890/JarvisCore/issues)
+- **GitHub Discussions**: [Community support and questions](https://github.com/badboysm890/JarvisCore/discussions)
 - **Documentation**: Check this documentation for common solutions
 
 ### Contributing
@@ -248,4 +248,4 @@ ClaraCore supports complex multi-model setups:
 
 ---
 
-**Happy building with ClaraCore! 🚀**
+**Happy building with JarvisCore! 🚀**

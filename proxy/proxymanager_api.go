@@ -19,8 +19,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prave/ClaraCore/autosetup"
-	"github.com/prave/ClaraCore/event"
+	"github.com/prave/JarvisCore/autosetup"
+	"github.com/prave/JarvisCore/event"
 )
 
 type Model struct {
@@ -1793,7 +1793,7 @@ func (pm *ProxyManager) apiGenerateAllModels(c *gin.Context) {
 		"status":  "SMART configuration generated (SAME as command-line ✨)",
 		"message": "Complete config.yaml generated with intelligent model detection and GPU optimization",
 		"config":  string(configData),
-		"source":  "autosetup.AutoSetupWithOptions (identical to claracore.exe -models-folder)",
+		"source":  "autosetup.AutoSetupWithOptions (identical to jarviscore.exe -models-folder)",
 	})
 }
 
@@ -2771,7 +2771,7 @@ func (pm *ProxyManager) apiGetDownloadDestinations(c *gin.Context) {
 		"type":        "default",
 		"enabled":     true,
 		"modelCount":  modelCount,
-		"description": fmt.Sprintf("Default ClaraCore download folder (%d models)", modelCount),
+		"description": fmt.Sprintf("Default JarvisCore download folder (%d models)", modelCount),
 	})
 
 	// Load model folder database and add enabled folders with live model counts

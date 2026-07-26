@@ -1,5 +1,5 @@
-# Fix ClaraCore Windows Service
-# This script fixes common issues with the ClaraCore Windows Service
+# Fix JarvisCore Windows Service
+# This script fixes common issues with the JarvisCore Windows Service
 
 param(
     [switch]$RemoveService = $false,
@@ -18,45 +18,45 @@ function Write-ColorOutput {
 }
 
 function Test-ServiceStatus {
-    $service = Get-Service -Name "ClaraCore" -ErrorAction SilentlyContinue
+    $service = Get-Service -Name "JarvisCore" -ErrorAction SilentlyContinue
     if ($service) {
         Write-ColorOutput "Service Status: $($service.Status)" "Blue"
         Write-ColorOutput "Service Start Type: $($service.StartType)" "Blue"
         
         # Get detailed service config
-        $config = sc.exe qc ClaraCore 2>$null
+        $config = sc.exe qc JarvisCore 2>$null
         if ($config) {
             Write-ColorOutput "Service Configuration:" "Blue"
             $config | ForEach-Object { Write-Host "  $_" }
         }
         return $true
     } else {
-        Write-ColorOutput "ClaraCore service not found" "Red"
+        Write-ColorOutput "JarvisCore service not found" "Red"
         return $false
     }
 }
 
-function Remove-ClaraCoreService {
-    Write-ColorOutput "Removing ClaraCore service..." "Blue"
+function Remove-JarvisCoreService {
+    Write-ColorOutput "Removing JarvisCore service..." "Blue"
     
     # Stop service if running
-    $service = Get-Service -Name "ClaraCore" -ErrorAction SilentlyContinue
+    $service = Get-Service -Name "JarvisCore" -ErrorAction SilentlyContinue
     if ($service -and $service.Status -eq "Running") {
         Write-ColorOutput "Stopping service..." "Yellow"
-        Stop-Service -Name "ClaraCore" -Force -ErrorAction SilentlyContinue
+        Stop-Service -Name "JarvisCore" -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
     }
     
     # Remove service
-    sc.exe delete ClaraCore | Out-Null
+    sc.exe delete JarvisCore | Out-Null
     Write-ColorOutput "Service removed" "Green"
 }
 
-function Install-ClaraCoreServiceFixed {
-    Write-ColorOutput "Installing ClaraCore service with fixed configuration..." "Blue"
+function Install-JarvisCoreServiceFixed {
+    Write-ColorOutput "Installing JarvisCore service with fixed configuration..." "Blue"
     
     # Paths
-    $binaryPath = "$env:LOCALAPPDATA\ClaraCore\claracore.exe"
+    $binaryPath = "$env:LOCALAPPDATA\JarvisCore\jarviscore.exe"
     
     if (-not (Test-Path $binaryPath)) {
         Write-ColorOutput "Binary not found at $binaryPath" "Red"
@@ -78,24 +78,24 @@ function Install-ClaraCoreServiceFixed {
         return $false
     }
     
-    # Create service command without config file - let ClaraCore create its own
+    # Create service command without config file - let JarvisCore create its own
     $serviceCommand = "`"$binaryPath`""
     $workingDir = Split-Path $binaryPath -Parent
     
     try {
         # Create the service
-        New-Service -Name "ClaraCore" -BinaryPathName $serviceCommand -DisplayName "ClaraCore AI Inference Server" -Description "ClaraCore AI model inference server - config auto-created" -StartupType Manual | Out-Null
+        New-Service -Name "JarvisCore" -BinaryPathName $serviceCommand -DisplayName "JarvisCore AI Inference Server" -Description "JarvisCore AI model inference server - config auto-created" -StartupType Manual | Out-Null
         Write-ColorOutput "Service created successfully (Manual start)" "Green"
-        Write-ColorOutput "ClaraCore will create config.yaml automatically in: $workingDir" "Blue"
+        Write-ColorOutput "JarvisCore will create config.yaml automatically in: $workingDir" "Blue"
         
         # Try to start the service
         Write-ColorOutput "Attempting to start service..." "Blue"
         try {
-            Start-Service -Name "ClaraCore" -ErrorAction Stop
+            Start-Service -Name "JarvisCore" -ErrorAction Stop
             Write-ColorOutput "Service started successfully!" "Green"
             
             # If it starts successfully, change to automatic
-            Set-Service -Name "ClaraCore" -StartupType Automatic
+            Set-Service -Name "JarvisCore" -StartupType Automatic
             Write-ColorOutput "Changed to automatic startup" "Green"
             
         } catch {
@@ -116,7 +116,7 @@ function Install-ClaraCoreServiceFixed {
 }
 
 # Main execution
-Write-ColorOutput "ClaraCore Service Fix Tool" "Blue"
+Write-ColorOutput "JarvisCore Service Fix Tool" "Blue"
 Write-ColorOutput "=========================" "Blue"
 Write-Host ""
 
@@ -132,29 +132,29 @@ if ($ShowStatus) {
 }
 
 if ($RemoveService) {
-    Remove-ClaraCoreService
+    Remove-JarvisCoreService
     exit 0
 }
 
 if ($RecreateService) {
-    Write-ColorOutput "Recreating ClaraCore service..." "Blue"
+    Write-ColorOutput "Recreating JarvisCore service..." "Blue"
     
     # Remove existing service
     if (Test-ServiceStatus) {
-        Remove-ClaraCoreService
+        Remove-JarvisCoreService
         Start-Sleep -Seconds 2
     }
     
     # Install fixed service
-    $success = Install-ClaraCoreServiceFixed
+    $success = Install-JarvisCoreServiceFixed
     
     if ($success) {
         Write-ColorOutput "" "White"
         Write-ColorOutput "Service recreation completed!" "Green"
         Write-ColorOutput "" "White"
         Write-ColorOutput "Test the service:" "Blue"
-        Write-ColorOutput "  Get-Service ClaraCore" "White"
-        Write-ColorOutput "  Start-Service ClaraCore" "White"
+        Write-ColorOutput "  Get-Service JarvisCore" "White"
+        Write-ColorOutput "  Start-Service JarvisCore" "White"
     }
     
     exit 0
@@ -169,4 +169,4 @@ Write-Host ""
 Write-ColorOutput "Common fixes:" "Yellow"
 Write-ColorOutput "1. Recreate service:  .\fix-service.ps1 -RecreateService" "Blue"
 Write-ColorOutput "2. Remove service:    .\fix-service.ps1 -RemoveService" "Blue"
-Write-ColorOutput "3. Manual startup:    C:\Users\$env:USERNAME\AppData\Local\ClaraCore\claracore.exe" "Blue"
+Write-ColorOutput "3. Manual startup:    C:\Users\$env:USERNAME\AppData\Local\JarvisCore\jarviscore.exe" "Blue"

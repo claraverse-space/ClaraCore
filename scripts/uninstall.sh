@@ -1,5 +1,5 @@
 #!/bin/bash
-# ClaraCore Uninstallation Script
+# JarvisCore Uninstallation Script
 # Supports Linux and macOS with automatic service removal
 
 set -e
@@ -23,11 +23,11 @@ OS="$(uname)"
 if [[ "$OS" == "Linux" ]]; then
     PLATFORM="linux"
     SERVICE_MANAGER="systemd"
-    SERVICE_NAME="claracore"
+    SERVICE_NAME="jarviscore"
 elif [[ "$OS" == "Darwin" ]]; then
     PLATFORM="darwin"
     SERVICE_MANAGER="launchd"
-    SERVICE_NAME="com.claracore.server"
+    SERVICE_NAME="com.jarviscore.server"
 else
     error "Unsupported operating system: $OS"
 fi
@@ -42,14 +42,14 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     ClaraCore Uninstaller           ║${NC}"
+echo -e "${BLUE}║     JarvisCore Uninstaller           ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
 echo
 
 # Stop and remove service
 if [[ "$PLATFORM" == "linux" ]]; then
     if available systemctl; then
-        status "Stopping ClaraCore systemd service..."
+        status "Stopping JarvisCore systemd service..."
         
         # Check user service first
         if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
@@ -70,7 +70,7 @@ if [[ "$PLATFORM" == "linux" ]]; then
         fi
     fi
 elif [[ "$PLATFORM" == "darwin" ]]; then
-    status "Stopping ClaraCore launchd service..."
+    status "Stopping JarvisCore launchd service..."
     
     # Check user LaunchAgent
     USER_PLIST="$HOME/Library/LaunchAgents/$SERVICE_NAME.plist"
@@ -90,18 +90,18 @@ elif [[ "$PLATFORM" == "darwin" ]]; then
 fi
 
 # Remove binary
-status "Removing ClaraCore binary..."
+status "Removing JarvisCore binary..."
 
 # Check common binary locations
 BINARY_REMOVED=false
 
-if [[ -f "/usr/local/bin/claracore" ]]; then
-    $SUDO rm -f "/usr/local/bin/claracore"
+if [[ -f "/usr/local/bin/jarviscore" ]]; then
+    $SUDO rm -f "/usr/local/bin/jarviscore"
     BINARY_REMOVED=true
 fi
 
-if [[ -f "$HOME/.local/bin/claracore" ]]; then
-    rm -f "$HOME/.local/bin/claracore"
+if [[ -f "$HOME/.local/bin/jarviscore" ]]; then
+    rm -f "$HOME/.local/bin/jarviscore"
     BINARY_REMOVED=true
 fi
 
@@ -112,7 +112,7 @@ else
 fi
 
 # Ask about config files
-CONFIG_DIR="$HOME/.config/claracore"
+CONFIG_DIR="$HOME/.config/jarviscore"
 if [[ -d "$CONFIG_DIR" ]]; then
     echo
     echo -e "${YELLOW}Configuration directory found: $CONFIG_DIR${NC}"
@@ -133,12 +133,12 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║   Uninstallation Completed!         ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
 echo
-echo -e "${BLUE}ClaraCore has been removed from your system.${NC}"
+echo -e "${BLUE}JarvisCore has been removed from your system.${NC}"
 echo
 
 # Check if any processes are still running
-if pgrep -x "claracore" > /dev/null; then
-    warning "ClaraCore processes are still running"
+if pgrep -x "jarviscore" > /dev/null; then
+    warning "JarvisCore processes are still running"
     echo -e "${YELLOW}You may want to manually stop them:${NC}"
-    echo -e "  ${BLUE}pkill claracore${NC}"
+    echo -e "  ${BLUE}pkill jarviscore${NC}"
 fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClaraCore Release Script
+JarvisCore Release Script
 
 Build UI, cross-compile Go binaries for:
   - macOS (darwin/arm64)
@@ -16,7 +16,7 @@ Requirements:
   - Environment variable: GITHUB_TOKEN (or GH_TOKEN)
 
 Usage examples:
-  python3 scripts/release.py --tag v0.1.0 --name "ClaraCore v0.1.0"
+  python3 scripts/release.py --tag v0.1.0 --name "JarvisCore v0.1.0"
   python3 scripts/release.py --tag v0.1.0 --prerelease --notes "Beta preview"
 """
 
@@ -109,7 +109,7 @@ def get_repo_slug() -> str:
 
 def build_target(goos: str, goarch: str, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    exe = "claracore.exe" if goos == "windows" else "claracore"
+    exe = "jarviscore.exe" if goos == "windows" else "jarviscore"
     out_path = out_dir / exe
     env = os.environ.copy()
     env["GOOS"] = goos
@@ -124,7 +124,7 @@ def build_target(goos: str, goarch: str, out_dir: Path) -> Path:
 
 def stage_and_zip(goos: str, goarch: str, binary_path: Path, tag: str) -> Path:
     # Stage minimal files
-    name = f"claracore-{tag}-{goos}-{goarch}"
+    name = f"jarviscore-{tag}-{goos}-{goarch}"
     stage = DIST / name
     if stage.exists():
         shutil.rmtree(stage)
@@ -151,7 +151,7 @@ def gh_api(token: str, method: str, url: str, body: dict | None = None, headers:
         "Authorization": f"Bearer {token}",
         "X-GitHub-Api-Version": "2022-11-28",
         "Content-Type": "application/json",
-        "User-Agent": "claracore-release-script",
+        "User-Agent": "jarviscore-release-script",
     }
     if headers:
         h.update(headers)
@@ -172,7 +172,7 @@ def gh_upload_asset(token: str, upload_url_template: str, asset_path: Path) -> N
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/zip",
-        "User-Agent": "claracore-release-script",
+        "User-Agent": "jarviscore-release-script",
     }
     data = asset_path.read_bytes()
     req = Request(url, data=data, headers=headers, method="POST")
@@ -205,7 +205,7 @@ def create_or_get_release(token: str, repo: str, tag: str, name: str, notes: str
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build and publish ClaraCore multi-platform release")
+    parser = argparse.ArgumentParser(description="Build and publish JarvisCore multi-platform release")
     parser.add_argument("--tag", required=True, help="Tag name for the release, e.g. v0.1.0")
     parser.add_argument("--name", default="", help="Release name (defaults to tag)")
     parser.add_argument("--notes", default="", help="Release notes/body")

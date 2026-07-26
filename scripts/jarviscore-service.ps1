@@ -1,4 +1,4 @@
-# ClaraCore Service Management Script for Windows
+# JarvisCore Service Management Script for Windows
 # Provides easy service management commands for Windows
 
 param(
@@ -39,21 +39,21 @@ function Test-AdminRights {
 
 function Get-ServiceType {
     # Check if running as Windows Service
-    $service = Get-Service -Name "ClaraCore" -ErrorAction SilentlyContinue
+    $service = Get-Service -Name "JarvisCore" -ErrorAction SilentlyContinue
     if ($service) {
         return @{
             Type = "Service"
-            Name = "ClaraCore"
+            Name = "JarvisCore"
             IsAdmin = $true
         }
     }
     
     # Check if running as Scheduled Task
-    $task = Get-ScheduledTask -TaskName "ClaraCore" -ErrorAction SilentlyContinue
+    $task = Get-ScheduledTask -TaskName "JarvisCore" -ErrorAction SilentlyContinue
     if ($task) {
         return @{
             Type = "Task"
-            Name = "ClaraCore"
+            Name = "JarvisCore"
             IsAdmin = $false
         }
     }
@@ -66,7 +66,7 @@ function Get-ServiceType {
 }
 
 function Show-Status {
-    Write-Header "ClaraCore Service Status"
+    Write-Header "JarvisCore Service Status"
     
     $serviceInfo = Get-ServiceType
     
@@ -133,15 +133,15 @@ function Show-Status {
         }
         
     } else {
-        Write-ColorOutput "✗ ClaraCore service not found" "Red"
+        Write-ColorOutput "✗ JarvisCore service not found" "Red"
         Write-Host ""
-        Write-ColorOutput "ClaraCore is not installed as a service or scheduled task." "Yellow"
+        Write-ColorOutput "JarvisCore is not installed as a service or scheduled task." "Yellow"
         Write-ColorOutput "Please run the installer to set it up." "Yellow"
     }
 }
 
-function Start-ClaraService {
-    Write-Header "Starting ClaraCore Service"
+function Start-JarvisService {
+    Write-Header "Starting JarvisCore Service"
     
     $serviceInfo = Get-ServiceType
     
@@ -181,13 +181,13 @@ function Start-ClaraService {
         }
         
     } else {
-        Write-ColorOutput "✗ ClaraCore service not found" "Red"
+        Write-ColorOutput "✗ JarvisCore service not found" "Red"
         exit 1
     }
 }
 
-function Stop-ClaraService {
-    Write-Header "Stopping ClaraCore Service"
+function Stop-JarvisService {
+    Write-Header "Stopping JarvisCore Service"
     
     $serviceInfo = Get-ServiceType
     
@@ -219,9 +219,9 @@ function Stop-ClaraService {
         Stop-ScheduledTask -TaskName $serviceInfo.Name -ErrorAction SilentlyContinue
         
         # Also kill the process if it's running
-        $processes = Get-Process -Name "claracore" -ErrorAction SilentlyContinue
+        $processes = Get-Process -Name "jarviscore" -ErrorAction SilentlyContinue
         if ($processes) {
-            Write-ColorOutput "Stopping ClaraCore processes..." "Blue"
+            Write-ColorOutput "Stopping JarvisCore processes..." "Blue"
             $processes | Stop-Process -Force
         }
         
@@ -229,22 +229,22 @@ function Stop-ClaraService {
         Write-ColorOutput "✓ Task stopped successfully" "Green"
         
     } else {
-        Write-ColorOutput "✗ ClaraCore service not found" "Red"
+        Write-ColorOutput "✗ JarvisCore service not found" "Red"
         exit 1
     }
 }
 
-function Restart-ClaraService {
-    Write-Header "Restarting ClaraCore Service"
+function Restart-JarvisService {
+    Write-Header "Restarting JarvisCore Service"
     
-    Stop-ClaraService
+    Stop-JarvisService
     Write-Host ""
     Start-Sleep -Seconds 2
-    Start-ClaraService
+    Start-JarvisService
 }
 
-function Enable-ClaraService {
-    Write-Header "Enabling ClaraCore Service"
+function Enable-JarvisService {
+    Write-Header "Enabling JarvisCore Service"
     
     $serviceInfo = Get-ServiceType
     
@@ -264,13 +264,13 @@ function Enable-ClaraService {
         Write-ColorOutput "✓ Task enabled for auto-start" "Green"
         
     } else {
-        Write-ColorOutput "✗ ClaraCore service not found" "Red"
+        Write-ColorOutput "✗ JarvisCore service not found" "Red"
         exit 1
     }
 }
 
-function Disable-ClaraService {
-    Write-Header "Disabling ClaraCore Service"
+function Disable-JarvisService {
+    Write-Header "Disabling JarvisCore Service"
     
     $serviceInfo = Get-ServiceType
     
@@ -290,13 +290,13 @@ function Disable-ClaraService {
         Write-ColorOutput "✓ Task disabled from auto-start" "Green"
         
     } else {
-        Write-ColorOutput "✗ ClaraCore service not found" "Red"
+        Write-ColorOutput "✗ JarvisCore service not found" "Red"
         exit 1
     }
 }
 
 function Show-Logs {
-    Write-Header "ClaraCore Service Logs"
+    Write-Header "JarvisCore Service Logs"
     
     $serviceInfo = Get-ServiceType
     
@@ -305,7 +305,7 @@ function Show-Logs {
     
     # Try to get Windows Event Log entries
     try {
-        $events = Get-EventLog -LogName Application -Source "ClaraCore" -Newest 50 -ErrorAction SilentlyContinue
+        $events = Get-EventLog -LogName Application -Source "JarvisCore" -Newest 50 -ErrorAction SilentlyContinue
         if ($events) {
             Write-ColorOutput "Recent Windows Event Log entries:" "Blue"
             $events | Format-Table TimeGenerated, EntryType, Message -AutoSize
@@ -320,41 +320,41 @@ function Show-Logs {
     Write-ColorOutput "For real-time logs, check:" "Blue"
     
     if ($serviceInfo.Type -eq "Task") {
-        $configDir = "$env:APPDATA\ClaraCore"
+        $configDir = "$env:APPDATA\JarvisCore"
         if (Test-Path "$configDir\logs") {
-            Write-ColorOutput "  Output: $configDir\logs\claracore.log" "Blue"
-            Write-ColorOutput "  Errors: $configDir\logs\claracore.error.log" "Blue"
+            Write-ColorOutput "  Output: $configDir\logs\jarviscore.log" "Blue"
+            Write-ColorOutput "  Errors: $configDir\logs\jarviscore.error.log" "Blue"
             Write-Host ""
             Write-ColorOutput "To view logs in real-time:" "Yellow"
-            Write-ColorOutput "  Get-Content '$configDir\logs\claracore.log' -Wait -Tail 50" "White"
+            Write-ColorOutput "  Get-Content '$configDir\logs\jarviscore.log' -Wait -Tail 50" "White"
         }
     } else {
-        Write-ColorOutput "  Use: Get-EventLog -LogName Application -Source ClaraCore -Newest 50" "White"
+        Write-ColorOutput "  Use: Get-EventLog -LogName Application -Source JarvisCore -Newest 50" "White"
         Write-ColorOutput "  Or check Task Scheduler logs" "White"
     }
 }
 
 function Show-Help {
     Write-Host ""
-    Write-ColorOutput "ClaraCore Service Management Script" "Blue"
+    Write-ColorOutput "JarvisCore Service Management Script" "Blue"
     Write-Host ""
     Write-ColorOutput "USAGE:" "Yellow"
-    Write-Host "  .\claracore-service.ps1 <command>"
+    Write-Host "  .\jarviscore-service.ps1 <command>"
     Write-Host ""
     Write-ColorOutput "COMMANDS:" "Yellow"
     Write-Host "  status      Show service status and information"
-    Write-Host "  start       Start the ClaraCore service"
-    Write-Host "  stop        Stop the ClaraCore service"
-    Write-Host "  restart     Restart the ClaraCore service"
+    Write-Host "  start       Start the JarvisCore service"
+    Write-Host "  stop        Stop the JarvisCore service"
+    Write-Host "  restart     Restart the JarvisCore service"
     Write-Host "  enable      Enable service for auto-start on boot"
     Write-Host "  disable     Disable service auto-start"
     Write-Host "  logs        Show service logs"
     Write-Host "  help        Show this help message"
     Write-Host ""
     Write-ColorOutput "EXAMPLES:" "Yellow"
-    Write-Host "  .\claracore-service.ps1 status          # Check if service is running"
-    Write-Host "  .\claracore-service.ps1 restart         # Restart the service"
-    Write-Host "  .\claracore-service.ps1 logs            # View service logs"
+    Write-Host "  .\jarviscore-service.ps1 status          # Check if service is running"
+    Write-Host "  .\jarviscore-service.ps1 restart         # Restart the service"
+    Write-Host "  .\jarviscore-service.ps1 logs            # View service logs"
     Write-Host ""
     Write-ColorOutput "NOTE:" "Yellow"
     Write-Host "  Some commands may require administrator privileges."
@@ -365,11 +365,11 @@ function Show-Help {
 # Main script logic
 switch ($Command) {
     'status' { Show-Status }
-    'start' { Start-ClaraService }
-    'stop' { Stop-ClaraService }
-    'restart' { Restart-ClaraService }
-    'enable' { Enable-ClaraService }
-    'disable' { Disable-ClaraService }
+    'start' { Start-JarvisService }
+    'stop' { Stop-JarvisService }
+    'restart' { Restart-JarvisService }
+    'enable' { Enable-JarvisService }
+    'disable' { Disable-JarvisService }
     'logs' { Show-Logs }
     'help' { Show-Help }
     default { Show-Help }

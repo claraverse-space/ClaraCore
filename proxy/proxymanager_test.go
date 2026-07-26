@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prave/ClaraCore/event"
+	"github.com/prave/JarvisCore/event"
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
 )
@@ -259,7 +259,7 @@ func TestProxyManager_ListModelsHandler(t *testing.T) {
 
 		ownedBy, ok := model["owned_by"].(string)
 		assert.True(t, ok, "owned_by should be a string")
-		assert.Equal(t, "ClaraCore", ownedBy)
+		assert.Equal(t, "JarvisCore", ownedBy)
 
 		// check for optional name and description
 		if modelID == "model1" {

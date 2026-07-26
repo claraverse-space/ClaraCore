@@ -8,7 +8,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Modern Brand Colors - ClaraCore
+        // Modern Brand Colors - JarvisCore
         brand: {
           50: '#fdf2f8',
           100: '#fce7f3',

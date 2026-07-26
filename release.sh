@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ClaraCore Release Helper for Linux/macOS
+# JarvisCore Release Helper for Linux/macOS
 
 set -e
 
@@ -31,7 +31,7 @@ print_warning() {
     echo -e "${YELLOW}$1${NC}"
 }
 
-print_header "ClaraCore Release Manager"
+print_header "JarvisCore Release Manager"
 
 # Check Python
 if ! command -v python3 &> /dev/null; then
@@ -112,7 +112,7 @@ if [ $? -eq 0 ]; then
     echo ""
     print_header "Release Created Successfully!"
     echo ""
-    echo "Visit: https://github.com/badboysm890/ClaraCore/releases"
+    echo "Visit: https://github.com/badboysm890/JarvisCore/releases"
 else
     echo ""
     print_header "Release Failed!"

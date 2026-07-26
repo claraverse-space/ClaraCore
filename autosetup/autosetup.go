@@ -36,7 +36,7 @@ func AutoSetup(modelsFolder string) error {
 
 // AutoSetupWithOptions performs automatic model detection and configuration with custom options
 func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
-	fmt.Println("🚀 Starting ClaraCore auto-setup...")
+	fmt.Println("🚀 Starting JarvisCore auto-setup...")
 
 	// Validate and create models folder if needed
 	if modelsFolder == "" {
@@ -75,7 +75,7 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 			return fmt.Errorf("failed to create basic configuration: %v", err)
 		}
 		
-		fmt.Printf("✅ Basic configuration created. Add models to %s and restart ClaraCore.\n", modelsFolder)
+		fmt.Printf("✅ Basic configuration created. Add models to %s and restart JarvisCore.\n", modelsFolder)
 		return nil
 	}
 
@@ -248,7 +248,7 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 	// Print next steps
 	fmt.Println("\n🎉 Setup complete! Next steps:")
 	fmt.Println("   1. Review the generated config.yaml file")
-	fmt.Println("   2. Start ClaraCore: ./clara-core")
+	fmt.Println("   2. Start JarvisCore: ./jarvis-core")
 	fmt.Println("   3. Test with: curl http://localhost:8080/v1/models")
 
 	// Print available models
@@ -265,7 +265,7 @@ func AutoSetupWithOptions(modelsFolder string, options SetupOptions) error {
 
 // AutoSetupMultiFoldersWithOptions performs automatic model detection and configuration from multiple folders
 func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptions) error {
-	fmt.Println("🚀 Starting ClaraCore multi-folder auto-setup...")
+	fmt.Println("🚀 Starting JarvisCore multi-folder auto-setup...")
 
 	// Validate folders
 	if len(modelsFolders) == 0 {
@@ -455,7 +455,7 @@ func AutoSetupMultiFoldersWithOptions(modelsFolders []string, options SetupOptio
 	// Print next steps
 	fmt.Println("\n🎉 Setup complete! Next steps:")
 	fmt.Println("   1. Review the generated config.yaml file")
-	fmt.Println("   2. Start ClaraCore: ./clara-core")
+	fmt.Println("   2. Start JarvisCore: ./jarvis-core")
 	fmt.Println("   3. Test with: curl http://localhost:8080/v1/models")
 
 	// Print available models
@@ -487,7 +487,7 @@ func ValidateSetup() error {
 
 // createBasicConfig creates a minimal config.yaml with the models folder path
 func createBasicConfig(modelsFolder string) error {
-	basicConfig := fmt.Sprintf(`# ClaraCore Configuration
+	basicConfig := fmt.Sprintf(`# JarvisCore Configuration
 # Generated automatically - add models to %s and regenerate
 
 server:
@@ -500,7 +500,7 @@ groups:
 
 models:
   # Models will be auto-detected when you add .gguf files to %s
-  # Run: ./claracore --models-folder %s
+  # Run: ./jarviscore --models-folder %s
   # Or use the web interface: http://localhost:5800/ui/setup
 
 # Model folder for scanning
